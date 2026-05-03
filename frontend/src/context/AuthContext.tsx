@@ -1,4 +1,5 @@
 import { createContext, useContext, useState, useEffect, useCallback } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 
 export interface AuthUser {
   id: number
@@ -24,6 +25,7 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL
   : '/api'
 
 export function AuthProvider({ children }: { children: React.ReactNode }) {
+  const queryClient = useQueryClient()
   const [user, setUser]       = useState<AuthUser | null>(null)
   const [token, setToken]     = useState<string | null>(() => localStorage.getItem(TOKEN_KEY))
   const [isLoading, setIsLoading] = useState(true)
@@ -62,7 +64,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     localStorage.removeItem(TOKEN_KEY)
     setToken(null)
     setUser(null)
-  }, [])
+    queryClient.clear()   // wipe all cached data so next login gets a fresh fetch
+  }, [queryClient])
 
   return (
     <AuthContext.Provider value={{ user, token, isLoading, login, logout }}>

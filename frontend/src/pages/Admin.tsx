@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useAuth } from '../context/AuthContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff } from 'lucide-react'
 import {
@@ -22,17 +23,17 @@ import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPric
 
 type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger'
 
-const TABS: { id: TabId; label: string }[] = [
-  { id: 'system', label: 'System' },
-  { id: 'accounts', label: 'Accounts' },
+const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
+  { id: 'system',           label: 'System',           adminOnly: true },
+  { id: 'accounts',         label: 'Accounts' },
   { id: 'opening-balances', label: 'Opening Balances' },
-  { id: 'currency-split', label: 'Currency Split' },
-  { id: 'securities', label: 'Securities' },
-  { id: 'brokerages', label: 'Brokerages' },
-  { id: 'type-mappings', label: 'Type Mappings' },
-  { id: 'fx-rates', label: 'FX Rates' },
-  { id: 'users', label: 'Users' },
-  { id: 'danger', label: '⚠ Bulk Delete' },
+  { id: 'securities',       label: 'Securities',       adminOnly: true },
+  { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
+  { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
+  { id: 'fx-rates',         label: 'FX Rates',         adminOnly: true },
+  { id: 'currency-split',   label: 'Currency Split',   adminOnly: true },
+  { id: 'users',            label: 'Users',            adminOnly: true },
+  { id: 'danger',           label: '⚠ Bulk Delete',   adminOnly: true },
 ]
 
 // ─── Confirmation Dialog ──────────────────────────────────────────────────────
@@ -338,8 +339,14 @@ type OBEditState = {
 
 function OpeningBalancesTab() {
   const qc = useQueryClient()
-  const { data: balances = [], isLoading } = useQuery({ queryKey: ['opening-balances'], queryFn: getOpeningBalances })
+  const { data: allBalances = [], isLoading } = useQuery({ queryKey: ['opening-balances'], queryFn: getOpeningBalances })
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  // Only show balances for accounts this user can access
+  const accessibleIds = useMemo(() => new Set((accounts as Account[]).map(a => a.id)), [accounts])
+  const balances = useMemo(
+    () => (allBalances as OpeningBalance[]).filter(b => accessibleIds.has(b.account_id)),
+    [allBalances, accessibleIds],
+  )
   // Use dedicated 'all-securities' key so it's never stale from a filtered Securities-tab query
   const { data: securities = [] } = useQuery({ queryKey: ['securities', 'all'], queryFn: () => getSecurities() })
   const [form, setForm] = useState({
@@ -2578,14 +2585,17 @@ function UsersTab() {
 
 
 export default function Admin() {
-  const [tab, setTab] = useState<TabId>('system')
+  const { user } = useAuth()
+  const isAdmin = user?.role === 'admin'
+  const tabs = ALL_TABS.filter(t => !t.adminOnly || isAdmin)
+  const [tab, setTab] = useState<TabId>(() => isAdmin ? 'system' : 'accounts')
 
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
       <div className="border-b border-gray-200 overflow-x-auto">
         <div className="flex gap-0 min-w-max">
-          {TABS.map(t => (
+          {tabs.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -2599,16 +2609,16 @@ export default function Admin() {
         </div>
       </div>
       <div>
-        {tab === 'system' && <SystemTab />}
+        {tab === 'system' && isAdmin && <SystemTab />}
         {tab === 'accounts' && <AccountsTab />}
         {tab === 'opening-balances' && <OpeningBalancesTab />}
-        {tab === 'currency-split' && <CurrencySplitTab />}
+        {tab === 'currency-split' && isAdmin && <CurrencySplitTab />}
         {tab === 'securities' && <SecuritiesTab />}
         {tab === 'brokerages' && <BrokeragesTab />}
         {tab === 'type-mappings' && <TypeMappingsTab />}
         {tab === 'fx-rates' && <FxRatesTab />}
-        {tab === 'users' && <UsersTab />}
-        {tab === 'danger' && <DangerZoneTab />}
+        {tab === 'users' && isAdmin && <UsersTab />}
+        {tab === 'danger' && isAdmin && <DangerZoneTab />}
       </div>
     </div>
   )

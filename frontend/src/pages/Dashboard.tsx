@@ -308,13 +308,19 @@ export default function Dashboard() {
   // Global account filter
   const { effectiveAccountIds, hasFilter } = usePortfolioFilters(accounts)
 
-  const filteredPositions = useMemo(() =>
-    hasFilter ? (positions as Position[]).filter(p => effectiveAccountIds.has(p.account_id)) : (positions as Position[])
-  , [positions, effectiveAccountIds, hasFilter])
+  const filteredPositions = useMemo(() => {
+    if (accountsLoading) return []
+    return effectiveAccountIds.size > 0
+      ? (positions as Position[]).filter(p => effectiveAccountIds.has(p.account_id))
+      : (positions as Position[])
+  }, [positions, effectiveAccountIds, accountsLoading])
 
-  const filteredCash = useMemo(() =>
-    hasFilter ? (cashBalances as CashBalance[]).filter(c => effectiveAccountIds.has(c.account_id)) : (cashBalances as CashBalance[])
-  , [cashBalances, effectiveAccountIds, hasFilter])
+  const filteredCash = useMemo(() => {
+    if (accountsLoading) return []
+    return effectiveAccountIds.size > 0
+      ? (cashBalances as CashBalance[]).filter(c => effectiveAccountIds.has(c.account_id))
+      : (cashBalances as CashBalance[])
+  }, [cashBalances, effectiveAccountIds, accountsLoading])
 
   // USD/CAD rate on toDate — used to display USD sub-account values in native currency
   const { data: usdCadData } = useQuery({
@@ -331,12 +337,18 @@ export default function Dashboard() {
     refetchInterval: 5 * 60 * 1000,
   })
 
-  // Build account_ids param for summary metrics (same filter as positions)
-  const metricsAccountIds = hasFilter ? [...effectiveAccountIds].join(',') : undefined
+  // Wait for accounts to load before computing IDs — avoids firing the summary
+  // with account_ids=undefined (all accounts) while the accounts query is in flight.
+  const metricsAccountIds = accountsLoading
+    ? null                                          // null disables the query (see `enabled` below)
+    : effectiveAccountIds.size > 0
+      ? [...effectiveAccountIds].join(',')
+      : undefined
 
   const { data: summaryMetrics } = useQuery({
     queryKey: ['summary-metrics', metricsAccountIds, toDate],
-    queryFn: () => getSummaryMetrics({ account_ids: metricsAccountIds, as_of: toDate }),
+    queryFn: () => getSummaryMetrics({ account_ids: metricsAccountIds ?? undefined, as_of: toDate }),
+    enabled: metricsAccountIds !== null,   // wait until accounts have loaded
     staleTime: 5 * 60 * 1000,
   })
 

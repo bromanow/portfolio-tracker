@@ -20,15 +20,19 @@ const ClientContext = createContext<ClientContextValue>({
 const STORAGE_KEY = 'pt_selected_client'
 
 export function ClientProvider({ children }: { children: React.ReactNode }) {
+  const isAuthenticated = !!localStorage.getItem('pt_auth_token')
+
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
     queryFn: getClients,
     staleTime: 60_000,
+    enabled: isAuthenticated,
   })
 
   const [selectedClientId, setSelectedClientIdRaw] = useState<number | null>(() => {
-    const stored = localStorage.getItem(STORAGE_KEY)
-    return stored ? parseInt(stored, 10) : null
+    // Clear any stale client selection — client scoping is now handled by the backend
+    localStorage.removeItem(STORAGE_KEY)
+    return null
   })
 
   // When clients load, if only one client is accessible (non-admin user), auto-select it

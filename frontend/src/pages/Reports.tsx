@@ -7,14 +7,14 @@ import {
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
   TrendingUp, DollarSign, Landmark, RefreshCw, X, PanelLeftClose, PanelLeftOpen,
-  Activity, Calculator, CalendarRange, FileSearch,
+  Activity, Calculator, CalendarRange, FileSearch, Globe,
 } from 'lucide-react'
 import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
   getPortfolioHistory, getPortfolioContinuity,
-  getMonthlyReturns, getReturnsDetail,
+  getMonthlyReturns, getReturnsDetail, getFxRates,
 } from '../api/client'
-import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow } from '../api/client'
+import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -1956,7 +1956,78 @@ function ReturnDetailReport() {
 
 
 // ── Report registry ───────────────────────────────────────────────────────────
-type ReportId = 'realized-gains' | 'income' | 'cash-statement' | 'portfolio-value' | 'continuity' | 'monthly-returns' | 'return-detail'
+// ── FX Rates Report ───────────────────────────────────────────────────────────
+function FxRatesReport() {
+  const { data: rates = [], isLoading } = useQuery({
+    queryKey: ['fx-rates'],
+    queryFn: () => getFxRates(500),
+    staleTime: 60_000,
+  })
+
+  const sorted = useMemo(() =>
+    [...(rates as FXRate[])].sort((a, b) => b.rate_date.localeCompare(a.rate_date)),
+    [rates],
+  )
+
+  // Group by currency pair
+  const pairs = useMemo(() => {
+    const seen = new Set<string>()
+    return sorted.filter(r => {
+      const key = `${r.from_currency}/${r.to_currency}`
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+  }, [sorted])
+
+  if (isLoading) return <div className="text-sm text-gray-400 py-6 text-center">Loading…</div>
+
+  return (
+    <div className="space-y-6">
+      {/* Latest rates summary */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {pairs.map(r => (
+          <div key={`${r.from_currency}${r.to_currency}`} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
+            <p className="text-xs text-gray-500 mb-1">{r.from_currency} → {r.to_currency}</p>
+            <p className="text-xl font-semibold text-gray-900">{Number(r.rate).toFixed(4)}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{r.rate_date}</p>
+          </div>
+        ))}
+      </div>
+
+      {/* Full rate history table */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
+          <h3 className="text-sm font-semibold text-gray-700">Rate History</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <tr>
+                <th className="text-left px-4 py-2.5 font-medium">Date</th>
+                <th className="text-left px-4 py-2.5 font-medium">From</th>
+                <th className="text-left px-4 py-2.5 font-medium">To</th>
+                <th className="text-right px-4 py-2.5 font-medium">Rate</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {sorted.map(r => (
+                <tr key={r.id} className="hover:bg-gray-50">
+                  <td className="px-4 py-2 text-gray-700">{r.rate_date}</td>
+                  <td className="px-4 py-2 text-gray-700">{r.from_currency}</td>
+                  <td className="px-4 py-2 text-gray-700">{r.to_currency}</td>
+                  <td className="px-4 py-2 text-right font-mono text-gray-900">{Number(r.rate).toFixed(6)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+type ReportId = 'realized-gains' | 'income' | 'cash-statement' | 'portfolio-value' | 'continuity' | 'monthly-returns' | 'return-detail' | 'fx-rates'
 
 const REPORT_DEFS: {
   id: ReportId
@@ -2013,6 +2084,13 @@ const REPORT_DEFS: {
     description: 'Numerator/denominator breakdown: price change, income, capital returned',
     icon: FileSearch,
     component: ReturnDetailReport,
+  },
+  {
+    id: 'fx-rates',
+    label: 'FX Rates',
+    description: 'USD/CAD exchange rates used for portfolio calculations',
+    icon: Globe,
+    component: FxRatesReport,
   },
 ]
 

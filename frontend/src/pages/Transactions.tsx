@@ -526,8 +526,8 @@ export default function Transactions() {
 
   const { histAccountIds, hasFilter: hasAccountFilter, clearFilters, effectiveAccountIds } = usePortfolioFilters(accounts)
 
-  // Comma-separated IDs for the API; undefined = all accounts
-  const accountIdsParam = hasAccountFilter ? (histAccountIds ?? undefined) : undefined
+  // Always scope to the user's accessible accounts
+  const accountIdsParam = histAccountIds
 
   // Reset page when account filter changes
   useEffect(() => { setPage(1) }, [accountIdsParam])

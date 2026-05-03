@@ -1,0 +1,48 @@
+## Render Infrastructure-as-Code
+## Defines: backend API (Python), frontend (static), PostgreSQL database
+## Docs: https://render.com/docs/infrastructure-as-code
+
+services:
+  # ── Backend API (FastAPI / uvicorn) ──────────────────────────────────────────
+  - type: web
+    name: portfolio-tracker-api
+    runtime: python
+    rootDir: backend
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    plan: free                # upgrade to "starter" ($7/mo) to avoid cold starts
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: portfolio-tracker-db
+          property: connectionString
+      # Comma-separated list of frontend origins allowed to call the API.
+      # Update this if you use a custom domain for the frontend.
+      - key: ALLOWED_ORIGINS
+        value: https://portfolio-tracker-ui.onrender.com
+      - key: PYTHON_VERSION
+        value: "3.11"
+
+  # ── Frontend (React / Vite static site) ──────────────────────────────────────
+  - type: static
+    name: portfolio-tracker-ui
+    rootDir: frontend
+    buildCommand: npm install && npm run build
+    staticPublishPath: ./dist
+    envVars:
+      # Points the React app at the backend service above.
+      # Must match the backend service name above (portfolio-tracker-api).
+      - key: VITE_API_BASE_URL
+        value: https://portfolio-tracker-api.onrender.com
+    routes:
+      # Rewrite all paths to index.html so React Router handles client-side navigation.
+      - type: rewrite
+        source: /*
+        destination: /index.html
+
+# ── PostgreSQL database ───────────────────────────────────────────────────────
+databases:
+  - name: portfolio-tracker-db
+    databaseName: portfolio_tracker
+    plan: free                # 256 MB storage, 97-day data retention on free tier
+                              # upgrade to "starter" ($7/mo) for 1 GB + 30-day backups

@@ -277,8 +277,8 @@ export default function Options() {
   const accounts = rawAccounts as Account[]
   const { histAccountIds, hasFilter } = usePortfolioFilters(accounts)
 
-  // Build comma-separated account_ids param when filtered
-  const accountIdsParam = hasFilter ? (histAccountIds ?? undefined) : undefined
+  // Always scope to user's accounts
+  const accountIdsParam = histAccountIds ?? undefined
 
   const { data: report, isLoading } = useQuery({
     queryKey: ['options-report', accountIdsParam],

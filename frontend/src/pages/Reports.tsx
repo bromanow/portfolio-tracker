@@ -123,15 +123,23 @@ function RealizedGainsReport() {
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [year, setYear]                 = useState('')
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const allAccts = accounts as Account[]
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 8 }, (_, i) => currentYear - i)
 
+  // Default account_ids to all user accounts so non-admin users are always scoped
+  const defaultAccountIds = useMemo(
+    () => allAccts.map(a => String(a.id)).join(',') || undefined,
+    [allAccts],
+  )
+
   const { data: gains = [], isLoading } = useQuery({
-    queryKey: ['pnl', accountId, year],
+    queryKey: ['pnl', accountId, year, defaultAccountIds],
     queryFn: () => getRealizedPnl({
-      account_id: accountId ? Number(accountId) : undefined,
+      account_ids: accountId ? String(accountId) : defaultAccountIds,
       year: year ? Number(year) : undefined,
     }),
+    enabled: defaultAccountIds !== undefined,
   })
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
@@ -215,7 +223,7 @@ function RealizedGainsReport() {
           <label className="block text-xs text-gray-500 mb-1">Account</label>
           <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={accountId} onChange={e => setAccountId(e.target.value)}>
             <option value="">All accounts</option>
-            {(accounts as Account[]).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {allAccts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div>
@@ -363,15 +371,23 @@ function IncomeReport() {
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [year, setYear]                       = useState('')
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const allAccts = accounts as Account[]
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 8 }, (_, i) => currentYear - i)
 
+  // Default account_ids to all user accounts so non-admin users are always scoped
+  const defaultAccountIds = useMemo(
+    () => allAccts.map(a => String(a.id)).join(',') || undefined,
+    [allAccts],
+  )
+
   const { data: income = [], isLoading } = useQuery({
-    queryKey: ['income', accountId, year],
+    queryKey: ['income', accountId, year, defaultAccountIds],
     queryFn: () => getInvestmentIncome({
-      account_id: accountId ? Number(accountId) : undefined,
+      account_ids: accountId ? String(accountId) : defaultAccountIds,
       year: year ? Number(year) : undefined,
     }),
+    enabled: defaultAccountIds !== undefined,
   })
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
@@ -523,7 +539,7 @@ function IncomeReport() {
           <label className="block text-xs text-gray-500 mb-1">Account</label>
           <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={accountId} onChange={e => setAccountId(e.target.value)}>
             <option value="">All accounts</option>
-            {(accounts as Account[]).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            {allAccts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
         <div>
@@ -797,7 +813,10 @@ function useAccountCascade(accts: Account[]) {
       setSelectedAccountIds(prev => prev.filter(id => valid.has(id)))
     }
   }
-  const accountIds = selectedAccountIds.length > 0 ? selectedAccountIds.join(',') : undefined
+  // Default to all user accounts when nothing selected (ensures non-admin users are scoped)
+  const accountIds = selectedAccountIds.length > 0
+    ? selectedAccountIds.join(',')
+    : accts.map(a => String(a.id)).join(',') || undefined
 
   return { brokerageFilter, setBrokerageFilter, brokerages, accountOptions, selectedAccountIds, setSelectedAccountIds, accountIds }
 }
@@ -1167,14 +1186,19 @@ function CashStatementReport() {
 
   const isSingle = selectedAccountIds.length === 1
 
+  // Fall back to all user accounts when nothing explicitly selected
+  const effectiveAccountIds = selectedAccountIds.length > 0
+    ? selectedAccountIds
+    : accts.map(a => String(a.id))
+
   const { data: statement, isLoading, refetch } = useQuery({
-    queryKey: ['cash-statement', selectedAccountIds, fromDate, toDate],
+    queryKey: ['cash-statement', effectiveAccountIds, fromDate, toDate],
     queryFn: () => getCashStatement({
-      account_ids: selectedAccountIds.join(','),
+      account_ids: effectiveAccountIds.join(','),
       from_date: fromDate || undefined,
       to_date:   toDate   || undefined,
     }),
-    enabled: selectedAccountIds.length > 0,
+    enabled: effectiveAccountIds.length > 0,
   })
 
   const allRows: CashStatementRow[] = statement?.rows ?? []
@@ -1424,9 +1448,17 @@ function MonthlyReturnsReport() {
   const [groupBy, setGroupBy] = useState<'none' | 'brokerage' | 'account_type'>('brokerage')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
 
+  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const allAccts = accountsData as Account[]
+  const defaultAccountIds = useMemo(
+    () => allAccts.map(a => String(a.id)).join(',') || undefined,
+    [allAccts],
+  )
+
   const { data, isLoading } = useQuery({
-    queryKey: ['monthly-returns', yearFrom, yearTo],
-    queryFn:  () => getMonthlyReturns({ year_from: yearFrom, year_to: yearTo }),
+    queryKey: ['monthly-returns', yearFrom, yearTo, defaultAccountIds],
+    queryFn:  () => getMonthlyReturns({ year_from: yearFrom, year_to: yearTo, account_ids: defaultAccountIds }),
+    enabled:  defaultAccountIds !== undefined,
   })
 
   const months  = data?.months ?? []
@@ -1688,10 +1720,17 @@ function ReturnDetailReport() {
     }
   }
 
+  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const allAccts = accountsData as Account[]
+  const defaultAccountIds = useMemo(
+    () => allAccts.map(a => String(a.id)).join(',') || undefined,
+    [allAccts],
+  )
+
   const { data: rawRows = [], isLoading } = useQuery({
-    queryKey: ['returns-detail', fromDate, toDate],
-    queryFn:  () => getReturnsDetail({ from_date: fromDate, to_date: toDate }),
-    enabled:  !!fromDate && !!toDate,
+    queryKey: ['returns-detail', fromDate, toDate, defaultAccountIds],
+    queryFn:  () => getReturnsDetail({ from_date: fromDate, to_date: toDate, account_ids: defaultAccountIds }),
+    enabled:  !!fromDate && !!toDate && defaultAccountIds !== undefined,
   })
   const rows = rawRows as ReturnDetailRow[]
 

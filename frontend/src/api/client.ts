@@ -502,7 +502,7 @@ export const computeSecuritySignals = (id: number) =>
   api.post(`/securities/${id}/compute-signals`).then(r => r.data)
 export const getPortfolioSummary = (params?: { as_of?: string }) =>
   api.get<PortfolioSummary>('/portfolio/summary', { params }).then(r => r.data)
-export const getRealizedPnl = (params?: { account_id?: number; year?: number; brokerage_name?: string }) =>
+export const getRealizedPnl = (params?: { account_id?: number; account_ids?: string; year?: number; brokerage_name?: string }) =>
   api.get('/portfolio/pnl', { params }).then(r => r.data)
 
 export interface CashBalance {
@@ -556,7 +556,7 @@ export interface IncomeItem {
   currency: string
   amount_native: string
 }
-export const getInvestmentIncome = (params?: { account_id?: number; year?: number; brokerage_name?: string }) =>
+export const getInvestmentIncome = (params?: { account_id?: number; account_ids?: string; year?: number; brokerage_name?: string }) =>
   api.get<IncomeItem[]>('/portfolio/income', { params }).then(r => r.data)
 export const getAcbReport = (params?: { account_id?: number; as_of?: string }) =>
   api.get('/portfolio/acb', { params }).then(r => r.data)

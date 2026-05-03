@@ -322,9 +322,8 @@ export default function Performance() {
       .map(a => ({ value: String(a.id), label: a.name })),
   [allAccounts, filterBrokerages, filterTypes])
 
-  // Compute account_ids filter string for API
+  // Compute account_ids filter string for API — always scoped to user's accounts
   const chartAccountIds = useMemo(() => {
-    if (!filterBrokerages.length && !filterTypes.length && !filterAccounts.length) return undefined
     const matching = allAccounts.filter(a => {
       if (filterBrokerages.length > 0 && !filterBrokerages.includes(a.brokerage_name!)) return false
       if (filterTypes.length > 0 && !filterTypes.includes(a.account_type)) return false

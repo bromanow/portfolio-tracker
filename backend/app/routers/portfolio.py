@@ -49,6 +49,7 @@ def get_summary(
 @router.get("/pnl")
 def get_pnl(
     account_id: Optional[int] = Query(None),
+    account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
     year: Optional[int] = Query(None),
     brokerage_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
@@ -56,6 +57,10 @@ def get_pnl(
     rows = portfolio_svc.get_realized_pnl(
         db, account_id=account_id, year=year, brokerage_name=brokerage_name
     )
+    # Filter by account_ids when provided (used for multi-user scoping)
+    if account_ids:
+        filter_ids = {int(x.strip()) for x in account_ids.split(',') if x.strip().isdigit()}
+        rows = [r for r in rows if r.get("account_id") in filter_ids]
     for row in rows:
         row["date"] = row["date"].isoformat()
         row["proceeds_cad"] = str(row["proceeds_cad"])
@@ -620,14 +625,20 @@ def get_cash_statement(
 @router.get("/income")
 def get_investment_income(
     account_id: Optional[int] = Query(None),
+    account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
     year: Optional[int] = Query(None),
     brokerage_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
 ):
     """Return dividend/interest income transactions."""
-    return portfolio_svc.get_investment_income(
+    rows = portfolio_svc.get_investment_income(
         db, account_id=account_id, year=year, brokerage_name=brokerage_name
     )
+    # Filter by account_ids when provided (used for multi-user scoping)
+    if account_ids:
+        filter_ids = {int(x.strip()) for x in account_ids.split(',') if x.strip().isdigit()}
+        rows = [r for r in rows if r.get("account_id") in filter_ids]
+    return rows
 
 
 @router.get("/options")

@@ -32,7 +32,7 @@ services:
     runtime: node
     rootDir: frontend
     buildCommand: npm install && npm run build
-    startCommand: npx serve -s dist -l $PORT
+    startCommand: npm run serve
     plan: free
     envVars:
       # VITE_ vars are baked into the bundle at build time by Vite.

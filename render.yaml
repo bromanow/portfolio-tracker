@@ -31,7 +31,7 @@ services:
     name: portfolio-tracker-ui
     runtime: node
     rootDir: frontend
-    buildCommand: npm install && npm run build
+    buildCommand: npm install --include=dev && npm run build
     startCommand: npm run serve
     plan: free
     envVars:

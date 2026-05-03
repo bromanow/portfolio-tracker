@@ -11,6 +11,30 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 })
 
+// ── Auth interceptors ────────────────────────────────────────────────────────
+// Attach JWT to every request
+api.interceptors.request.use(config => {
+  const token = localStorage.getItem('pt_auth_token')
+  if (token) config.headers.Authorization = `Bearer ${token}`
+  return config
+})
+
+// On 401 → clear token and redirect to login
+api.interceptors.response.use(
+  r => r,
+  error => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('pt_auth_token')
+      window.location.href = '/login'
+    }
+    return Promise.reject(error)
+  }
+)
+
+// ── Auth API ──────────────────────────────────────────────────────────────────
+export const changePassword = (data: { current_password: string; new_password: string }) =>
+  api.post('/auth/change-password', data).then(r => r.data)
+
 // ─── Accounts ──────────────────────────────────────────────────────────────
 export interface Account {
   id: number

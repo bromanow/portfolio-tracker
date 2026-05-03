@@ -12,7 +12,9 @@ import {
   TrendingUp,
   ChevronLeft,
   ChevronRight,
+  LogOut,
 } from 'lucide-react'
+import { useAuth } from '../context/AuthContext'
 
 const nav = [
   { to: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
@@ -27,6 +29,7 @@ const nav = [
 ]
 
 export default function Sidebar() {
+  const { user, logout } = useAuth()
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar-collapsed') === 'true'
   })
@@ -88,12 +91,24 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      {!collapsed && (
-        <div className="px-4 py-3 border-t border-gray-200">
-          <p className="text-xs text-gray-400">Portfolio Tracker v1.0</p>
-        </div>
-      )}
+      {/* User + logout */}
+      <div className={`border-t border-gray-200 ${collapsed ? 'px-1 py-3' : 'px-3 py-3'}`}>
+        {!collapsed && user && (
+          <p className="text-xs text-gray-500 truncate px-1 mb-2" title={user.email}>
+            {user.name}
+          </p>
+        )}
+        <button
+          onClick={logout}
+          title="Sign out"
+          className={`flex items-center w-full rounded-md text-sm font-medium text-gray-500
+            hover:bg-red-50 hover:text-red-600 transition-colors
+            ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-2 py-2'}`}
+        >
+          <LogOut className="h-4 w-4 flex-shrink-0" />
+          {!collapsed && 'Sign out'}
+        </button>
+      </div>
     </aside>
   )
 }

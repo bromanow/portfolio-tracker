@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap } from 'lucide-react'
+import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound } from 'lucide-react'
 import {
   getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount,
   getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities,
@@ -15,6 +15,7 @@ import {
   getSystemHealth, restartBackend, getDbStats, optimizeDb,
   fetchPriceHistory, getPriceJob,
   getAccountCurrencySummary, splitCurrencyTransactions,
+  changePassword,
 } from '../api/client'
 import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary } from '../api/client'
 
@@ -1823,6 +1824,32 @@ function SystemTab() {
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeMsg, setOptimizeMsg] = useState<string | null>(null)
 
+  // Change password state
+  const [pwCurrent,  setPwCurrent]  = useState('')
+  const [pwNew,      setPwNew]      = useState('')
+  const [pwConfirm,  setPwConfirm]  = useState('')
+  const [pwLoading,  setPwLoading]  = useState(false)
+  const [pwError,    setPwError]    = useState<string | null>(null)
+  const [pwSuccess,  setPwSuccess]  = useState(false)
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwError(null)
+    setPwSuccess(false)
+    if (pwNew.length < 8) { setPwError('New password must be at least 8 characters.'); return }
+    if (pwNew !== pwConfirm) { setPwError('New passwords do not match.'); return }
+    setPwLoading(true)
+    try {
+      await changePassword({ current_password: pwCurrent, new_password: pwNew })
+      setPwSuccess(true)
+      setPwCurrent(''); setPwNew(''); setPwConfirm('')
+    } catch (err: any) {
+      setPwError(err.response?.data?.detail ?? 'Password change failed.')
+    } finally {
+      setPwLoading(false)
+    }
+  }
+
   const { data: health, refetch: recheckHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: getSystemHealth,
@@ -1947,6 +1974,69 @@ function SystemTab() {
           >
             <RotateCcw className="h-4 w-4" /> Reload Page
           </button>
+        </div>
+
+        {/* Change password */}
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3 sm:col-span-2">
+          <div className="flex items-center gap-2">
+            <KeyRound className="h-5 w-5 text-blue-600" />
+            <h3 className="font-semibold text-gray-800">Change Password</h3>
+          </div>
+          <form onSubmit={handleChangePassword} className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Current password</label>
+              <input
+                type="password"
+                value={pwCurrent}
+                onChange={e => setPwCurrent(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="••••••••"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">New password</label>
+              <input
+                type="password"
+                value={pwNew}
+                onChange={e => setPwNew(e.target.value)}
+                required
+                minLength={8}
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="Min 8 characters"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-600 mb-1">Confirm new password</label>
+              <input
+                type="password"
+                value={pwConfirm}
+                onChange={e => setPwConfirm(e.target.value)}
+                required
+                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="••••••••"
+              />
+            </div>
+            {pwError && (
+              <p className="sm:col-span-3 text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                {pwError}
+              </p>
+            )}
+            {pwSuccess && (
+              <p className="sm:col-span-3 text-xs text-green-700 bg-green-50 border border-green-200 rounded-lg px-3 py-2 flex items-center gap-1.5">
+                <CheckCircle className="h-3.5 w-3.5" /> Password changed successfully.
+              </p>
+            )}
+            <div className="sm:col-span-3 flex justify-end">
+              <button
+                type="submit"
+                disabled={pwLoading}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {pwLoading ? <><Loader2 className="h-4 w-4 animate-spin" /> Saving…</> : 'Update Password'}
+              </button>
+            </div>
+          </form>
         </div>
 
       </div>

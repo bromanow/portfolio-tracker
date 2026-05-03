@@ -1,7 +1,3 @@
-import os
-import signal
-import sys
-import threading
 from datetime import datetime, timezone
 from fastapi import APIRouter, Depends
 from sqlalchemy import text
@@ -89,17 +85,5 @@ def db_optimize(db: Session = Depends(get_db)):
 
 @router.post("/restart")
 def restart():
-    """Restart the backend process."""
-    def _do_restart():
-        import time, pathlib
-        time.sleep(0.5)
-        main_py = pathlib.Path(__file__).parent.parent / "main.py"
-        try:
-            main_py.touch()
-        except Exception:
-            pass
-        time.sleep(1.0)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
-
-    threading.Thread(target=_do_restart, daemon=True).start()
-    return {"message": "Restarting…"}
+    """No-op on cloud deployments — use the Render dashboard 'Manual Deploy' instead."""
+    return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}

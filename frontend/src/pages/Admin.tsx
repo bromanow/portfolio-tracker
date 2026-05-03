@@ -1916,26 +1916,20 @@ function SystemTab() {
         {/* Restart backend */}
         <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <Power className="h-5 w-5 text-blue-600" />
+            <Power className="h-5 w-5 text-gray-400" />
             <h3 className="font-semibold text-gray-800">Restart Backend</h3>
           </div>
           <p className="text-sm text-gray-500">
-            Apply code updates — the server will be offline for about 2 seconds then come back automatically.
+            Use the <strong>Render dashboard</strong> to restart or redeploy the backend service. In-process restarts are not supported in cloud deployments.
           </p>
-          <button
-            onClick={handleRestart}
-            disabled={restartStatus === 'restarting'}
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          <a
+            href="https://dashboard.render.com"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
           >
-            {restartStatus === 'restarting'
-              ? <><Loader2 className="h-4 w-4 animate-spin" /> Restarting…</>
-              : restartStatus === 'online'
-              ? <><CheckCircle className="h-4 w-4" /> Restarted</>
-              : restartStatus === 'error'
-              ? <><WifiOff className="h-4 w-4" /> Failed — try again</>
-              : <><Power className="h-4 w-4" /> Restart Backend</>
-            }
-          </button>
+            <Power className="h-4 w-4" /> Open Render Dashboard
+          </a>
         </div>
 
         {/* Reload page */}

@@ -35,7 +35,39 @@ api.interceptors.response.use(
 export const changePassword = (data: { current_password: string; new_password: string }) =>
   api.post('/auth/change-password', data).then(r => r.data)
 
+export interface AppUser {
+  id: number
+  email: string
+  name: string
+  role: string
+  is_active: boolean
+  created_at: string | null
+  last_login: string | null
+  client_ids: number[]
+}
+
+export const getUsers = () => api.get<AppUser[]>('/auth/users').then(r => r.data)
+export const createUser = (data: {
+  email: string; name: string; password: string; role: string; client_ids: number[]
+}) => api.post<AppUser>('/auth/users', data).then(r => r.data)
+export const updateUser = (id: number, data: Partial<{
+  email: string; name: string; role: string; is_active: boolean; client_ids: number[]
+}>) => api.put<AppUser>(`/auth/users/${id}`, data).then(r => r.data)
+export const resetUserPassword = (id: number, new_password: string) =>
+  api.post(`/auth/users/${id}/reset-password`, { new_password }).then(r => r.data)
+
 // ─── Accounts ──────────────────────────────────────────────────────────────
+// ─── Clients ─────────────────────────────────────────────────────────────────
+export interface Client {
+  id: number
+  name: string
+  slug: string
+  active: boolean
+}
+
+export const getClients = () => api.get<Client[]>('/clients').then(r => r.data)
+
+// ─── Accounts ─────────────────────────────────────────────────────────────────
 export interface Account {
   id: number
   brokerage_id: number
@@ -47,6 +79,7 @@ export interface Account {
   account_type: string
   base_currency: string
   owner: string
+  client_id: number | null
   active: boolean
   ibkr_alias: string | null
 }

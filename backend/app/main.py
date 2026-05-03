@@ -12,6 +12,7 @@ import app.models.options      # noqa
 import app.models.imports      # noqa
 import app.models.prices       # noqa
 import app.models.auth         # noqa
+import app.models.clients      # noqa
 
 from app.dependencies import get_current_user
 from app.routers import auth as auth_router
@@ -19,6 +20,7 @@ from app.routers import imports, transactions, accounts, securities, portfolio, 
 from app.routers import prices as prices_router
 from app.routers import system as system_router
 from app.routers import ibkr as ibkr_router
+from app.routers import clients as clients_router
 
 log = logging.getLogger(__name__)
 
@@ -43,6 +45,64 @@ app.add_middleware(
 
 # ── Startup ───────────────────────────────────────────────────────────────────
 
+def _migrate_clients(eng):
+    """
+    Seed the clients table from distinct accounts.owner values,
+    then populate accounts.client_id from the matching client.
+    Also links the admin user to all clients via user_clients.
+    Idempotent — safe to run on every startup.
+    """
+    from sqlalchemy import text
+    with eng.connect() as conn:
+        # 1. Collect distinct owner values from accounts
+        rows = conn.execute(text("SELECT DISTINCT owner FROM accounts WHERE owner IS NOT NULL ORDER BY owner")).fetchall()
+        owners = [r[0] for r in rows]
+
+        for owner in owners:
+            slug = owner.lower().replace(" ", "-")
+            # Insert client if not already present
+            existing = conn.execute(
+                text("SELECT id FROM clients WHERE name = :name"),
+                {"name": owner},
+            ).fetchone()
+            if not existing:
+                conn.execute(
+                    text("INSERT INTO clients (name, slug, active, created_at) VALUES (:name, :slug, true, CURRENT_TIMESTAMP)"),
+                    {"name": owner, "slug": slug},
+                )
+                conn.commit()
+                log.info("Created client: %s (%s)", owner, slug)
+
+        # 2. Set accounts.client_id where still NULL (subquery form works on SQLite + PG)
+        conn.execute(text("""
+            UPDATE accounts
+            SET client_id = (
+                SELECT id FROM clients WHERE clients.name = accounts.owner
+            )
+            WHERE client_id IS NULL
+        """))
+        conn.commit()
+
+        # 3. Link admin users to all clients via user_clients (if not already linked)
+        admin_users = conn.execute(
+            text("SELECT id FROM users WHERE role = 'admin'")
+        ).fetchall()
+        all_clients = conn.execute(text("SELECT id FROM clients")).fetchall()
+
+        for (user_id,) in admin_users:
+            for (client_id,) in all_clients:
+                existing_link = conn.execute(
+                    text("SELECT 1 FROM user_clients WHERE user_id = :u AND client_id = :c"),
+                    {"u": user_id, "c": client_id},
+                ).fetchone()
+                if not existing_link:
+                    conn.execute(
+                        text("INSERT INTO user_clients (user_id, client_id, role) VALUES (:u, :c, 'admin')"),
+                        {"u": user_id, "c": client_id},
+                    )
+            conn.commit()
+
+
 def _run_migrations(eng):
     """Apply missing columns that create_all won't add to existing tables."""
     from sqlalchemy import inspect, text
@@ -55,6 +115,7 @@ def _run_migrations(eng):
         ("market_prices", "beta",                  "REAL"),
         ("market_prices", "dividend_yield",        "REAL"),
         ("market_prices", "market_cap",            "REAL"),
+        ("accounts",      "client_id",             "INTEGER REFERENCES clients(id)"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:
@@ -100,6 +161,7 @@ async def startup():
     Base.metadata.create_all(bind=engine)
     _run_migrations(engine)
     _create_admin_user()
+    _migrate_clients(engine)  # must run after admin user exists
 
     # Auto-refresh BOC FX rates if stale
     try:
@@ -134,6 +196,7 @@ app.include_router(admin.router,          dependencies=_auth)
 app.include_router(prices_router.router,  dependencies=_auth)
 app.include_router(system_router.router,  dependencies=_auth)
 app.include_router(ibkr_router.router,    dependencies=_auth)
+app.include_router(clients_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

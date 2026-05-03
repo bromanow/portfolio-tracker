@@ -32,6 +32,7 @@ class Account(Base):
     account_type: Mapped[str] = mapped_column(String(20), nullable=False)  # RRSP/TFSA/RESP/NON_REG
     base_currency: Mapped[str] = mapped_column(String(3), nullable=False)
     owner: Mapped[str] = mapped_column(String(50), nullable=False)
+    client_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("clients.id"), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     ibkr_alias: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # IB account alias from CSV
     returns_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)  # user-set start date for return calculations

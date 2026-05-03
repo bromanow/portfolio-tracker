@@ -26,6 +26,12 @@ function ProtectedRoute({ children }: { children: React.ReactNode }) {
   return user ? <>{children}</> : <Navigate to="/login" replace />
 }
 
+function AdminRoute({ children }: { children: React.ReactNode }) {
+  const { user } = useAuth()
+  if (user?.role !== 'admin') return <Navigate to="/dashboard" replace />
+  return <>{children}</>
+}
+
 export default function App() {
   return (
     <Routes>
@@ -49,7 +55,7 @@ export default function App() {
         <Route path="transactions" element={<Transactions />} />
         <Route path="options"      element={<Options />} />
         <Route path="prices"       element={<Prices />} />
-        <Route path="admin"        element={<Admin />} />
+        <Route path="admin"        element={<AdminRoute><Admin /></AdminRoute>} />
         <Route path="reports"      element={<Reports />} />
       </Route>
 

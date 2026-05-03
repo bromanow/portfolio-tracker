@@ -13,8 +13,10 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
+  Users,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { useClientContext } from '../context/ClientContext'
 
 const nav = [
   { to: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
@@ -25,16 +27,21 @@ const nav = [
   { to: '/prices',       label: 'Prices',       icon: DollarSign },
   { to: '/import',       label: 'Import',       icon: Upload },
   { to: '/reports',      label: 'Reports',      icon: BarChart2 },
-  { to: '/admin',        label: 'Admin',        icon: Settings },
 ]
+
+const adminNav = { to: '/admin', label: 'Admin', icon: Settings }
 
 export default function Sidebar() {
   const { user, logout } = useAuth()
+  const { clients, selectedClientId, setSelectedClientId } = useClientContext()
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar-collapsed') === 'true'
   })
   const [searchParams] = useSearchParams()
   const search = searchParams.toString()
+
+  const isAdmin = user?.role === 'admin'
+  const visibleNav = isAdmin ? [...nav, adminNav] : nav
 
   const toggle = () => {
     setCollapsed(c => {
@@ -69,9 +76,53 @@ export default function Sidebar() {
         </button>
       </div>
 
+      {/* Client selector — only when multiple clients available */}
+      {clients.length > 1 && (
+        <div className={`border-b border-gray-100 ${collapsed ? 'px-1 py-2' : 'px-3 py-2'}`}>
+          {collapsed ? (
+            /* Collapsed: show just an icon */
+            <div className="flex justify-center" title="Client filter active">
+              <Users className={`h-4 w-4 ${selectedClientId !== null ? 'text-blue-600' : 'text-gray-400'}`} />
+            </div>
+          ) : (
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-gray-400 mb-1.5 px-0.5">
+                Client
+              </p>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  onClick={() => setSelectedClientId(null)}
+                  className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
+                    selectedClientId === null
+                      ? 'bg-blue-600 text-white'
+                      : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                  }`}
+                >
+                  All
+                </button>
+                {clients.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => setSelectedClientId(c.id)}
+                    title={c.name}
+                    className={`px-2 py-0.5 rounded text-xs font-medium transition-colors truncate max-w-[80px] ${
+                      selectedClientId === c.id
+                        ? 'bg-blue-600 text-white'
+                        : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                    }`}
+                  >
+                    {c.name.split(' ')[0]}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Nav links */}
       <nav className={`flex-1 py-3 space-y-0.5 ${collapsed ? 'px-1' : 'px-2'}`}>
-        {nav.map(({ to, label, icon: Icon }) => (
+        {visibleNav.map(({ to, label, icon: Icon }) => (
           <NavLink
             key={to}
             to={search ? `${to}?${search}` : to}
@@ -96,6 +147,11 @@ export default function Sidebar() {
         {!collapsed && user && (
           <p className="text-xs text-gray-500 truncate px-1 mb-2" title={user.email}>
             {user.name}
+            {user.role === 'admin' && (
+              <span className="ml-1.5 text-[10px] font-medium text-blue-500 bg-blue-50 px-1 py-0.5 rounded">
+                admin
+              </span>
+            )}
           </p>
         )}
         <button

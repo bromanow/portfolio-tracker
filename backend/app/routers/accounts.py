@@ -5,6 +5,9 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
 from app.models.master import Account, Brokerage
+from app.models.clients import Client, UserClient
+from app.models.auth import User
+from app.dependencies import get_current_user
 
 router = APIRouter(prefix="/api/accounts", tags=["accounts"])
 
@@ -16,6 +19,7 @@ class AccountCreate(BaseModel):
     account_type: str
     base_currency: str
     owner: str
+    client_id: Optional[int] = None
     active: bool = True
     ibkr_alias: Optional[str] = None
 
@@ -26,6 +30,7 @@ class AccountUpdate(BaseModel):
     account_type: Optional[str] = None
     base_currency: Optional[str] = None
     owner: Optional[str] = None
+    client_id: Optional[int] = None
     active: Optional[bool] = None
     ibkr_alias: Optional[str] = None
 
@@ -42,20 +47,47 @@ def account_to_dict(a: Account) -> dict:
         "account_type": a.account_type,
         "base_currency": a.base_currency,
         "owner": a.owner,
+        "client_id": a.client_id,
         "active": a.active,
         "ibkr_alias": a.ibkr_alias,
         "returns_start_date": a.returns_start_date.isoformat() if a.returns_start_date else None,
     }
 
 
+def _get_accessible_client_ids(user: User, db: Session) -> Optional[list]:
+    """
+    Returns the list of client IDs this user may access,
+    or None if the user is an admin (unrestricted).
+    Admin users always have full access.
+    """
+    if user.role == "admin":
+        return None  # unrestricted
+
+    links = db.query(UserClient).filter(UserClient.user_id == user.id).all()
+    return [lnk.client_id for lnk in links]
+
+
 @router.get("")
-def list_accounts(db: Session = Depends(get_db)):
-    accounts = db.query(Account).join(Account.brokerage).order_by(Account.owner, Account.name).all()
+def list_accounts(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    q = db.query(Account).join(Account.brokerage)
+    client_ids = _get_accessible_client_ids(current_user, db)
+    if client_ids is not None:
+        q = q.filter(Account.client_id.in_(client_ids))
+    accounts = q.order_by(Account.owner, Account.name).all()
     return [account_to_dict(a) for a in accounts]
 
 
 @router.post("", status_code=201)
-def create_account(data: AccountCreate, db: Session = Depends(get_db)):
+def create_account(
+    data: AccountCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     account = Account(**data.model_dump())
     db.add(account)
     db.commit()
@@ -64,15 +96,29 @@ def create_account(data: AccountCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{account_id}")
-def get_account(account_id: int, db: Session = Depends(get_db)):
+def get_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
+    client_ids = _get_accessible_client_ids(current_user, db)
+    if client_ids is not None and account.client_id not in client_ids:
+        raise HTTPException(status_code=403, detail="Access denied")
     return account_to_dict(account)
 
 
 @router.put("/{account_id}")
-def update_account(account_id: int, data: AccountUpdate, db: Session = Depends(get_db)):
+def update_account(
+    account_id: int,
+    data: AccountUpdate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -92,9 +138,12 @@ def set_returns_start_date(
     account_id: int,
     data: ReturnsStartDateUpdate,
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Set (or clear) a custom returns start date for one physical account.
     The performance/returns endpoint uses this date instead of the auto-computed effective inception."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     account = db.get(Account, account_id)
     if not account:
         raise HTTPException(status_code=404, detail="Account not found")
@@ -105,7 +154,13 @@ def set_returns_start_date(
 
 
 @router.delete("/{account_id}")
-def delete_account(account_id: int, db: Session = Depends(get_db)):
+def delete_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     from app.models.transactions import Transaction
     account = db.get(Account, account_id)
     if not account:
@@ -122,8 +177,14 @@ def delete_account(account_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{account_id}/force")
-def force_delete_account(account_id: int, db: Session = Depends(get_db)):
+def force_delete_account(
+    account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
     """Delete account AND all its transactions."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
     from app.models.transactions import Transaction
     account = db.get(Account, account_id)
     if not account:

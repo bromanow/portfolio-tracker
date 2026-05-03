@@ -19,7 +19,7 @@ services:
       # Comma-separated list of frontend origins allowed to call the API.
       # Update this if you use a custom domain for the frontend.
       - key: ALLOWED_ORIGINS
-        value: https://portfolio-tracker-ui.onrender.com
+        value: https://portfolio-tracker-ui-crm4.onrender.com
       - key: PYTHON_VERSION
         value: "3.11"
 
@@ -38,7 +38,7 @@ services:
       # VITE_ vars are baked into the bundle at build time by Vite.
       # Points the React app at the backend service above.
       - key: VITE_API_BASE_URL
-        value: https://portfolio-tracker-api.onrender.com
+        value: https://portfolio-tracker-api-yf4a.onrender.com
 
 # ── PostgreSQL database ───────────────────────────────────────────────────────
 databases:

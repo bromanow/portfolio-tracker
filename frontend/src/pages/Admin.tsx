@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff } from 'lucide-react'
+import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import {
   getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount,
   getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities,
@@ -21,10 +21,11 @@ import {
 } from '../api/client'
 import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser } from '../api/client'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger'
+type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account'
 
 const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
   { id: 'system',           label: 'System',           adminOnly: true },
+  { id: 'my-account',       label: 'My Account' },
   { id: 'accounts',         label: 'Accounts' },
   { id: 'opening-balances', label: 'Opening Balances' },
   { id: 'securities',       label: 'Securities',       adminOnly: true },
@@ -2327,6 +2328,120 @@ function CurrencySplitTab() {
   )
 }
 
+// ─── My Account Tab ──────────────────────────────────────────────────────────
+function MyAccountTab() {
+  const { user } = useAuth()
+  const [pwCurrent, setPwCurrent] = useState('')
+  const [pwNew,     setPwNew]     = useState('')
+  const [pwConfirm, setPwConfirm] = useState('')
+  const [pwLoading, setPwLoading] = useState(false)
+  const [pwError,   setPwError]   = useState<string | null>(null)
+  const [pwSuccess, setPwSuccess] = useState(false)
+  const [showCurrent, setShowCurrent] = useState(false)
+  const [showNew,     setShowNew]     = useState(false)
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwError(null)
+    setPwSuccess(false)
+    if (pwNew.length < 8) { setPwError('New password must be at least 8 characters.'); return }
+    if (pwNew !== pwConfirm) { setPwError('New passwords do not match.'); return }
+    setPwLoading(true)
+    try {
+      await changePassword({ current_password: pwCurrent, new_password: pwNew })
+      setPwSuccess(true)
+      setPwCurrent(''); setPwNew(''); setPwConfirm('')
+    } catch (err: any) {
+      setPwError(err.response?.data?.detail ?? 'Password change failed.')
+    } finally {
+      setPwLoading(false)
+    }
+  }
+
+  return (
+    <div className="space-y-6 max-w-md">
+      {/* User info */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-2">
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">Account Info</h2>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Name</span>
+          <span className="font-medium text-gray-900">{user?.name}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Email</span>
+          <span className="font-medium text-gray-900">{user?.email}</span>
+        </div>
+        <div className="flex justify-between text-sm">
+          <span className="text-gray-500">Role</span>
+          <span className="font-medium text-gray-900 capitalize">{user?.role}</span>
+        </div>
+      </div>
+
+      {/* Change password */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-gray-700 mb-4">Change Password</h2>
+        <form onSubmit={handleChangePassword} className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Current Password</label>
+            <div className="relative">
+              <input
+                type={showCurrent ? 'text' : 'password'}
+                value={pwCurrent}
+                onChange={e => setPwCurrent(e.target.value)}
+                required
+                className="w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-blue-400"
+                placeholder="Enter current password"
+              />
+              <button type="button" onClick={() => setShowCurrent(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showCurrent ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">New Password</label>
+            <div className="relative">
+              <input
+                type={showNew ? 'text' : 'password'}
+                value={pwNew}
+                onChange={e => setPwNew(e.target.value)}
+                required
+                className="w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-blue-400"
+                placeholder="Min 8 characters"
+              />
+              <button type="button" onClick={() => setShowNew(v => !v)}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                {showNew ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+              </button>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Confirm New Password</label>
+            <input
+              type="password"
+              value={pwConfirm}
+              onChange={e => setPwConfirm(e.target.value)}
+              required
+              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              placeholder="Repeat new password"
+            />
+          </div>
+          {pwError   && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{pwError}</p>}
+          {pwSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded px-3 py-2">✓ Password changed successfully.</p>}
+          <button
+            type="submit"
+            disabled={pwLoading}
+            className="w-full py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+          >
+            {pwLoading ? 'Saving…' : 'Change Password'}
+          </button>
+        </form>
+      </div>
+    </div>
+  )
+}
+
+
 // ─── Users Tab ───────────────────────────────────────────────────────────────
 function UsersTab() {
   const qc = useQueryClient()
@@ -2588,7 +2703,7 @@ export default function Admin() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
   const tabs = ALL_TABS.filter(t => !t.adminOnly || isAdmin)
-  const [tab, setTab] = useState<TabId>(() => isAdmin ? 'system' : 'accounts')
+  const [tab, setTab] = useState<TabId>(() => isAdmin ? 'system' : 'my-account')
 
   return (
     <div className="space-y-6">
@@ -2610,6 +2725,7 @@ export default function Admin() {
       </div>
       <div>
         {tab === 'system' && isAdmin && <SystemTab />}
+        {tab === 'my-account' && <MyAccountTab />}
         {tab === 'accounts' && <AccountsTab />}
         {tab === 'opening-balances' && <OpeningBalancesTab />}
         {tab === 'currency-split' && isAdmin && <CurrencySplitTab />}

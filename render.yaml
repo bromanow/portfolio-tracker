@@ -23,22 +23,22 @@ services:
       - key: PYTHON_VERSION
         value: "3.11"
 
-  # ── Frontend (React / Vite static site) ──────────────────────────────────────
-  - type: static
+  # ── Frontend (React / Vite — served by Node via "serve") ────────────────────
+  # Render Blueprints don't support type:static; we use a lightweight Node web
+  # service instead. "npx serve -s dist" serves the built SPA and handles
+  # client-side routing via the -s (single-page app) flag.
+  - type: web
     name: portfolio-tracker-ui
+    runtime: node
     rootDir: frontend
     buildCommand: npm install && npm run build
-    staticPublishPath: ./dist
+    startCommand: npx serve -s dist -l $PORT
+    plan: free
     envVars:
+      # VITE_ vars are baked into the bundle at build time by Vite.
       # Points the React app at the backend service above.
-      # Must match the backend service name above (portfolio-tracker-api).
       - key: VITE_API_BASE_URL
         value: https://portfolio-tracker-api.onrender.com
-    routes:
-      # Rewrite all paths to index.html so React Router handles client-side navigation.
-      - type: rewrite
-        source: /*
-        destination: /index.html
 
 # ── PostgreSQL database ───────────────────────────────────────────────────────
 databases:

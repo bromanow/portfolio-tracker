@@ -2713,8 +2713,8 @@ function IBKRFlexTab() {
   const [syncStatus, setSyncStatus] = useState<Record<number, 'idle' | 'running' | 'done' | 'error'>>({})
   const [syncMsg, setSyncMsg] = useState<Record<number, string>>({})
 
-  // Only IBKR brokerage accounts
-  const ibkrAccounts = (accounts as Account[]).filter(a => a.brokerage_name?.toUpperCase() === 'IBKR')
+  // Only IBKR brokerage accounts (match by code, not display name)
+  const ibkrAccounts = (accounts as Account[]).filter(a => a.brokerage_code?.toUpperCase() === 'IBKR')
 
   const saveMut = useMutation({
     mutationFn: (data: { account_id: number; query_id: string; token: string; enabled: boolean }) =>

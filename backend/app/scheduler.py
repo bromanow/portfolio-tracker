@@ -20,11 +20,11 @@ _scheduler: Optional[AsyncIOScheduler] = None
 def _run_nightly_ibkr_sync():
     """Sync all enabled IBKR Flex configs. Runs in the scheduler thread."""
     from app.database import SessionLocal
-    from app.services.ibkr_flex import sync_all_accounts
+    from app.services.ibkr_flex import sync_all_configs
 
     db = SessionLocal()
     try:
-        results = sync_all_accounts(db)
+        results = sync_all_configs(db)
         total = sum(r.get("imported", 0) for r in results)
         errors = [r for r in results if r.get("error")]
         logger.info(

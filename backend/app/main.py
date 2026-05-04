@@ -108,6 +108,22 @@ def _run_migrations(eng):
     """Apply missing columns that create_all won't add to existing tables."""
     from sqlalchemy import inspect, text
     inspector = inspect(eng)
+
+    # ibkr_flex_configs was initially created with account_id FK; redesigned to
+    # user_id FK. Drop and recreate if the old schema is still present.
+    existing_tables = inspector.get_table_names()
+    if "ibkr_flex_configs" in existing_tables:
+        old_cols = [c["name"] for c in inspector.get_columns("ibkr_flex_configs")]
+        if "account_id" in old_cols:
+            with eng.connect() as conn:
+                conn.execute(text("DROP TABLE ibkr_flex_configs"))
+                conn.commit()
+            log.info("Migration: dropped old ibkr_flex_configs (account_id → user_id redesign)")
+            # create_all below will recreate it with the new schema
+            from app.database import Base
+            from app.models.ibkr import IBKRFlexConfig  # ensure registered
+            Base.metadata.tables["ibkr_flex_configs"].create(bind=eng)
+
     pending = [
         ("securities",    "fetch_ticker_override", "VARCHAR(50)"),
         ("securities",    "description",           "TEXT"),

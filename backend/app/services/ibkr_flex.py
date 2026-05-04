@@ -1,15 +1,16 @@
 """
 IBKR Flex Query service.
 
-Fetches activity reports from IBKR's cloud Flex Query API, parses the XML,
-and imports transactions into the portfolio tracker.
+One Flex Query per user covers all their IBKR accounts.
+Each FlexStatement in the XML has accountId (e.g. "U21463905") which is
+matched to accounts.account_number to route transactions to the right account.
 
 Flow:
-  1. POST SendRequest → get ReferenceCode
-  2. Poll GetStatement with ReferenceCode until data is ready
-  3. Parse XML → Trades + CashTransactions
-  4. Deduplicate via transactions.external_ref
-  5. Insert new transactions using the same normalizer as CSV imports
+  1. SendRequest  → ReferenceCode
+  2. Poll GetStatement until XML is ready
+  3. Parse XML → one FlexStatement per IBKR account
+  4. For each statement: look up Account by account_number = accountId
+  5. Import Trades + CashTransactions with deduplication via external_ref
 """
 from __future__ import annotations
 
@@ -35,10 +36,10 @@ FLEX_GET_URL = (
     "/Universal/servlet/FlexStatementService.GetStatement"
 )
 
-# ── Type mapping ──────────────────────────────────────────────────────────────
+# ── Transaction type mapping ──────────────────────────────────────────────────
 
-# Cash transaction type → our transaction_type
-# None means derive from amount sign
+# IBKR cash transaction type → our transaction_type
+# None = derive from amount sign
 CASH_TYPE_MAP: dict[str, Optional[str]] = {
     "Dividends":                        "DIVIDEND",
     "Payment In Lieu Of Dividends":     "DIVIDEND",
@@ -46,14 +47,13 @@ CASH_TYPE_MAP: dict[str, Optional[str]] = {
     "Interest":                         "INTEREST",
     "Broker Interest Paid":             "INTEREST",
     "Broker Interest Received":         "INTEREST",
-    "Deposits/Withdrawals":             None,       # sign determines type
+    "Deposits/Withdrawals":             None,   # sign → CONTRIBUTION / WITHDRAWAL
     "Electronic Fund Transfer":         None,
     "Other Fees":                       "FEE",
     "Commission Adjustments":           "FEE",
     "DRIP (Dividend Reinvestment)":     "DRIP",
 }
 
-# Cash types to silently skip
 SKIP_CASH_TYPES = {
     "Transfers",
     "Internal Transfers",
@@ -75,7 +75,7 @@ def _d(v: Optional[str]) -> Optional[Decimal]:
 
 
 def _parse_ibkr_date(s: str) -> Optional[date]:
-    """Parse IBKR date YYYYMMDD (ignores time portion after ;)."""
+    """Parse YYYYMMDD (ignores time portion after semicolon)."""
     if not s:
         return None
     try:
@@ -88,18 +88,27 @@ def _ext_ref_trade(trade_id: str) -> str:
     return f"ibkr-trade-{trade_id}"
 
 
-def _ext_ref_cash(account_id: str, dt: str, txn_type: str, symbol: str, amount: str) -> str:
-    key = f"{account_id}|{dt[:8]}|{txn_type}|{symbol}|{amount}"
+def _ext_ref_cash(ibkr_account_id: str, dt: str, txn_type: str, symbol: str, amount: str) -> str:
+    key = f"{ibkr_account_id}|{dt[:8]}|{txn_type}|{symbol}|{amount}"
     h = hashlib.sha1(key.encode()).hexdigest()[:12]
     return f"ibkr-cash-{h}"
+
+
+def _already_imported(db: Session, external_ref: str) -> bool:
+    from sqlalchemy import text
+    row = db.execute(
+        text("SELECT id FROM transactions WHERE external_ref = :ref LIMIT 1"),
+        {"ref": external_ref},
+    ).fetchone()
+    return row is not None
 
 
 # ── Flex Query API ────────────────────────────────────────────────────────────
 
 def fetch_flex_report(token: str, query_id: str) -> str:
     """
-    Call the IBKR Flex Query API synchronously (for use in background threads).
-    Returns the raw XML string of the report.
+    Call the IBKR Flex Query API (synchronous, for background threads).
+    Returns raw XML string.
     """
     with httpx.Client(timeout=30, follow_redirects=True) as client:
         # Step 1 — submit request
@@ -123,22 +132,21 @@ def fetch_flex_report(token: str, query_id: str) -> str:
 
         logger.info("Flex Query submitted, reference=%s", ref_code)
 
-        # Step 2 — poll until ready (max ~50 s)
+        # Step 2 — poll until ready (up to ~50 s)
         for attempt in range(10):
             time.sleep(3 if attempt == 0 else 5)
             resp2 = client.get(url, params={"q": ref_code, "t": token, "v": "3"})
             resp2.raise_for_status()
 
-            # Still generating?
             if (
                 "Statement generation" in resp2.text
                 or "<Status>Warn" in resp2.text
-                or "<ErrorCode>1019</ErrorCode>" in resp2.text  # "Try again"
+                or "<ErrorCode>1019</ErrorCode>" in resp2.text
             ):
                 logger.debug("Flex Query still generating (attempt %d)", attempt + 1)
                 continue
 
-            logger.info("Flex Query ready after %d polls", attempt + 1)
+            logger.info("Flex Query ready after %d poll(s)", attempt + 1)
             return resp2.text
 
         raise RuntimeError("Flex Query timed out after 10 polling attempts (~50 s)")
@@ -146,97 +154,79 @@ def fetch_flex_report(token: str, query_id: str) -> str:
 
 # ── XML parsing ───────────────────────────────────────────────────────────────
 
-def parse_flex_xml(xml_str: str) -> dict:
+def parse_flex_xml(xml_str: str) -> list[dict]:
     """
     Parse a Flex Query XML response.
-    Returns {'trades': [...], 'cash': [...], 'positions': [...], 'ibkr_account_id': str}
+    Returns a list of per-account dicts:
+      { ibkr_account_id, trades: [...], cash: [...] }
+    One entry per FlexStatement (= one per IBKR account in the query).
     """
     root = ET.fromstring(xml_str)
+    statements = root.findall(".//FlexStatement")
+    if not statements:
+        raise RuntimeError("No FlexStatement elements found in XML")
 
-    # FlexQueryResponse > FlexStatements > FlexStatement
-    stmt = root.find(".//FlexStatement")
-    if stmt is None:
-        raise RuntimeError("No FlexStatement element found in XML")
+    results = []
+    for stmt in statements:
+        ibkr_account_id = stmt.get("accountId", "")
 
-    ibkr_account_id = stmt.get("accountId", "")
+        trades = []
+        for el in stmt.findall(".//Trade"):
+            buy_sell = el.get("buySell", "")
+            if "Ca." in buy_sell:   # cancelled trade
+                continue
+            trade_id = el.get("tradeID", "")
+            if not trade_id:
+                continue
+            trades.append({
+                "trade_id":       trade_id,
+                "buy_sell":       buy_sell.strip(),
+                "asset_category": el.get("assetCategory", "STK"),
+                "symbol":         el.get("symbol", ""),
+                "description":    el.get("description", ""),
+                "trade_date":     el.get("tradeDate", ""),
+                "settle_date":    el.get("settleDateTarget", ""),
+                "quantity":       el.get("quantity", ""),
+                "price":          el.get("tradePrice", ""),
+                "trade_money":    el.get("tradeMoney", ""),
+                "commission":     el.get("ibCommission", ""),
+                "comm_currency":  el.get("ibCommissionCurrency", ""),
+                "currency":       el.get("currency", ""),
+                "exchange":       el.get("exchange", ""),
+            })
 
-    trades = []
-    for el in stmt.findall(".//Trade"):
-        # Skip cancelled trades
-        buy_sell = el.get("buySell", "")
-        if "Ca." in buy_sell:
-            continue
-        asset_cat = el.get("assetCategory", "STK")
-        trade_id = el.get("tradeID", "")
-        if not trade_id:
-            continue
+        cash = []
+        for el in stmt.findall(".//CashTransaction"):
+            txn_type = el.get("type", "")
+            if txn_type in SKIP_CASH_TYPES:
+                continue
+            cash.append({
+                "type":     txn_type,
+                "symbol":   el.get("symbol", ""),
+                "amount":   el.get("amount", ""),
+                "currency": el.get("currency", ""),
+                "date":     el.get("dateTime", el.get("date", "")),
+                "desc":     el.get("description", ""),
+            })
 
-        trades.append({
-            "trade_id":      trade_id,
-            "buy_sell":      buy_sell.strip(),       # BUY | SELL
-            "asset_category": asset_cat,              # STK | OPT | CASH | FUT
-            "symbol":        el.get("symbol", ""),
-            "description":   el.get("description", ""),
-            "trade_date":    el.get("tradeDate", ""),
-            "settle_date":   el.get("settleDateTarget", ""),
-            "quantity":      el.get("quantity", ""),
-            "price":         el.get("tradePrice", ""),
-            "trade_money":   el.get("tradeMoney", ""),   # qty × price (no commission)
-            "commission":    el.get("ibCommission", ""),
-            "comm_currency": el.get("ibCommissionCurrency", ""),
-            "currency":      el.get("currency", ""),
-            "exchange":      el.get("exchange", ""),
+        results.append({
+            "ibkr_account_id": ibkr_account_id,
+            "trades":          trades,
+            "cash":            cash,
         })
 
-    cash = []
-    for el in stmt.findall(".//CashTransaction"):
-        txn_type = el.get("type", "")
-        if txn_type in SKIP_CASH_TYPES:
-            continue
-        cash.append({
-            "type":     txn_type,
-            "symbol":   el.get("symbol", ""),
-            "amount":   el.get("amount", ""),
-            "currency": el.get("currency", ""),
-            "date":     el.get("dateTime", el.get("date", "")),
-            "desc":     el.get("description", ""),
-        })
-
-    positions = []
-    for el in stmt.findall(".//OpenPosition"):
-        positions.append({
-            "symbol":        el.get("symbol", ""),
-            "quantity":      el.get("position", ""),
-            "currency":      el.get("currency", ""),
-            "mark_price":    el.get("markPrice", ""),
-            "cost_price":    el.get("costBasisPrice", ""),
-            "position_value": el.get("positionValue", ""),
-        })
-
-    return {
-        "ibkr_account_id": ibkr_account_id,
-        "trades":    trades,
-        "cash":      cash,
-        "positions": positions,
-    }
+    return results
 
 
-# ── Import ────────────────────────────────────────────────────────────────────
+# ── Import helpers ────────────────────────────────────────────────────────────
 
-def _already_imported(db: Session, external_ref: str) -> bool:
-    from sqlalchemy import text
-    row = db.execute(
-        text("SELECT id FROM transactions WHERE external_ref = :ref LIMIT 1"),
-        {"ref": external_ref},
-    ).fetchone()
-    return row is not None
+def _find_account_by_number(db: Session, account_number: str):
+    """Look up an Account by its account_number (the IBKR U-number)."""
+    from app.models.master import Account
+    return db.query(Account).filter(Account.account_number == account_number).first()
 
 
 def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
-    """
-    Import trade rows into the transactions table.
-    Returns count of newly inserted transactions.
-    """
     from app.models.transactions import Transaction
     from app.services.normalizer import get_or_create_security
     from app.services.fx_service import get_rate
@@ -249,46 +239,33 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
 
         trade_date = _parse_ibkr_date(t["trade_date"])
         if not trade_date:
-            logger.warning("Skipping trade %s — unparseable date %s", t["trade_id"], t["trade_date"])
+            logger.warning("Skipping trade %s — bad date %s", t["trade_id"], t["trade_date"])
             continue
 
         buy_sell = t["buy_sell"]
         if buy_sell not in ("BUY", "SELL"):
-            logger.debug("Skipping trade %s — unexpected buySell=%s", t["trade_id"], buy_sell)
+            logger.debug("Skipping trade %s — unrecognised buySell=%s", t["trade_id"], buy_sell)
             continue
 
         ticker = t["symbol"].upper().strip()
         if not ticker:
             continue
 
-        # Look up / create security
-        sec = get_or_create_security(
-            db,
-            ticker=ticker,
-            currency=t["currency"],
-            exchange=t["exchange"] or None,
-        )
+        sec = get_or_create_security(db, ticker=ticker, currency=t["currency"],
+                                     exchange=t["exchange"] or None)
 
-        currency = t["currency"] or "USD"
-        qty  = _d(t["quantity"])
-        price = _d(t["price"])
-        comm  = _d(t["commission"])  # negative in IBKR
+        currency    = t["currency"] or "USD"
+        qty         = _d(t["quantity"])
+        price       = _d(t["price"])
+        commission  = _d(t["commission"])
         trade_money = _d(t["trade_money"])
 
-        # IBKR quantity is signed (negative for SELL); we store absolute, type captures direction
         if qty is not None:
             qty = abs(qty)
+        if commission is not None:
+            commission = abs(commission)   # IBKR reports negative; store positive
+        txn_amount = abs(trade_money) if trade_money is not None else None
 
-        # Commission is negative in IBKR; store as positive absolute
-        if comm is not None:
-            comm = abs(comm)
-
-        # transaction_amount = gross proceeds/cost (no commission)
-        txn_amount = trade_money
-        if txn_amount is not None:
-            txn_amount = abs(txn_amount)
-
-        # FX to CAD
         fx_to_cad = None
         cad_amount = None
         if currency != "CAD":
@@ -296,7 +273,7 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
         if fx_to_cad and txn_amount:
             cad_amount = (txn_amount * fx_to_cad).quantize(Decimal("0.01"))
 
-        txn = Transaction(
+        db.add(Transaction(
             account_id=account_id,
             security_id=sec.id,
             transaction_date=trade_date,
@@ -304,15 +281,14 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
             transaction_type=buy_sell,
             quantity=qty,
             price=price,
-            commission=comm,
+            commission=commission,
             transaction_currency=currency,
             transaction_amount=txn_amount,
             fx_rate_to_cad=fx_to_cad,
             cad_amount=cad_amount,
-            raw_description=t["description"][:500] if t["description"] else None,
+            raw_description=(t["description"] or "")[:500] or None,
             external_ref=ext_ref,
-        )
-        db.add(txn)
+        ))
         imported += 1
 
     if imported:
@@ -321,10 +297,6 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
 
 
 def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_account_id: str) -> int:
-    """
-    Import cash transaction rows.
-    Returns count of newly inserted transactions.
-    """
     from app.models.transactions import Transaction
     from app.services.normalizer import get_or_create_security
     from app.services.fx_service import get_rate
@@ -332,28 +304,26 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
     imported = 0
     for row in cash_rows:
         txn_type_raw = row["type"]
-        ext_ref = _ext_ref_cash(ibkr_account_id, row["date"], txn_type_raw, row["symbol"], row["amount"])
+        if txn_type_raw in SKIP_CASH_TYPES:
+            continue
+
+        ext_ref = _ext_ref_cash(ibkr_account_id, row["date"], txn_type_raw,
+                                 row["symbol"], row["amount"])
         if _already_imported(db, ext_ref):
             continue
 
         txn_date = _parse_ibkr_date(row["date"])
         if not txn_date:
-            logger.warning("Skipping cash txn — unparseable date %s", row["date"])
             continue
 
         amount = _d(row["amount"])
         if amount is None:
             continue
 
-        # Map type
-        if txn_type_raw in SKIP_CASH_TYPES:
-            continue
-
         our_type = CASH_TYPE_MAP.get(txn_type_raw)
         if our_type is None:
-            # Deposits/Withdrawals — derive from sign
             if txn_type_raw in ("Deposits/Withdrawals", "Electronic Fund Transfer"):
-                our_type = "CONTRIBUTION" if amount > 0 else "WITHDRAWAL"
+                our_type = "CONTRIBUTION" if amount >= 0 else "WITHDRAWAL"
             else:
                 logger.debug("Unrecognised cash type %r — skipping", txn_type_raw)
                 continue
@@ -361,7 +331,6 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
         currency = row["currency"] or "CAD"
         ticker   = row["symbol"].strip().upper() if row["symbol"] else None
 
-        # Look up security if ticker present (dividends, interest on a holding)
         sec_id = None
         if ticker:
             try:
@@ -370,33 +339,27 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
             except Exception:
                 pass
 
-        # FX to CAD
         abs_amount = abs(amount)
         fx_to_cad  = None
         cad_amount = None
         if currency != "CAD":
             fx_to_cad = get_rate(db, txn_date, currency, "CAD")
-        if fx_to_cad:
-            cad_amount = (abs_amount * fx_to_cad).quantize(Decimal("0.01"))
-        else:
-            cad_amount = abs_amount if currency == "CAD" else None
+        cad_amount = (abs_amount * fx_to_cad).quantize(Decimal("0.01")) if fx_to_cad else (
+            abs_amount if currency == "CAD" else None
+        )
 
-        txn = Transaction(
+        db.add(Transaction(
             account_id=account_id,
             security_id=sec_id,
             transaction_date=txn_date,
             transaction_type=our_type,
-            quantity=None,
-            price=None,
-            commission=None,
             transaction_currency=currency,
             transaction_amount=abs_amount,
             fx_rate_to_cad=fx_to_cad,
             cad_amount=cad_amount,
-            raw_description=row["desc"][:500] if row["desc"] else None,
+            raw_description=(row["desc"] or "")[:500] or None,
             external_ref=ext_ref,
-        )
-        db.add(txn)
+        ))
         imported += 1
 
     if imported:
@@ -406,57 +369,66 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
 
 # ── High-level sync ───────────────────────────────────────────────────────────
 
-def sync_account(db: Session, config) -> dict:
+def sync_config(db: Session, config) -> dict:
     """
-    Sync one IBKR account using its Flex Query config.
-    Updates config.last_sync_* fields.
-    Returns {'imported': int, 'error': str|None}.
+    Sync one user's Flex Query config.
+    Fetches XML, finds each IBKR account by account_number, imports transactions.
+    Updates config.last_sync_* and returns a summary dict.
     """
-    from app.models.ibkr import IBKRFlexConfig
-    from datetime import date as _date
-
-    config.last_sync_status = "running"
+    config.last_sync_status  = "running"
     config.last_sync_message = None
     db.commit()
 
     try:
-        xml_str = fetch_flex_report(config.token, config.query_id)
-        parsed  = parse_flex_xml(xml_str)
+        xml_str   = fetch_flex_report(config.token, config.query_id)
+        statements = parse_flex_xml(xml_str)
 
-        trades_imported = import_trades(db, config.account_id, parsed["trades"])
-        cash_imported   = import_cash(db, config.account_id, parsed["cash"], parsed["ibkr_account_id"])
-        total = trades_imported + cash_imported
+        total_trades = 0
+        total_cash   = 0
+        unmatched    = []
+
+        for stmt in statements:
+            ibkr_id = stmt["ibkr_account_id"]
+            account = _find_account_by_number(db, ibkr_id)
+
+            if account is None:
+                logger.warning("No account with account_number=%r — skipping", ibkr_id)
+                unmatched.append(ibkr_id)
+                continue
+
+            t = import_trades(db, account.id, stmt["trades"])
+            c = import_cash(db, account.id, stmt["cash"], ibkr_id)
+            logger.info("  %s (%s): %d trades + %d cash", ibkr_id, account.name, t, c)
+            total_trades += t
+            total_cash   += c
+
+        total = total_trades + total_cash
+        parts = [f"{total_trades} trade(s)", f"{total_cash} cash transaction(s)"]
+        msg   = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
+        if unmatched:
+            msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"
 
         config.last_sync_at       = datetime.utcnow()
         config.last_sync_status   = "ok"
         config.last_sync_imported = total
-        config.last_sync_message  = (
-            f"{trades_imported} trade(s), {cash_imported} cash transaction(s) imported"
-        )
+        config.last_sync_message  = msg
         db.commit()
 
-        logger.info(
-            "Flex sync account_id=%s: %d trades + %d cash = %d new",
-            config.account_id, trades_imported, cash_imported, total,
-        )
-        return {"imported": total, "error": None}
+        logger.info("Flex sync user_id=%s: %s", config.user_id, msg)
+        return {"imported": total, "error": None, "message": msg}
 
     except Exception as exc:
         msg = str(exc) or type(exc).__name__
-        logger.exception("Flex sync failed for account_id=%s", config.account_id)
-        config.last_sync_at     = datetime.utcnow()
-        config.last_sync_status = "error"
+        logger.exception("Flex sync failed for user_id=%s", config.user_id)
+        config.last_sync_at      = datetime.utcnow()
+        config.last_sync_status  = "error"
         config.last_sync_message = msg[:1000]
         db.commit()
         return {"imported": 0, "error": msg}
 
 
-def sync_all_accounts(db: Session) -> list[dict]:
-    """Sync all enabled IBKR flex configs. Used by nightly scheduler."""
+def sync_all_configs(db: Session) -> list[dict]:
+    """Sync all enabled configs. Called by nightly scheduler."""
     from app.models.ibkr import IBKRFlexConfig
     configs = db.query(IBKRFlexConfig).filter(IBKRFlexConfig.enabled == True).all()  # noqa: E712
-    results = []
-    for cfg in configs:
-        result = sync_account(db, cfg)
-        results.append({"account_id": cfg.account_id, **result})
-    return results
+    return [{"user_id": cfg.user_id, **sync_config(db, cfg)} for cfg in configs]

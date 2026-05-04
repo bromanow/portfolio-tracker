@@ -1039,8 +1039,9 @@ export const refreshPricesIBKR = () =>
 // ─── IBKR Flex Query ──────────────────────────────────────────────────────────
 export interface IBKRFlexConfig {
   id: number
-  account_id: number
-  account_name: string | null
+  user_id: number
+  user_name?: string
+  user_email?: string
   query_id: string
   token_hint: string
   enabled: boolean
@@ -1051,26 +1052,25 @@ export interface IBKRFlexConfig {
 }
 
 export interface FlexConfigIn {
-  account_id: number
   query_id: string
   token: string
   enabled?: boolean
 }
 
-export const getFlexConfigs = () =>
+export const getMyFlexConfig = () =>
+  api.get<IBKRFlexConfig | null>('/ibkr/flex/my-config').then(r => r.data)
+
+export const saveMyFlexConfig = (data: FlexConfigIn) =>
+  api.post<IBKRFlexConfig>('/ibkr/flex/my-config', data).then(r => r.data)
+
+export const deleteMyFlexConfig = () =>
+  api.delete('/ibkr/flex/my-config')
+
+export const syncMyFlexAccounts = () =>
+  api.post<{ job_id: string; status: string }>('/ibkr/flex/sync').then(r => r.data)
+
+export const getAllFlexConfigs = () =>
   api.get<IBKRFlexConfig[]>('/ibkr/flex/configs').then(r => r.data)
-
-export const createFlexConfig = (data: FlexConfigIn) =>
-  api.post<IBKRFlexConfig>('/ibkr/flex/configs', data).then(r => r.data)
-
-export const updateFlexConfig = (id: number, data: Partial<FlexConfigIn>) =>
-  api.put<IBKRFlexConfig>(`/ibkr/flex/configs/${id}`, data).then(r => r.data)
-
-export const deleteFlexConfig = (id: number) =>
-  api.delete(`/ibkr/flex/configs/${id}`)
-
-export const syncFlexAccount = (accountId: number) =>
-  api.post<{ job_id: string; status: string }>(`/ibkr/flex/sync/${accountId}`).then(r => r.data)
 
 export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)

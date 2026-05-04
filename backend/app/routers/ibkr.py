@@ -1,12 +1,15 @@
 """
 IBKR Flex Query endpoints.
 
-GET    /api/ibkr/flex/configs                  — list all Flex configs (admin)
-POST   /api/ibkr/flex/configs                  — create / upsert config (admin)
-PUT    /api/ibkr/flex/configs/{id}             — update config (admin)
-DELETE /api/ibkr/flex/configs/{id}             — remove config (admin)
-POST   /api/ibkr/flex/sync/{account_id}        — manual sync for one account (admin)
-POST   /api/ibkr/flex/sync-all                 — sync all enabled accounts (admin)
+Any authenticated user:
+  GET    /api/ibkr/flex/my-config          — get own config
+  POST   /api/ibkr/flex/my-config          — create / update own config
+  DELETE /api/ibkr/flex/my-config          — remove own config
+  POST   /api/ibkr/flex/sync               — sync own accounts now
+
+Admin only:
+  GET    /api/ibkr/flex/configs            — list all users' configs
+  POST   /api/ibkr/flex/sync-all           — sync every enabled config
 """
 from __future__ import annotations
 
@@ -37,136 +40,60 @@ def _require_admin(current_user: User = Depends(get_current_user)) -> User:
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
 class FlexConfigIn(BaseModel):
-    account_id: int
-    query_id:   str
-    token:      str
-    enabled:    bool = True
+    query_id: str
+    token:    str
+    enabled:  bool = True
 
 
-class FlexConfigUpdate(BaseModel):
+class FlexConfigPatch(BaseModel):
     query_id: Optional[str] = None
     token:    Optional[str] = None
     enabled:  Optional[bool] = None
 
 
-def _config_dict(cfg: IBKRFlexConfig) -> dict:
-    return {
-        "id":                cfg.id,
-        "account_id":        cfg.account_id,
-        "account_name":      cfg.account.name if cfg.account else None,
-        "query_id":          cfg.query_id,
-        # Never expose the full token — show last 6 chars only
-        "token_hint":        f"…{cfg.token[-6:]}",
-        "enabled":           cfg.enabled,
-        "last_sync_at":      cfg.last_sync_at.isoformat() if cfg.last_sync_at else None,
-        "last_sync_status":  cfg.last_sync_status,
-        "last_sync_message": cfg.last_sync_message,
+def _config_dict(cfg: IBKRFlexConfig, include_user: bool = False) -> dict:
+    d = {
+        "id":                 cfg.id,
+        "user_id":            cfg.user_id,
+        "query_id":           cfg.query_id,
+        "token_hint":         f"…{cfg.token[-6:]}",
+        "enabled":            cfg.enabled,
+        "last_sync_at":       cfg.last_sync_at.isoformat() if cfg.last_sync_at else None,
+        "last_sync_status":   cfg.last_sync_status,
+        "last_sync_message":  cfg.last_sync_message,
         "last_sync_imported": cfg.last_sync_imported,
     }
+    if include_user and cfg.user:
+        d["user_name"]  = cfg.user.name
+        d["user_email"] = cfg.user.email
+    return d
 
 
-# ── Config CRUD ───────────────────────────────────────────────────────────────
+# ── Reuse background job store ─────────────────────────────────────────────────
 
-@router.get("/flex/configs")
-def list_configs(
-    db: Session = Depends(get_db),
-    _: User = Depends(_require_admin),
-):
-    configs = db.query(IBKRFlexConfig).all()
-    return [_config_dict(c) for c in configs]
-
-
-@router.post("/flex/configs", status_code=201)
-def create_config(
-    body: FlexConfigIn,
-    db: Session = Depends(get_db),
-    _: User = Depends(_require_admin),
-):
-    # Upsert by account_id
-    existing = db.query(IBKRFlexConfig).filter_by(account_id=body.account_id).first()
-    if existing:
-        existing.query_id = body.query_id
-        existing.token    = body.token
-        existing.enabled  = body.enabled
-        db.commit()
-        return _config_dict(existing)
-
-    cfg = IBKRFlexConfig(
-        account_id=body.account_id,
-        query_id=body.query_id,
-        token=body.token,
-        enabled=body.enabled,
-    )
-    db.add(cfg)
-    db.commit()
-    db.refresh(cfg)
-    return _config_dict(cfg)
-
-
-@router.put("/flex/configs/{config_id}")
-def update_config(
-    config_id: int,
-    body: FlexConfigUpdate,
-    db: Session = Depends(get_db),
-    _: User = Depends(_require_admin),
-):
-    cfg = db.get(IBKRFlexConfig, config_id)
-    if not cfg:
-        raise HTTPException(404, "Config not found")
-    if body.query_id is not None:
-        cfg.query_id = body.query_id
-    if body.token is not None:
-        cfg.token = body.token
-    if body.enabled is not None:
-        cfg.enabled = body.enabled
-    db.commit()
-    return _config_dict(cfg)
-
-
-@router.delete("/flex/configs/{config_id}", status_code=204)
-def delete_config(
-    config_id: int,
-    db: Session = Depends(get_db),
-    _: User = Depends(_require_admin),
-):
-    cfg = db.get(IBKRFlexConfig, config_id)
-    if not cfg:
-        raise HTTPException(404, "Config not found")
-    db.delete(cfg)
-    db.commit()
-
-
-# ── Sync ──────────────────────────────────────────────────────────────────────
-
-# Reuse the background_jobs store from the prices router
 from app.routers.prices import background_jobs  # noqa: E402
 
 
-def _spawn_sync(job_name: str, account_ids: list[int]) -> dict:
-    """Spawn a background sync job and return job metadata."""
+def _spawn_sync(job_name: str, user_ids: list[int]) -> dict:
     if background_jobs.is_running(job_name):
         running = [j for j in background_jobs.list_jobs()
                    if j["name"] == job_name and j["status"] == "running"]
-        return {
-            "job_id": running[0]["id"] if running else None,
-            "status": "already_running",
-            "already_running": True,
-        }
+        return {"job_id": running[0]["id"] if running else None,
+                "status": "already_running", "already_running": True}
 
     job_id = background_jobs.start_job(job_name)
 
     def _worker():
         from app.database import SessionLocal
-        from app.services.ibkr_flex import sync_account
+        from app.services.ibkr_flex import sync_config
         db = SessionLocal()
         try:
             results = []
-            for acct_id in account_ids:
-                cfg = db.query(IBKRFlexConfig).filter_by(account_id=acct_id).first()
+            for uid in user_ids:
+                cfg = db.query(IBKRFlexConfig).filter_by(user_id=uid).first()
                 if not cfg:
                     continue
-                res = sync_account(db, cfg)
-                results.append({"account_id": acct_id, **res})
+                results.append({"user_id": uid, **sync_config(db, cfg)})
             background_jobs.finish_job(job_id, {"results": results})
         except Exception as exc:
             logger.exception("IBKR Flex sync job %s failed", job_id)
@@ -178,20 +105,78 @@ def _spawn_sync(job_name: str, account_ids: list[int]) -> dict:
     return {"job_id": job_id, "status": "started", "already_running": False}
 
 
-@router.post("/flex/sync/{account_id}")
-def sync_one(
-    account_id: int,
+# ── Any user — own config ─────────────────────────────────────────────────────
+
+@router.get("/flex/my-config")
+def get_my_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
+    if not cfg:
+        return None
+    return _config_dict(cfg)
+
+
+@router.post("/flex/my-config", status_code=201)
+def save_my_config(
+    body: FlexConfigIn,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Create or replace the current user's Flex config."""
+    cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
+    if cfg:
+        cfg.query_id = body.query_id
+        cfg.token    = body.token
+        cfg.enabled  = body.enabled
+    else:
+        cfg = IBKRFlexConfig(
+            user_id=current_user.id,
+            query_id=body.query_id,
+            token=body.token,
+            enabled=body.enabled,
+        )
+        db.add(cfg)
+    db.commit()
+    db.refresh(cfg)
+    return _config_dict(cfg)
+
+
+@router.delete("/flex/my-config", status_code=204)
+def delete_my_config(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
+    if cfg:
+        db.delete(cfg)
+        db.commit()
+
+
+@router.post("/flex/sync")
+def sync_my_accounts(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Trigger a manual Flex sync for the current user's accounts."""
+    cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
+    if not cfg:
+        raise HTTPException(404, "No Flex Query config found. Add one in Admin → IBKR Flex first.")
+    if not cfg.enabled:
+        raise HTTPException(400, "Flex config is disabled.")
+    return _spawn_sync(f"ibkr-flex-sync-{current_user.id}", [current_user.id])
+
+
+# ── Admin — all configs ───────────────────────────────────────────────────────
+
+@router.get("/flex/configs")
+def list_all_configs(
     db: Session = Depends(get_db),
     _: User = Depends(_require_admin),
 ):
-    """
-    Trigger a manual Flex Query sync for a single IBKR account.
-    Returns immediately; poll GET /api/prices/jobs/{job_id} for status.
-    """
-    cfg = db.query(IBKRFlexConfig).filter_by(account_id=account_id).first()
-    if not cfg:
-        raise HTTPException(404, "No Flex Query config found for this account")
-    return _spawn_sync(f"ibkr-flex-sync-{account_id}", [account_id])
+    configs = db.query(IBKRFlexConfig).all()
+    return [_config_dict(c, include_user=True) for c in configs]
 
 
 @router.post("/flex/sync-all")
@@ -199,9 +184,8 @@ def sync_all(
     db: Session = Depends(get_db),
     _: User = Depends(_require_admin),
 ):
-    """Sync all enabled IBKR accounts at once."""
+    """Sync all enabled configs (admin)."""
     configs = db.query(IBKRFlexConfig).filter_by(enabled=True).all()
     if not configs:
-        return {"message": "No enabled IBKR Flex configs found", "started": False}
-    ids = [c.account_id for c in configs]
-    return _spawn_sync("ibkr-flex-sync-all", ids)
+        return {"message": "No enabled Flex configs", "started": False}
+    return _spawn_sync("ibkr-flex-sync-all", [c.user_id for c in configs])

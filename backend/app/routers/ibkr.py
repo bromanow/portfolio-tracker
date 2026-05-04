@@ -86,18 +86,32 @@ def _spawn_sync(job_name: str, user_ids: list[int]) -> dict:
     def _worker():
         from app.database import SessionLocal
         from app.services.ibkr_flex import sync_config
+        from datetime import datetime as _dt
         db = SessionLocal()
         try:
             results = []
             for uid in user_ids:
                 cfg = db.query(IBKRFlexConfig).filter_by(user_id=uid).first()
                 if not cfg:
+                    logger.warning("IBKR Flex sync: no config found for user_id=%s", uid)
                     continue
                 results.append({"user_id": uid, **sync_config(db, cfg)})
             background_jobs.finish_job(job_id, {"results": results})
         except Exception as exc:
+            msg = str(exc) or type(exc).__name__
             logger.exception("IBKR Flex sync job %s failed", job_id)
-            background_jobs.fail_job(job_id, str(exc) or type(exc).__name__)
+            background_jobs.fail_job(job_id, msg)
+            # Best-effort: mark all configs as errored so the UI shows something
+            try:
+                for uid in user_ids:
+                    cfg = db.query(IBKRFlexConfig).filter_by(user_id=uid).first()
+                    if cfg and cfg.last_sync_status in (None, "running"):
+                        cfg.last_sync_at      = _dt.utcnow()
+                        cfg.last_sync_status  = "error"
+                        cfg.last_sync_message = msg[:500]
+                db.commit()
+            except Exception:
+                pass
         finally:
             db.close()
 

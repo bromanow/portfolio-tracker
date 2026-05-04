@@ -2708,16 +2708,41 @@ function IBKRFlexTab() {
   const isAdmin = user?.role === 'admin'
   const qc = useQueryClient()
 
-  // My config (every user)
+  const SYNC_TS_KEY = 'ibkr_sync_started'
+
+  // My config — auto-polls every 3 s while running or shortly after sync triggered
   const { data: myConfig, isLoading: myLoading } = useQuery({
     queryKey: ['ibkr-flex-my-config'],
     queryFn: getMyFlexConfig,
+    refetchInterval: (query) => {
+      const data = query.state.data as IBKRFlexConfig | null | undefined
+      // Keep polling if DB says running
+      if (data?.last_sync_status === 'running') return 3000
+      // Also keep polling for up to 5 min after a sync was triggered
+      // (handles navigation away and back)
+      const ts = localStorage.getItem(SYNC_TS_KEY)
+      if (ts && Date.now() - Number(ts) < 5 * 60 * 1000) return 3000
+      return false
+    },
+    refetchIntervalInBackground: true,
   })
+
+  // Clear the "waiting" flag once the DB reflects a terminal status
+  const prevStatus = myConfig?.last_sync_status
+  if (prevStatus === 'ok' || prevStatus === 'error') {
+    localStorage.removeItem(SYNC_TS_KEY)
+  }
+
   const [form, setForm] = useState({ query_id: '', token: '', enabled: true })
   const [editing, setEditing] = useState(false)
   const [showToken, setShowToken] = useState(false)
-  const [syncing, setSyncing] = useState(false)
-  const [syncMsg, setSyncMsg] = useState<{ text: string; ok: boolean } | null>(null)
+
+  // Derive syncing from DB status + localStorage timestamp (survives navigation)
+  const syncPending = (() => {
+    if (myConfig?.last_sync_status === 'running') return true
+    const ts = localStorage.getItem(SYNC_TS_KEY)
+    return !!ts && Date.now() - Number(ts) < 5 * 60 * 1000
+  })()
 
   // Populate form when editing
   const startEdit = () => {
@@ -2738,35 +2763,20 @@ function IBKRFlexTab() {
   const deleteMut = useMutation({
     mutationFn: deleteMyFlexConfig,
     onSuccess: () => {
+      localStorage.removeItem(SYNC_TS_KEY)
       qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
       if (isAdmin) qc.invalidateQueries({ queryKey: ['ibkr-flex-configs'] })
     },
   })
 
   const handleSync = async () => {
-    setSyncing(true)
-    setSyncMsg(null)
     try {
+      localStorage.setItem(SYNC_TS_KEY, String(Date.now()))
       await syncMyFlexAccounts()
-      // Poll until status updates
-      let done = false
-      for (let i = 0; i < 30 && !done; i++) {
-        await new Promise(r => setTimeout(r, 2000))
-        await qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
-        const fresh = qc.getQueryData(['ibkr-flex-my-config']) as IBKRFlexConfig | null | undefined
-        if (fresh?.last_sync_status === 'ok') {
-          setSyncMsg({ text: fresh.last_sync_message ?? 'Done', ok: true })
-          done = true
-        } else if (fresh?.last_sync_status === 'error') {
-          setSyncMsg({ text: fresh.last_sync_message ?? 'Error', ok: false })
-          done = true
-        }
-      }
-      if (!done) setSyncMsg({ text: 'Running in background — check back shortly', ok: true })
+      qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
     } catch (e: unknown) {
-      setSyncMsg({ text: (e as Error).message ?? 'Sync failed', ok: false })
-    } finally {
-      setSyncing(false)
+      localStorage.removeItem(SYNC_TS_KEY)
+      alert((e as Error).message ?? 'Sync failed — check your Query ID and token')
     }
   }
 
@@ -2810,11 +2820,11 @@ function IBKRFlexTab() {
             <div className="flex gap-2">
               <button
                 onClick={handleSync}
-                disabled={syncing || cfg.last_sync_status === 'running'}
+                disabled={syncPending}
                 className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50"
               >
-                {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                Sync Now
+                {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                {syncPending ? 'Syncing…' : 'Sync Now'}
               </button>
               <button onClick={startEdit} className="flex items-center gap-1.5 text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
                 <Pencil className="h-3.5 w-3.5" /> Edit
@@ -2918,9 +2928,6 @@ function IBKRFlexTab() {
                 )}
               </div>
             </div>
-            {syncMsg && (
-              <p className={`text-sm ${syncMsg.ok ? 'text-emerald-600' : 'text-red-600'}`}>{syncMsg.text}</p>
-            )}
           </div>
         ) : null}
       </div>

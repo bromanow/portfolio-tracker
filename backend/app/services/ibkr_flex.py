@@ -103,6 +103,68 @@ def _already_imported(db: Session, external_ref: str) -> bool:
     return row is not None
 
 
+def _stamp_existing_trade(
+    db: Session, account_id: int, trade_date, txn_type: str,
+    security_id: int, quantity, external_ref: str,
+) -> bool:
+    """
+    Look for a CSV-imported trade (external_ref IS NULL) that matches by
+    account + date + type + security + quantity.  If found, stamp it with
+    the IBKR external_ref so future syncs skip it, and return True.
+    """
+    from sqlalchemy import text
+    row = db.execute(text("""
+        SELECT id FROM transactions
+        WHERE account_id      = :acct
+          AND transaction_date = :dt
+          AND transaction_type = :type
+          AND security_id      = :sec
+          AND ABS(COALESCE(quantity, 0) - :qty) < 0.001
+          AND external_ref IS NULL
+        LIMIT 1
+    """), {"acct": account_id, "dt": trade_date, "type": txn_type,
+           "sec": security_id, "qty": float(quantity or 0)}).fetchone()
+    if row:
+        db.execute(
+            text("UPDATE transactions SET external_ref = :ref WHERE id = :id"),
+            {"ref": external_ref, "id": row[0]},
+        )
+        logger.info("Stamped existing trade id=%s with %s", row[0], external_ref)
+        return True
+    return False
+
+
+def _stamp_existing_cash(
+    db: Session, account_id: int, txn_date, txn_type: str,
+    amount, security_id, external_ref: str,
+) -> bool:
+    """
+    Look for a CSV-imported cash transaction (external_ref IS NULL) that
+    matches by account + date + type + amount (± 0.01) + security.
+    If found, stamp it with the IBKR external_ref and return True.
+    """
+    from sqlalchemy import text
+    row = db.execute(text("""
+        SELECT id FROM transactions
+        WHERE account_id      = :acct
+          AND transaction_date = :dt
+          AND transaction_type = :type
+          AND ABS(COALESCE(transaction_amount, 0) - :amt) < 0.01
+          AND COALESCE(security_id, 0) = COALESCE(:sec, 0)
+          AND external_ref IS NULL
+        LIMIT 1
+    """), {"acct": account_id, "dt": txn_date, "type": txn_type,
+           "amt": float(amount or 0), "sec": security_id}).fetchone()
+    if row:
+        db.execute(
+            text("UPDATE transactions SET external_ref = :ref WHERE id = :id"),
+            {"ref": external_ref, "id": row[0]},
+        )
+        logger.info("Stamped existing cash txn id=%s with %s", row[0], external_ref)
+        return True
+    return False
+
+
 # ── Flex Query API ────────────────────────────────────────────────────────────
 
 def fetch_flex_report(token: str, query_id: str) -> str:
@@ -272,6 +334,10 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
             commission = abs(commission)   # IBKR reports negative; store positive
         txn_amount = abs(trade_money) if trade_money is not None else None
 
+        # Check for existing CSV-imported trade (no external_ref) — stamp and skip
+        if _stamp_existing_trade(db, account_id, trade_date, buy_sell, sec.id, qty, ext_ref):
+            continue
+
         fx_to_cad = None
         cad_amount = None
         if currency != "CAD":
@@ -297,8 +363,7 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
         ))
         imported += 1
 
-    if imported:
-        db.commit()
+    db.commit()   # also persists external_ref stamps on existing rows
     return imported
 
 
@@ -346,6 +411,11 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
                 pass
 
         abs_amount = abs(amount)
+
+        # Check for existing CSV-imported cash txn (no external_ref) — stamp and skip
+        if _stamp_existing_cash(db, account_id, txn_date, our_type, abs_amount, sec_id, ext_ref):
+            continue
+
         fx_to_cad  = None
         cad_amount = None
         if currency != "CAD":
@@ -368,8 +438,7 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
         ))
         imported += 1
 
-    if imported:
-        db.commit()
+    db.commit()   # also persists external_ref stamps on existing rows
     return imported
 
 

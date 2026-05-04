@@ -167,42 +167,70 @@ def _stamp_existing_cash(
 
 # ── Flex Query API ────────────────────────────────────────────────────────────
 
+# IBKR transient errors on the SendRequest step that are safe to retry
+_TRANSIENT_SUBMIT_PHRASES = (
+    "Statement could not be generated",
+    "Please try again",
+    "try again shortly",
+    "temporarily unavailable",
+)
+
+
 def fetch_flex_report(token: str, query_id: str) -> str:
     """
     Call the IBKR Flex Query API (synchronous, for background threads).
     Date range is controlled by the IBKR query configuration (set to
     "Year to Date" in the IBKR portal). Deduplication prevents re-importing.
     Returns raw XML string.
+
+    Retries the submit step up to 3 times (15 s apart) for transient IBKR
+    errors such as "Statement could not be generated at this time."
     """
     with httpx.Client(timeout=60, follow_redirects=True) as client:
-        # Step 1 — submit request
-        resp = client.get(FLEX_SEND_URL, params={
-            "t": token,
-            "q": query_id,
-            "v": "3",
-        })
-        resp.raise_for_status()
 
-        try:
-            xml1 = ET.fromstring(resp.text)
-        except ET.ParseError as exc:
-            raise RuntimeError(f"Unexpected Flex API response: {resp.text[:200]}") from exc
+        # Step 1 — submit request (retry up to 3× for transient errors)
+        ref_code: Optional[str] = None
+        url: str = FLEX_GET_URL
+        last_err: str = ""
 
-        status = xml1.findtext("Status")
-        if status != "Success":
-            err = xml1.findtext("ErrorMessage") or resp.text[:300]
-            raise RuntimeError(f"Flex Query submit failed: {err}")
+        for submit_attempt in range(3):
+            if submit_attempt:
+                wait = 15 * submit_attempt
+                logger.info("Flex Query submit retry %d/%d in %ds — %s",
+                            submit_attempt, 3, wait, last_err)
+                time.sleep(wait)
 
-        ref_code = xml1.findtext("ReferenceCode")
-        url = xml1.findtext("Url") or FLEX_GET_URL
+            resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
+            resp.raise_for_status()
+
+            try:
+                xml1 = ET.fromstring(resp.text)
+            except ET.ParseError as exc:
+                raise RuntimeError(f"Unexpected Flex API response: {resp.text[:200]}") from exc
+
+            status = xml1.findtext("Status")
+            if status == "Success":
+                ref_code = xml1.findtext("ReferenceCode")
+                url = xml1.findtext("Url") or FLEX_GET_URL
+                break
+
+            last_err = xml1.findtext("ErrorMessage") or resp.text[:300]
+            if any(phrase.lower() in last_err.lower() for phrase in _TRANSIENT_SUBMIT_PHRASES):
+                continue   # retry
+            # Non-transient error (bad token, invalid query ID, etc.) — fail fast
+            raise RuntimeError(f"Flex Query submit failed: {last_err}")
+
         if not ref_code:
-            raise RuntimeError("No ReferenceCode in Flex API response")
+            raise RuntimeError(
+                f"Flex Query submit failed after retries: {last_err}"
+                if last_err else "No ReferenceCode in Flex API response"
+            )
 
         logger.info("Flex Query submitted, reference=%s", ref_code)
 
-        # Step 2 — poll until ready (up to ~50 s)
-        for attempt in range(10):
-            time.sleep(3 if attempt == 0 else 5)
+        # Step 2 — poll until ready (up to ~80 s)
+        for attempt in range(14):
+            time.sleep(3 if attempt == 0 else 6)
             resp2 = client.get(url, params={"q": ref_code, "t": token, "v": "3"})
             resp2.raise_for_status()
 
@@ -217,7 +245,7 @@ def fetch_flex_report(token: str, query_id: str) -> str:
             logger.info("Flex Query ready after %d poll(s)", attempt + 1)
             return resp2.text
 
-        raise RuntimeError("Flex Query timed out after 10 polling attempts (~50 s)")
+        raise RuntimeError("Flex Query timed out after 14 polling attempts (~80 s)")
 
 
 # ── XML parsing ───────────────────────────────────────────────────────────────

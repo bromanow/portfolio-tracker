@@ -182,6 +182,50 @@ def sync_my_accounts(
     return _spawn_sync(f"ibkr-flex-sync-{current_user.id}", [current_user.id])
 
 
+# ── Admin — diagnostics ──────────────────────────────────────────────────────
+
+@router.post("/flex/test-connection")
+def test_connection(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Hit the IBKR SendRequest endpoint with the user's credentials and return
+    the raw XML so problems can be diagnosed without running a full sync.
+    """
+    import httpx, xml.etree.ElementTree as ET
+    from app.services.ibkr_flex import FLEX_SEND_URL
+
+    cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
+    if not cfg:
+        raise HTTPException(404, "No Flex config found")
+
+    try:
+        with httpx.Client(timeout=30, follow_redirects=True) as client:
+            resp = client.get(FLEX_SEND_URL, params={
+                "t": cfg.token, "q": cfg.query_id, "v": "3",
+            })
+        raw = resp.text[:2000]
+        try:
+            root = ET.fromstring(resp.text)
+            status  = root.findtext("Status")
+            err_code = root.findtext("ErrorCode")
+            err_msg  = root.findtext("ErrorMessage")
+            ref_code = root.findtext("ReferenceCode")
+        except Exception:
+            status = err_code = err_msg = ref_code = None
+        return {
+            "http_status": resp.status_code,
+            "ibkr_status": status,
+            "error_code":  err_code,
+            "error_message": err_msg,
+            "reference_code": ref_code,
+            "raw": raw,
+        }
+    except Exception as exc:
+        return {"error": str(exc)}
+
+
 # ── Admin — all configs ───────────────────────────────────────────────────────
 
 @router.get("/flex/configs")

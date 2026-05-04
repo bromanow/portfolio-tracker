@@ -3,11 +3,17 @@ from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.dependencies import get_current_user, parse_account_ids, get_user_account_ids
+from app.models.auth import User
 from app.services import portfolio as portfolio_svc
 from app.services.acb_service import get_all_positions_acb
 from app import background_jobs
 
-router = APIRouter(prefix="/api/portfolio", tags=["portfolio"])
+router = APIRouter(
+    prefix="/api/portfolio",
+    tags=["portfolio"],
+    dependencies=[Depends(get_current_user)],  # all routes require auth
+)
 
 
 @router.get("/positions")
@@ -15,7 +21,12 @@ def get_positions(
     account_id: Optional[int] = Query(None),
     as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if account_id is not None:
+        allowed = get_user_account_ids(current_user, db)
+        if allowed is not None and account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
     positions = portfolio_svc.get_positions(db, account_id=account_id, as_of=as_of)
     # Serialize Decimal and date fields (price fields are already str/None from _enrich_with_price)
     result = []
@@ -36,6 +47,7 @@ def get_positions(
 def get_summary(
     as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     summary = portfolio_svc.get_portfolio_summary(db, as_of=as_of)
     # Serialize
@@ -53,14 +65,15 @@ def get_pnl(
     year: Optional[int] = Query(None),
     brokerage_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     rows = portfolio_svc.get_realized_pnl(
         db, account_id=account_id, year=year, brokerage_name=brokerage_name
     )
-    # Filter by account_ids when provided (used for multi-user scoping)
-    if account_ids:
-        filter_ids = {int(x.strip()) for x in account_ids.split(',') if x.strip().isdigit()}
-        rows = [r for r in rows if r.get("account_id") in filter_ids]
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    if authorized_ids is not None:
+        id_set = set(authorized_ids)
+        rows = [r for r in rows if r.get("account_id") in id_set]
     for row in rows:
         row["date"] = row["date"].isoformat()
         row["proceeds_cad"] = str(row["proceeds_cad"])
@@ -75,7 +88,12 @@ def get_acb(
     account_id: Optional[int] = Query(None),
     as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
+    if account_id is not None:
+        allowed = get_user_account_ids(current_user, db)
+        if allowed is not None and account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
     acb_data = get_all_positions_acb(db, account_id=account_id, as_of=as_of)
     result = []
     for item in acb_data:
@@ -97,6 +115,7 @@ def get_acb(
 def get_allocation(
     as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     return portfolio_svc.get_asset_allocation(db, as_of=as_of)
 
@@ -106,6 +125,7 @@ def get_consolidated_positions(
     as_of: Optional[date] = Query(None),
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs to filter"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return positions grouped by ticker across all accounts combined, with live price data."""
     from decimal import Decimal, ROUND_HALF_UP
@@ -113,17 +133,12 @@ def get_consolidated_positions(
     from app.models.prices import MarketPrice
     from app.models.master import Security
 
-    # Parse optional account_ids filter (comma-separated)
-    filter_account_ids: Optional[set] = None
-    if account_ids:
-        try:
-            filter_account_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            filter_account_ids = None
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
 
     positions = portfolio_svc.get_positions(db, account_id=None, as_of=as_of)
-    if filter_account_ids:
-        positions = [p for p in positions if p.get("account_id") in filter_account_ids]
+    if authorized_ids is not None:
+        id_set = set(authorized_ids)
+        positions = [p for p in positions if p.get("account_id") in id_set]
 
     use_historical = as_of is not None  # historical_prices now includes intraday via refresh
 
@@ -307,6 +322,7 @@ def get_summary_metrics(
     account_ids: Optional[str] = Query(None),
     as_of: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     from datetime import date as date_cls, timedelta
     from decimal import Decimal as D
@@ -319,10 +335,8 @@ def get_summary_metrics(
     jan1 = date_cls(ref_date.year, 1, 1)
     one_year_ago = ref_date - timedelta(days=365)
 
-    if account_ids:
-        parsed_ids = {int(x) for x in account_ids.split(',') if x.strip().isdigit()}
-    else:
-        parsed_ids = None  # None = all accounts
+    authorized_list = parse_account_ids(account_ids, current_user, db)
+    parsed_ids = set(authorized_list) if authorized_list is not None else None
 
     def get_total_at(target_date: date_cls) -> D:
         """
@@ -338,7 +352,7 @@ def get_summary_metrics(
         positions = portfolio_svc.get_positions(db, account_id=None, as_of=target_date)
         securities_total = D(0)
         for pos in positions:
-            if parsed_ids and pos.get("account_id") not in parsed_ids:
+            if parsed_ids is not None and pos.get("account_id") not in parsed_ids:
                 continue
             if pos.get("market_value_cad") is not None:
                 securities_total += D(str(pos["market_value_cad"]))
@@ -348,7 +362,7 @@ def get_summary_metrics(
         cash_rows = portfolio_svc.get_cash_balances(db, account_id=None, as_of=target_date)
         cash_total = D(0)
         for row in cash_rows:
-            if parsed_ids and row.get("account_id") not in parsed_ids:
+            if parsed_ids is not None and row.get("account_id") not in parsed_ids:
                 continue
             cash_total += D(str(row.get("balance_cad") or 0))
 
@@ -381,9 +395,13 @@ def get_summary_metrics(
 def get_recent_transactions(
     limit: int = Query(20, ge=1, le=100),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     from app.routers.transactions import txn_to_dict
+    allowed = get_user_account_ids(current_user, db)
     txns = portfolio_svc.get_recent_transactions(db, limit=limit)
+    if allowed is not None:
+        txns = [t for t in txns if t.account_id in set(allowed)]
     return [txn_to_dict(t) for t in txns]
 
 
@@ -392,8 +410,13 @@ def get_cash_balances(
     account_id: Optional[int] = Query(None),
     as_of: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return calculated cash balance per account."""
+    if account_id is not None:
+        allowed = get_user_account_ids(current_user, db)
+        if allowed is not None and account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
     rows = portfolio_svc.get_cash_balances(db, account_id=account_id, as_of=as_of)
     return [
         {**r, "balance": str(r["balance"])}
@@ -432,6 +455,7 @@ def get_cash_statement(
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Running cash balance statement. Single account_id → running balance view.
     Multiple account_ids → flat combined view sorted by date (no single running balance)."""
@@ -440,10 +464,14 @@ def get_cash_statement(
     from app.models.master import Account
     from fastapi import HTTPException
 
-    # Resolve list of account IDs
+    # Resolve and authorize list of account IDs
     if account_ids:
-        id_list = [int(x.strip()) for x in account_ids.split(",") if x.strip().isdigit()]
+        authorized_ids = parse_account_ids(account_ids, current_user, db)
+        id_list = authorized_ids if authorized_ids is not None else []
     elif account_id:
+        allowed = get_user_account_ids(current_user, db)
+        if allowed is not None and account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
         id_list = [account_id]
     else:
         raise HTTPException(status_code=400, detail="account_id or account_ids is required")
@@ -629,15 +657,16 @@ def get_investment_income(
     year: Optional[int] = Query(None),
     brokerage_name: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return dividend/interest income transactions."""
     rows = portfolio_svc.get_investment_income(
         db, account_id=account_id, year=year, brokerage_name=brokerage_name
     )
-    # Filter by account_ids when provided (used for multi-user scoping)
-    if account_ids:
-        filter_ids = {int(x.strip()) for x in account_ids.split(',') if x.strip().isdigit()}
-        rows = [r for r in rows if r.get("account_id") in filter_ids]
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    if authorized_ids is not None:
+        id_set = set(authorized_ids)
+        rows = [r for r in rows if r.get("account_id") in id_set]
     return rows
 
 
@@ -646,20 +675,17 @@ def get_options_report(
     account_id: Optional[int] = Query(None),
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return options report: open positions + income history + summary."""
-    # Parse account_ids filter
-    filter_ids: Optional[set] = None
-    if account_ids:
-        try:
-            filter_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            filter_ids = None
-    # If single account_id provided (legacy), merge into filter_ids
-    if account_id and filter_ids is None:
-        filter_ids = {account_id}
-    elif account_id and filter_ids is not None:
-        filter_ids.add(account_id)
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    # If single account_id provided (legacy), merge into authorized_ids
+    if account_id is not None:
+        if authorized_ids is None:
+            authorized_ids = [account_id]
+        elif account_id not in authorized_ids:
+            authorized_ids = authorized_ids + [account_id]
+    filter_ids: Optional[set] = set(authorized_ids) if authorized_ids is not None else None
 
     report = portfolio_svc.get_options_report(db, account_id=None)
     # Filter results by account if filter_ids specified
@@ -698,14 +724,10 @@ def get_portfolio_continuity(
     to_date: date = Query(..., description="End of period (inclusive)"),
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return a continuity/waterfall report for a period."""
-    parsed_ids: Optional[list[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = [int(x.strip()) for x in account_ids.split(",") if x.strip()]
-        except ValueError:
-            pass
+    parsed_ids = parse_account_ids(account_ids, current_user, db)
     return portfolio_svc.get_portfolio_continuity(
         db,
         from_date=from_date,
@@ -719,6 +741,7 @@ def get_portfolio_analytics(
     as_of: Optional[date] = Query(None),
     account_ids: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return portfolio breakdown by sector, country, currency, asset class, and top holdings."""
     from decimal import Decimal
@@ -726,16 +749,12 @@ def get_portfolio_analytics(
     from app.models.master import Security
     from app.models.prices import MarketPrice
 
-    filter_acct_ids: Optional[set] = None
-    if account_ids:
-        try:
-            filter_acct_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
 
     positions = portfolio_svc.get_positions(db, account_id=None, as_of=as_of)
-    if filter_acct_ids:
-        positions = [p for p in positions if p.get("account_id") in filter_acct_ids]
+    if authorized_ids is not None:
+        id_set = set(authorized_ids)
+        positions = [p for p in positions if p.get("account_id") in id_set]
 
     sec_ids = {p["security_id"] for p in positions if p.get("security_id")}
     sec_map: dict = {}
@@ -807,6 +826,7 @@ def get_portfolio_analytics(
 def get_portfolio_risk(
     account_ids: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """Return pre-computed risk metrics for the portfolio (uses stored fundamentals + historical prices)."""
     from decimal import Decimal
@@ -816,16 +836,12 @@ def get_portfolio_risk(
     from app.models.master import Security
     from app.models.prices import MarketPrice, HistoricalPrice
 
-    filter_acct_ids: Optional[set] = None
-    if account_ids:
-        try:
-            filter_acct_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
 
     positions = portfolio_svc.get_positions(db, account_id=None, as_of=None)
-    if filter_acct_ids:
-        positions = [p for p in positions if p.get("account_id") in filter_acct_ids]
+    if authorized_ids is not None:
+        id_set = set(authorized_ids)
+        positions = [p for p in positions if p.get("account_id") in id_set]
 
     sec_ids = {p["security_id"] for p in positions if p.get("security_id")}
     if not sec_ids:
@@ -985,18 +1001,14 @@ def get_portfolio_history(
     account_id: Optional[int] = Query(None),
     account_ids: Optional[str] = Query(None),  # comma-separated list of account IDs
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Return portfolio value snapshots over time.
     account_ids: comma-separated account IDs for multi-account filtering (e.g. "1,2,3").
     Requires historical prices to be loaded first via POST /api/prices/fetch-history.
     """
-    parsed_ids: Optional[list[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = [int(x.strip()) for x in account_ids.split(",") if x.strip()]
-        except ValueError:
-            pass
+    parsed_ids = parse_account_ids(account_ids, current_user, db)
 
     return portfolio_svc.get_portfolio_history(
         db,
@@ -1130,6 +1142,8 @@ def _spawn_portfolio_job(name: str, fn):
 def compute_snapshots(
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs; omit for all"),
     from_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Pre-compute daily portfolio value snapshots for all (or selected) accounts.
@@ -1138,12 +1152,7 @@ def compute_snapshots(
     Returns a job_id — poll GET /api/portfolio/jobs/{job_id} for status.
     """
     from app.services.portfolio_history_service import compute_portfolio_snapshots
-    parsed_ids: Optional[list[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = [int(x.strip()) for x in account_ids.split(",") if x.strip()]
-        except ValueError:
-            pass
+    parsed_ids = parse_account_ids(account_ids, current_user, db)
     return _spawn_portfolio_job(
         "compute_snapshots",
         lambda db: compute_portfolio_snapshots(db, account_ids=parsed_ids, from_date=from_date),
@@ -1157,6 +1166,7 @@ def get_performance_timeline(
     to_date: Optional[date] = Query(None),
     account_ids: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Return pre-computed portfolio value timeline from portfolio_snapshots.
@@ -1167,12 +1177,8 @@ def get_performance_timeline(
     from sqlalchemy import func as sqlfunc
     from decimal import Decimal as D
 
-    parsed_ids: Optional[set[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
 
     # Load account metadata for grouping
     accounts = {a.id: a for a in db.query(Account).all()}
@@ -1290,6 +1296,7 @@ def get_performance_timeline(
 def get_performance_returns(
     account_ids: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Return period returns for each logical account from the snapshot table.
@@ -1299,12 +1306,8 @@ def get_performance_returns(
     from app.models.master import PortfolioSnapshot, Account, Brokerage
     from decimal import Decimal as D
 
-    parsed_ids: Optional[set[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
 
     accounts = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
@@ -1499,6 +1502,7 @@ def get_returns_detail(
     to_date:   Optional[date] = Query(None, description="Period end (YYYY-MM-DD); defaults to today"),
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs to include"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Return the full numerator/denominator breakdown for total return over an
@@ -1518,12 +1522,8 @@ def get_returns_detail(
     if to_date is None:
         to_date = date.today()
 
-    parsed_ids: Optional[set[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
 
     accounts   = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
@@ -1625,6 +1625,7 @@ def get_monthly_returns(
     year_from:   Optional[int]  = Query(None),
     year_to:     Optional[int]  = Query(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     """
     Return a month-by-month total return matrix for every logical account group.
@@ -1640,12 +1641,8 @@ def get_monthly_returns(
     from collections import defaultdict
     import calendar
 
-    parsed_ids: Optional[set[int]] = None
-    if account_ids:
-        try:
-            parsed_ids = {int(x.strip()) for x in account_ids.split(",") if x.strip()}
-        except ValueError:
-            pass
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
 
     accounts   = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}

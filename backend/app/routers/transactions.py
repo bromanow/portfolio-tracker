@@ -6,10 +6,16 @@ from pydantic import BaseModel
 from sqlalchemy import asc, desc, nullslast
 from sqlalchemy.orm import Session
 from app.database import get_db
+from app.dependencies import get_current_user, parse_account_ids, get_user_account_ids
+from app.models.auth import User
 from app.models.transactions import Transaction
 from app.models.master import Account, Brokerage
 
-router = APIRouter(prefix="/api/transactions", tags=["transactions"])
+router = APIRouter(
+    prefix="/api/transactions",
+    tags=["transactions"],
+    dependencies=[Depends(get_current_user)],  # all routes require auth
+)
 
 
 class TransactionCreate(BaseModel):
@@ -107,6 +113,7 @@ def list_transactions(
     sort_by: str = Query("transaction_date"),
     sort_dir: str = Query("desc"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
 ):
     from app.models.master import Security, Account
     query = db.query(Transaction).join(Transaction.account, isouter=True).join(Transaction.security, isouter=True)
@@ -114,9 +121,14 @@ def list_transactions(
     if account_id:
         query = query.filter(Transaction.account_id == account_id)
     elif account_ids:
-        id_set = {int(x.strip()) for x in account_ids.split(",") if x.strip().isdigit()}
-        if id_set:
-            query = query.filter(Transaction.account_id.in_(id_set))
+        authorized_ids = parse_account_ids(account_ids, current_user, db)
+        if authorized_ids is not None:
+            query = query.filter(Transaction.account_id.in_(authorized_ids))
+    else:
+        # No account filter specified — scope to user's own accounts
+        allowed = get_user_account_ids(current_user, db)
+        if allowed is not None:
+            query = query.filter(Transaction.account_id.in_(allowed))
     if brokerage_name:
         query = query.join(Brokerage, Account.brokerage_id == Brokerage.id).filter(Brokerage.name == brokerage_name)
     if security_id:
@@ -182,7 +194,7 @@ class TransferPairCreate(BaseModel):
 
 
 @router.post("/transfer-pair", status_code=201)
-def create_transfer_pair(data: TransferPairCreate, db: Session = Depends(get_db)):
+def create_transfer_pair(data: TransferPairCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """
     Atomically create both legs of a security transfer between accounts.
 
@@ -197,6 +209,12 @@ def create_transfer_pair(data: TransferPairCreate, db: Session = Depends(get_db)
     cad_amount is set on both legs; for JOURNAL it serves as the ACB book value
     consumed by the ACB engine on the +qty (receiving) leg.
     """
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None:
+        if data.from_account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
+        if data.to_account_id not in allowed:
+            raise HTTPException(status_code=403, detail="Access denied to this account")
     from_acct = db.get(Account, data.from_account_id)
     to_acct   = db.get(Account, data.to_account_id)
     if not from_acct:
@@ -256,12 +274,22 @@ class BulkUpdateRequest(BaseModel):
 
 
 @router.post("/bulk-update")
-def bulk_update_transactions(data: BulkUpdateRequest, db: Session = Depends(get_db)):
+def bulk_update_transactions(data: BulkUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Change the transaction_type for a batch of transactions by ID."""
     if not data.ids:
         raise HTTPException(status_code=400, detail="No IDs provided")
     if len(data.ids) > 5000:
         raise HTTPException(status_code=400, detail="Too many IDs (max 5000 per request)")
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None:
+        allowed_set = set(allowed)
+        bad = (
+            db.query(Transaction.id)
+            .filter(Transaction.id.in_(data.ids), Transaction.account_id.notin_(allowed_set))
+            .first()
+        )
+        if bad:
+            raise HTTPException(status_code=403, detail="Access denied to one or more transactions")
     count = (
         db.query(Transaction)
         .filter(Transaction.id.in_(data.ids))
@@ -275,7 +303,11 @@ def bulk_update_transactions(data: BulkUpdateRequest, db: Session = Depends(get_
 
 
 @router.post("", status_code=201)
-def create_transaction(data: TransactionCreate, db: Session = Depends(get_db)):
+def create_transaction(data: TransactionCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None and data.account_id not in allowed:
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
     fields = data.model_dump()
 
     # Auto-populate cad_amount and account_currency_amount when not explicitly provided.
@@ -302,18 +334,24 @@ def create_transaction(data: TransactionCreate, db: Session = Depends(get_db)):
 
 
 @router.get("/{txn_id}")
-def get_transaction(txn_id: int, db: Session = Depends(get_db)):
+def get_transaction(txn_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     txn = db.get(Transaction, txn_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None and txn.account_id not in allowed:
+        raise HTTPException(status_code=403, detail="Access denied")
     return txn_to_dict(txn)
 
 
 @router.put("/{txn_id}")
-def update_transaction(txn_id: int, data: TransactionUpdate, db: Session = Depends(get_db)):
+def update_transaction(txn_id: int, data: TransactionUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     txn = db.get(Transaction, txn_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None and txn.account_id not in allowed:
+        raise HTTPException(status_code=403, detail="Access denied to this account")
 
     updates = data.model_dump(exclude_none=True)
 
@@ -352,7 +390,11 @@ class ExpireOptionRequest(BaseModel):
 
 
 @router.post("/expire-option", status_code=201)
-def expire_option(data: ExpireOptionRequest, db: Session = Depends(get_db)):
+def expire_option(data: ExpireOptionRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None and data.account_id not in allowed:
+        raise HTTPException(status_code=403, detail="Access denied to this account")
+
     from app.models.master import Security
     from app.models.prices import MarketPrice
     from decimal import Decimal
@@ -390,10 +432,13 @@ def expire_option(data: ExpireOptionRequest, db: Session = Depends(get_db)):
 
 
 @router.delete("/{txn_id}")
-def delete_transaction(txn_id: int, db: Session = Depends(get_db)):
+def delete_transaction(txn_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     txn = db.get(Transaction, txn_id)
     if not txn:
         raise HTTPException(status_code=404, detail="Transaction not found")
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None and txn.account_id not in allowed:
+        raise HTTPException(status_code=403, detail="Access denied to this account")
     db.delete(txn)
     db.commit()
     return {"deleted": txn_id}

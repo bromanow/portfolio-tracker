@@ -168,17 +168,34 @@ def delete_my_config(
         db.commit()
 
 
+FLEX_MIN_INTERVAL_SECONDS = 600  # IBKR rate-limits the API to ~1 request / 10 min
+
+
 @router.post("/flex/sync")
 def sync_my_accounts(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ):
     """Trigger a manual Flex sync for the current user's accounts."""
+    from datetime import datetime as _dt
+
     cfg = db.query(IBKRFlexConfig).filter_by(user_id=current_user.id).first()
     if not cfg:
         raise HTTPException(404, "No Flex Query config found. Add one in Admin → IBKR Flex first.")
     if not cfg.enabled:
         raise HTTPException(400, "Flex config is disabled.")
+
+    # Guard against IBKR's ~10-minute API rate limit
+    if cfg.last_sync_at and cfg.last_sync_status not in ("error",):
+        elapsed = (_dt.utcnow() - cfg.last_sync_at).total_seconds()
+        if elapsed < FLEX_MIN_INTERVAL_SECONDS:
+            wait = int(FLEX_MIN_INTERVAL_SECONDS - elapsed)
+            raise HTTPException(
+                429,
+                f"IBKR limits Flex API requests to once every 10 minutes. "
+                f"Please wait {wait // 60}m {wait % 60}s before syncing again.",
+            )
+
     return _spawn_sync(f"ibkr-flex-sync-{current_user.id}", [current_user.id])
 
 

@@ -2736,6 +2736,7 @@ function IBKRFlexTab() {
   const [form, setForm] = useState({ query_id: '', token: '', enabled: true })
   const [editing, setEditing] = useState(false)
   const [showToken, setShowToken] = useState(false)
+  const [syncError, setSyncError] = useState<string | null>(null)
 
   // Derive syncing from DB status + localStorage timestamp (survives navigation)
   const syncPending = (() => {
@@ -2770,13 +2771,14 @@ function IBKRFlexTab() {
   })
 
   const handleSync = async () => {
+    setSyncError(null)
     try {
       localStorage.setItem(SYNC_TS_KEY, String(Date.now()))
       await syncMyFlexAccounts()
       qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
     } catch (e: unknown) {
       localStorage.removeItem(SYNC_TS_KEY)
-      alert((e as Error).message ?? 'Sync failed — check your Query ID and token')
+      setSyncError((e as Error).message ?? 'Sync failed — check your Query ID and token')
     }
   }
 
@@ -2817,21 +2819,26 @@ function IBKRFlexTab() {
             </p>
           </div>
           {hasConfig && !editing && (
-            <div className="flex gap-2">
-              <button
-                onClick={handleSync}
-                disabled={syncPending}
-                className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50"
-              >
-                {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                {syncPending ? 'Syncing…' : 'Sync Now'}
-              </button>
-              <button onClick={startEdit} className="flex items-center gap-1.5 text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
-                <Pencil className="h-3.5 w-3.5" /> Edit
-              </button>
-              <button onClick={() => deleteMut.mutate()} className="flex items-center gap-1.5 text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5 hover:bg-red-50">
-                <Trash2 className="h-3.5 w-3.5" /> Remove
-              </button>
+            <div className="flex flex-col gap-2 items-start">
+              <div className="flex gap-2">
+                <button
+                  onClick={handleSync}
+                  disabled={syncPending}
+                  className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50"
+                >
+                  {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                  {syncPending ? 'Syncing…' : 'Sync Now'}
+                </button>
+                <button onClick={startEdit} className="flex items-center gap-1.5 text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
+                  <Pencil className="h-3.5 w-3.5" /> Edit
+                </button>
+                <button onClick={() => deleteMut.mutate()} className="flex items-center gap-1.5 text-sm border border-red-200 text-red-600 rounded-lg px-3 py-1.5 hover:bg-red-50">
+                  <Trash2 className="h-3.5 w-3.5" /> Remove
+                </button>
+              </div>
+              {syncError && (
+                <p className="text-sm text-red-600 max-w-md">{syncError}</p>
+              )}
             </div>
           )}
         </div>

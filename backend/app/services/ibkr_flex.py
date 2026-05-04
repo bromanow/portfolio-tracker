@@ -18,7 +18,7 @@ import hashlib
 import logging
 import time
 import xml.etree.ElementTree as ET
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Optional
 
@@ -105,14 +105,23 @@ def _already_imported(db: Session, external_ref: str) -> bool:
 
 # ── Flex Query API ────────────────────────────────────────────────────────────
 
-def fetch_flex_report(token: str, query_id: str) -> str:
+def fetch_flex_report(token: str, query_id: str,
+                      from_date: date, to_date: date) -> str:
     """
     Call the IBKR Flex Query API (synchronous, for background threads).
+    Requires the IBKR query to be set to "Custom Date Range" so that
+    fromDate / toDate passed here are honoured.
     Returns raw XML string.
     """
     with httpx.Client(timeout=30, follow_redirects=True) as client:
-        # Step 1 — submit request
-        resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
+        # Step 1 — submit request with date range
+        resp = client.get(FLEX_SEND_URL, params={
+            "t": token,
+            "q": query_id,
+            "v": "3",
+            "fromDate": from_date.strftime("%Y%m%d"),
+            "toDate":   to_date.strftime("%Y%m%d"),
+        })
         resp.raise_for_status()
 
         try:
@@ -369,18 +378,37 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
 
 # ── High-level sync ───────────────────────────────────────────────────────────
 
-def sync_config(db: Session, config) -> dict:
+def sync_config(db: Session, config,
+                from_date: Optional[date] = None,
+                to_date:   Optional[date] = None) -> dict:
     """
     Sync one user's Flex Query config.
-    Fetches XML, finds each IBKR account by account_number, imports transactions.
-    Updates config.last_sync_* and returns a summary dict.
+
+    Date range defaults:
+      - to_date:   today
+      - from_date: Jan 1 of current year on first sync, otherwise last 7 days
+                   (7-day window handles weekends + holidays; dedup prevents duplicates)
+
+    The IBKR query must be set to "Custom Date Range" for the dates to take effect.
     """
+    today = date.today()
+    if to_date is None:
+        to_date = today
+    if from_date is None:
+        if config.last_sync_at is None:
+            # First ever sync — pull current year
+            from_date = _date(today.year, 1, 1)
+        else:
+            # Rolling 7-day window; dedup makes this safe to overlap
+            from_date = today - timedelta(days=7)
+
+    logger.info("Flex sync user_id=%s: %s → %s", config.user_id, from_date, to_date)
     config.last_sync_status  = "running"
     config.last_sync_message = None
     db.commit()
 
     try:
-        xml_str   = fetch_flex_report(config.token, config.query_id)
+        xml_str   = fetch_flex_report(config.token, config.query_id, from_date, to_date)
         statements = parse_flex_xml(xml_str)
 
         total_trades = 0

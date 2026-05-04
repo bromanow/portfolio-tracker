@@ -13,6 +13,7 @@ import app.models.imports      # noqa
 import app.models.prices       # noqa
 import app.models.auth         # noqa
 import app.models.clients      # noqa
+import app.models.ibkr         # noqa
 
 from app.dependencies import get_current_user
 from app.routers import auth as auth_router
@@ -116,6 +117,7 @@ def _run_migrations(eng):
         ("market_prices", "dividend_yield",        "REAL"),
         ("market_prices", "market_cap",            "REAL"),
         ("accounts",      "client_id",             "INTEGER REFERENCES clients(id)"),
+        ("transactions",  "external_ref",           "VARCHAR(100)"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:
@@ -163,6 +165,10 @@ async def startup():
     _create_admin_user()
     _migrate_clients(engine)  # must run after admin user exists
 
+    # Start nightly IBKR Flex Query scheduler
+    from app.scheduler import start_scheduler
+    start_scheduler()
+
     # Auto-refresh BOC FX rates if stale
     try:
         from datetime import date as _date, timedelta
@@ -179,6 +185,12 @@ async def startup():
             db.close()
     except Exception as exc:
         log.warning("BOC FX auto-refresh failed: %s", exc)
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    from app.scheduler import stop_scheduler
+    stop_scheduler()
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────

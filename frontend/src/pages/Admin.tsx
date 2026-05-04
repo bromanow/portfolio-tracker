@@ -18,16 +18,19 @@ import {
   getAccountCurrencySummary, splitCurrencyTransactions,
   changePassword,
   getClients, getUsers, createUser, updateUser, resetUserPassword,
+  getFlexConfigs, createFlexConfig, updateFlexConfig, deleteFlexConfig,
+  syncFlexAccount, syncAllFlexAccounts,
 } from '../api/client'
-import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser } from '../api/client'
+import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser, IBKRFlexConfig } from '../api/client'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account'
+type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex'
 
 const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
   { id: 'system',           label: 'System',           adminOnly: true },
   { id: 'my-account',       label: 'My Account' },
   { id: 'accounts',         label: 'Accounts' },
   { id: 'opening-balances', label: 'Opening Balances' },
+  { id: 'ibkr-flex',        label: 'IBKR Flex',        adminOnly: true },
   { id: 'securities',       label: 'Securities',       adminOnly: true },
   { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
   { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
@@ -2699,6 +2702,259 @@ function UsersTab() {
 }
 
 
+// ─── IBKR Flex Query Tab ──────────────────────────────────────────────────────
+function IBKRFlexTab() {
+  const qc = useQueryClient()
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: configs = [], isLoading } = useQuery({ queryKey: ['ibkr-flex-configs'], queryFn: getFlexConfigs })
+  const [form, setForm] = useState({ account_id: '', query_id: '', token: '', enabled: true })
+  const [editId, setEditId] = useState<number | null>(null)
+  const [showToken, setShowToken] = useState(false)
+  const [syncStatus, setSyncStatus] = useState<Record<number, 'idle' | 'running' | 'done' | 'error'>>({})
+  const [syncMsg, setSyncMsg] = useState<Record<number, string>>({})
+
+  // Only IBKR brokerage accounts
+  const ibkrAccounts = (accounts as Account[]).filter(a => a.brokerage_name?.toUpperCase() === 'IBKR')
+
+  const saveMut = useMutation({
+    mutationFn: (data: { account_id: number; query_id: string; token: string; enabled: boolean }) =>
+      editId !== null
+        ? updateFlexConfig(editId, data)
+        : createFlexConfig(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ibkr-flex-configs'] })
+      setForm({ account_id: '', query_id: '', token: '', enabled: true })
+      setEditId(null)
+    },
+  })
+
+  const deleteMut = useMutation({
+    mutationFn: deleteFlexConfig,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['ibkr-flex-configs'] }),
+  })
+
+  const handleSubmit = () => {
+    if (!form.account_id || !form.query_id || !form.token) return
+    saveMut.mutate({ account_id: Number(form.account_id), query_id: form.query_id, token: form.token, enabled: form.enabled })
+  }
+
+  const handleEdit = (cfg: IBKRFlexConfig) => {
+    setEditId(cfg.id)
+    setForm({ account_id: String(cfg.account_id), query_id: cfg.query_id, token: '', enabled: cfg.enabled })
+  }
+
+  const handleSync = async (accountId: number) => {
+    setSyncStatus(s => ({ ...s, [accountId]: 'running' }))
+    setSyncMsg(s => ({ ...s, [accountId]: 'Syncing…' }))
+    try {
+      await syncFlexAccount(accountId)
+      // Poll for job completion
+      let done = false
+      for (let i = 0; i < 30 && !done; i++) {
+        await new Promise(r => setTimeout(r, 2000))
+        await qc.invalidateQueries({ queryKey: ['ibkr-flex-configs'] })
+        const updated = (qc.getQueryData(['ibkr-flex-configs']) as IBKRFlexConfig[] | undefined)
+          ?.find(c => c.account_id === accountId)
+        if (updated?.last_sync_status === 'ok') {
+          setSyncStatus(s => ({ ...s, [accountId]: 'done' }))
+          setSyncMsg(s => ({ ...s, [accountId]: updated.last_sync_message ?? 'Done' }))
+          done = true
+        } else if (updated?.last_sync_status === 'error') {
+          setSyncStatus(s => ({ ...s, [accountId]: 'error' }))
+          setSyncMsg(s => ({ ...s, [accountId]: updated.last_sync_message ?? 'Error' }))
+          done = true
+        }
+      }
+      if (!done) {
+        setSyncStatus(s => ({ ...s, [accountId]: 'done' }))
+        setSyncMsg(s => ({ ...s, [accountId]: 'Running in background' }))
+      }
+    } catch (e: unknown) {
+      setSyncStatus(s => ({ ...s, [accountId]: 'error' }))
+      setSyncMsg(s => ({ ...s, [accountId]: (e as Error).message ?? 'Error' }))
+    }
+  }
+
+  const handleSyncAll = async () => {
+    try {
+      await syncAllFlexAccounts()
+      // Refresh configs after a short delay
+      setTimeout(() => qc.invalidateQueries({ queryKey: ['ibkr-flex-configs'] }), 5000)
+    } catch (e: unknown) {
+      alert((e as Error).message ?? 'Sync all failed')
+    }
+  }
+
+  const cfgList = configs as IBKRFlexConfig[]
+
+  return (
+    <div className="space-y-6">
+      {/* Add / Edit form */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5">
+        <h3 className="font-semibold text-gray-800 mb-4">
+          {editId !== null ? 'Edit Flex Query Config' : 'Add Flex Query Config'}
+        </h3>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">IBKR Account</label>
+            <select
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full"
+              value={form.account_id}
+              onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}
+            >
+              <option value="">— Select account —</option>
+              {ibkrAccounts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Query ID</label>
+            <input
+              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full"
+              placeholder="e.g. 1403268"
+              value={form.query_id}
+              onChange={e => setForm(f => ({ ...f, query_id: e.target.value }))}
+            />
+          </div>
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">
+              Token {editId !== null && <span className="text-gray-400">(leave blank to keep existing)</span>}
+            </label>
+            <div className="relative">
+              <input
+                className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-full pr-9"
+                placeholder={editId !== null ? '(unchanged)' : 'Flex token'}
+                type={showToken ? 'text' : 'password'}
+                value={form.token}
+                onChange={e => setForm(f => ({ ...f, token: e.target.value }))}
+              />
+              <button
+                type="button"
+                onClick={() => setShowToken(v => !v)}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+              >
+                {showToken ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+              </button>
+            </div>
+          </div>
+          <div className="flex items-end gap-2">
+            <button
+              onClick={handleSubmit}
+              disabled={saveMut.isPending}
+              className="flex-1 bg-blue-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-blue-700 disabled:opacity-50"
+            >
+              {editId !== null ? 'Update' : 'Add'}
+            </button>
+            {editId !== null && (
+              <button
+                onClick={() => { setEditId(null); setForm({ account_id: '', query_id: '', token: '', enabled: true }) }}
+                className="px-3 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Config list */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="flex items-center justify-between px-5 py-3 border-b border-gray-200">
+          <h3 className="font-semibold text-gray-800">Configured Accounts</h3>
+          <button
+            onClick={handleSyncAll}
+            className="flex items-center gap-2 text-sm bg-blue-50 text-blue-700 border border-blue-200 rounded-lg px-3 py-1.5 hover:bg-blue-100"
+          >
+            <RefreshCw className="h-3.5 w-3.5" /> Sync All
+          </button>
+        </div>
+        {isLoading ? (
+          <div className="p-8 text-center text-gray-400">Loading…</div>
+        ) : cfgList.length === 0 ? (
+          <div className="p-8 text-center text-gray-400">No Flex Query configs yet. Add one above.</div>
+        ) : (
+          <table className="min-w-full text-sm">
+            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <tr>
+                <th className="px-4 py-3 text-left">Account</th>
+                <th className="px-4 py-3 text-left">Query ID</th>
+                <th className="px-4 py-3 text-left">Token</th>
+                <th className="px-4 py-3 text-left">Last Sync</th>
+                <th className="px-4 py-3 text-left">Status</th>
+                <th className="px-4 py-3" />
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {cfgList.map(cfg => {
+                const st = syncStatus[cfg.account_id]
+                const isRunning = st === 'running' || cfg.last_sync_status === 'running'
+                return (
+                  <tr key={cfg.id} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium text-gray-900">
+                      {cfg.account_name ?? `Account ${cfg.account_id}`}
+                      {!cfg.enabled && <span className="ml-2 text-xs text-gray-400">(disabled)</span>}
+                    </td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-600">{cfg.query_id}</td>
+                    <td className="px-4 py-3 font-mono text-xs text-gray-400">{cfg.token_hint}</td>
+                    <td className="px-4 py-3 text-xs text-gray-500">
+                      {cfg.last_sync_at
+                        ? new Date(cfg.last_sync_at).toLocaleString('en-CA', { dateStyle: 'short', timeStyle: 'short' })
+                        : '—'}
+                    </td>
+                    <td className="px-4 py-3">
+                      {isRunning ? (
+                        <span className="flex items-center gap-1 text-xs text-blue-600">
+                          <Loader2 className="h-3 w-3 animate-spin" /> Running…
+                        </span>
+                      ) : syncMsg[cfg.account_id] ? (
+                        <span className={`text-xs ${st === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>
+                          {syncMsg[cfg.account_id]}
+                        </span>
+                      ) : cfg.last_sync_status === 'ok' ? (
+                        <span className="text-xs text-emerald-600">{cfg.last_sync_message}</span>
+                      ) : cfg.last_sync_status === 'error' ? (
+                        <span className="text-xs text-red-600" title={cfg.last_sync_message ?? ''}>Error</span>
+                      ) : (
+                        <span className="text-xs text-gray-400">Never synced</span>
+                      )}
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-2 justify-end">
+                        <button
+                          onClick={() => handleSync(cfg.account_id)}
+                          disabled={isRunning}
+                          title="Sync now"
+                          className="p-1.5 rounded text-blue-600 hover:bg-blue-50 disabled:opacity-40"
+                        >
+                          {isRunning ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                        </button>
+                        <button
+                          onClick={() => handleEdit(cfg)}
+                          title="Edit"
+                          className="p-1.5 rounded text-gray-500 hover:bg-gray-100"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteMut.mutate(cfg.id)}
+                          title="Remove"
+                          className="p-1.5 rounded text-red-500 hover:bg-red-50"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+    </div>
+  )
+}
+
+
 export default function Admin() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
@@ -2733,6 +2989,7 @@ export default function Admin() {
         {tab === 'brokerages' && <BrokeragesTab />}
         {tab === 'type-mappings' && <TypeMappingsTab />}
         {tab === 'fx-rates' && <FxRatesTab />}
+        {tab === 'ibkr-flex' && isAdmin && <IBKRFlexTab />}
         {tab === 'users' && isAdmin && <UsersTab />}
         {tab === 'danger' && isAdmin && <DangerZoneTab />}
       </div>

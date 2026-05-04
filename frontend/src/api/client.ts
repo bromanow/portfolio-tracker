@@ -1036,6 +1036,45 @@ export const connectIBKR = (req: IBKRConnectRequest) =>
 export const refreshPricesIBKR = () =>
   api.post<{ job_id: string; status: string; already_running: boolean }>('/ibkr/refresh-prices').then(r => r.data)
 
+// ─── IBKR Flex Query ──────────────────────────────────────────────────────────
+export interface IBKRFlexConfig {
+  id: number
+  account_id: number
+  account_name: string | null
+  query_id: string
+  token_hint: string
+  enabled: boolean
+  last_sync_at: string | null
+  last_sync_status: 'ok' | 'error' | 'running' | null
+  last_sync_message: string | null
+  last_sync_imported: number | null
+}
+
+export interface FlexConfigIn {
+  account_id: number
+  query_id: string
+  token: string
+  enabled?: boolean
+}
+
+export const getFlexConfigs = () =>
+  api.get<IBKRFlexConfig[]>('/ibkr/flex/configs').then(r => r.data)
+
+export const createFlexConfig = (data: FlexConfigIn) =>
+  api.post<IBKRFlexConfig>('/ibkr/flex/configs', data).then(r => r.data)
+
+export const updateFlexConfig = (id: number, data: Partial<FlexConfigIn>) =>
+  api.put<IBKRFlexConfig>(`/ibkr/flex/configs/${id}`, data).then(r => r.data)
+
+export const deleteFlexConfig = (id: number) =>
+  api.delete(`/ibkr/flex/configs/${id}`)
+
+export const syncFlexAccount = (accountId: number) =>
+  api.post<{ job_id: string; status: string }>(`/ibkr/flex/sync/${accountId}`).then(r => r.data)
+
+export const syncAllFlexAccounts = () =>
+  api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
+
 export const launchIBKRGateway = () =>
   api.post<{ ok: boolean; app_path: string }>('/ibkr/launch').then(r => r.data)
 

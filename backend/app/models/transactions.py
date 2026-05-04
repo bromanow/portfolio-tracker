@@ -36,6 +36,9 @@ class Transaction(Base):
     raw_import_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("raw_transactions.id"), nullable=True)
     raw_description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 
+    # External reference for deduplication (e.g. IBKR trade ID)
+    external_ref: Mapped[Optional[str]] = mapped_column(String(100), nullable=True, index=True)
+
     is_manual_override: Mapped[bool] = mapped_column(Boolean, default=False)
     is_verified: Mapped[bool] = mapped_column(Boolean, default=False)
 

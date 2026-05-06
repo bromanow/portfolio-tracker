@@ -14,6 +14,7 @@ import app.models.prices       # noqa
 import app.models.auth         # noqa
 import app.models.clients      # noqa
 import app.models.ibkr         # noqa
+import app.models.scanner      # noqa
 
 from app.dependencies import get_current_user
 from app.routers import auth as auth_router
@@ -22,6 +23,7 @@ from app.routers import prices as prices_router
 from app.routers import system as system_router
 from app.routers import ibkr as ibkr_router
 from app.routers import clients as clients_router
+from app.routers import scanner as scanner_router
 
 log = logging.getLogger(__name__)
 
@@ -125,15 +127,24 @@ def _run_migrations(eng):
             Base.metadata.tables["ibkr_flex_configs"].create(bind=eng)
 
     pending = [
-        ("securities",    "fetch_ticker_override", "VARCHAR(50)"),
-        ("securities",    "description",           "TEXT"),
-        ("brokerages",    "advisor",               "VARCHAR(100)"),
-        ("accounts",      "ibkr_alias",            "VARCHAR(100)"),
-        ("market_prices", "beta",                  "REAL"),
-        ("market_prices", "dividend_yield",        "REAL"),
-        ("market_prices", "market_cap",            "REAL"),
-        ("accounts",      "client_id",             "INTEGER REFERENCES clients(id)"),
-        ("transactions",  "external_ref",           "VARCHAR(100)"),
+        ("securities",       "fetch_ticker_override",  "VARCHAR(50)"),
+        ("securities",       "description",             "TEXT"),
+        ("brokerages",       "advisor",                 "VARCHAR(100)"),
+        ("accounts",         "ibkr_alias",              "VARCHAR(100)"),
+        ("market_prices",    "beta",                    "REAL"),
+        ("market_prices",    "dividend_yield",          "REAL"),
+        ("market_prices",    "market_cap",              "REAL"),
+        ("accounts",         "client_id",               "INTEGER REFERENCES clients(id)"),
+        ("transactions",     "external_ref",            "VARCHAR(100)"),
+        # Phase 2 scanner columns — Greeks from IBKR live data
+        ("scanner_results",  "delta",                   "FLOAT"),
+        ("scanner_results",  "gamma",                   "FLOAT"),
+        ("scanner_results",  "theta",                   "FLOAT"),
+        ("scanner_results",  "vega",                    "FLOAT"),
+        ("scanner_results",  "bid_ask_spread_pct",      "FLOAT"),
+        ("scanner_results",  "data_source",             "VARCHAR(20)"),
+        ("scanner_results",  "recommendation",          "VARCHAR(10)"),
+        ("scanner_results",  "dividend_yield",           "FLOAT"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:
@@ -225,6 +236,7 @@ app.include_router(prices_router.router,  dependencies=_auth)
 app.include_router(system_router.router,  dependencies=_auth)
 app.include_router(ibkr_router.router,    dependencies=_auth)
 app.include_router(clients_router.router, dependencies=_auth)
+app.include_router(scanner_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

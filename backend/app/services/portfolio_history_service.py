@@ -165,6 +165,17 @@ def compute_portfolio_snapshots(
         r[0] for r in db.query(Security.id).filter(Security.is_option == True).all()
     )
 
+    # ── 1c. Option expiry dates ───────────────────────────────────────────────
+    # Expired options have $0 value regardless of any stale price in the DB.
+    # Without this guard, _price_at() carries the last known price forward
+    # indefinitely, creating phantom market value for closed-out option positions.
+    from app.models.options import OptionContract
+    option_expiry: dict[int, date] = {
+        row.security_id: row.expiry_date
+        for row in db.query(OptionContract).all()
+        if row.expiry_date is not None
+    }
+
     # ── 2a. Position transactions: require security_id (needed for price lookup) ─
     txn_q = (
         db.query(Transaction)
@@ -245,6 +256,11 @@ def compute_portfolio_snapshots(
                 live_price_map[mp.security_id] = _d(mp.price_cad)
 
     def _get_price(sec_id: int, snap_date: date) -> Optional[Decimal]:
+        # Expired options are worth $0 — never carry a stale price forward.
+        expiry = option_expiry.get(sec_id)
+        if expiry is not None and snap_date > expiry:
+            return None
+
         # For today: prefer live market_prices so the snapshot agrees with the
         # Dashboard (historical_prices may not yet have today's close).
         if snap_date >= today:

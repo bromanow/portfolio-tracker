@@ -885,16 +885,22 @@ def get_portfolio_risk(
     beta_coverage_pct = float(beta_covered / total_val * 100) if total_val else 0
 
     # ── Weighted dividend yield ───────────────────────────────────────────────
-    div_weighted = Decimal("0")
-    div_covered  = Decimal("0")
+    # dividend_yield is stored as a percentage already (e.g. 5.36 = 5.36%).
+    # Weight against covered-position value only so the result is the true
+    # weighted-average yield for positions we have data for, not a diluted
+    # portfolio-wide number that shrinks with unpriced/option positions.
+    div_yield_sum = Decimal("0")   # Σ(val × yield_pct)
+    div_covered   = Decimal("0")   # Σ(val) for covered positions
+
     for ticker, val in by_ticker.items():
         sec_id = ticker_sec_id.get(ticker)
         mp = mp_map.get(sec_id) if sec_id else None
         if mp and mp.dividend_yield is not None:
-            w = val / total_val
-            div_weighted += w * Decimal(str(mp.dividend_yield))
-            div_covered  += val
+            div_yield_sum += val * Decimal(str(mp.dividend_yield))
+            div_covered   += val
 
+    # Weighted-average yield among covered positions (already in %)
+    div_weighted     = div_yield_sum / div_covered if div_covered else Decimal("0")
     div_coverage_pct = float(div_covered / total_val * 100) if total_val else 0
 
     # ── Volatility (annualised daily log-returns std dev) ─────────────────────
@@ -978,7 +984,7 @@ def get_portfolio_risk(
         "total_value_cad": float(total_val),
         "portfolio_beta": round(float(beta_weighted), 3) if beta_covered > 0 else None,
         "beta_coverage_pct": round(beta_coverage_pct, 1),
-        "dividend_yield_pct": round(float(div_weighted) * 100, 2) if div_covered > 0 else None,
+        "dividend_yield_pct": round(float(div_weighted), 2) if div_covered > 0 else None,
         "dividend_coverage_pct": round(div_coverage_pct, 1),
         "volatility_30d_pct": round(float(vol30_w), 1) if vol30_cov > 0 else None,
         "volatility_90d_pct": round(float(vol90_w), 1) if vol90_cov > 0 else None,

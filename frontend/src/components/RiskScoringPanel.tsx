@@ -177,7 +177,7 @@ export default function RiskScoringPanel({ accountIds }: Props) {
                   value={fmtPct(data.dividend_yield_pct)}
                   sub={data.dividend_coverage_pct != null ? `${data.dividend_coverage_pct.toFixed(0)}% of portfolio` : undefined}
                   color="text-emerald-700"
-                  tooltip="Market-value weighted average dividend yield across holdings."
+                  tooltip="Market-value weighted average dividend yield for positions with yield data (shown as % of portfolio in coverage below)."
                 />
                 <MetricCard
                   label="30-Day Volatility"

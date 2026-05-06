@@ -109,21 +109,29 @@ def _stamp_existing_trade(
 ) -> bool:
     """
     Look for a CSV-imported trade (external_ref IS NULL) that matches by
-    account + date + type + security + quantity.  If found, stamp it with
-    the IBKR external_ref so future syncs skip it, and return True.
+    account + date + security + quantity (absolute value).
+
+    Also matches OPTION_BUY/OPTION_SELL CSV rows against BUY/SELL from IBKR,
+    since IBKR reports all trades as BUY or SELL regardless of asset category.
+
+    If found, stamp it with the IBKR external_ref so future syncs skip it,
+    and return True.
     """
     from sqlalchemy import text
+    # Build the set of transaction types to match.  IBKR sends BUY/SELL for
+    # options too; CSV imports may have stored them as OPTION_BUY/OPTION_SELL.
+    alt_type = "OPTION_" + txn_type if txn_type in ("BUY", "SELL") else txn_type
     row = db.execute(text("""
         SELECT id FROM transactions
         WHERE account_id      = :acct
           AND transaction_date = :dt
-          AND transaction_type = :type
+          AND transaction_type IN (:type, :alt_type)
           AND security_id      = :sec
-          AND ABS(COALESCE(quantity, 0) - :qty) < 0.001
+          AND ABS(ABS(COALESCE(quantity, 0)) - :qty) < 0.001
           AND external_ref IS NULL
         LIMIT 1
-    """), {"acct": account_id, "dt": trade_date, "type": txn_type,
-           "sec": security_id, "qty": float(quantity or 0)}).fetchone()
+    """), {"acct": account_id, "dt": trade_date, "type": txn_type, "alt_type": alt_type,
+           "sec": security_id, "qty": float(abs(quantity or 0))}).fetchone()
     if row:
         db.execute(
             text("UPDATE transactions SET external_ref = :ref WHERE id = :id"),
@@ -343,12 +351,34 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
             logger.debug("Skipping trade %s — unrecognised buySell=%s", t["trade_id"], buy_sell)
             continue
 
+        asset_category = t.get("asset_category", "STK")
+
+        # Skip FX conversion trades — IBKR reports currency conversions as CASH trades
+        # with symbols like "USD.CAD".  These are not securities to hold.
+        if asset_category == "CASH":
+            logger.debug("Skipping FX trade %s (assetCategory=CASH)", t["trade_id"])
+            continue
+
         ticker = t["symbol"].upper().strip()
         if not ticker:
             continue
 
-        sec = get_or_create_security(db, ticker=ticker, currency=t["currency"],
-                                     exchange=t["exchange"] or None)
+        # Options: IBKR uses assetCategory="OPT".  We must:
+        #   1. Mark the security as an option so the correct ACB logic runs.
+        #   2. Skip the exchange filter — existing OPTION records were created without
+        #      an exchange, but IBKR fills in the exchange on every trade (e.g. "CBOE").
+        #      Passing exchange= would create a spurious EQUITY duplicate instead of
+        #      finding the existing OPTION record.
+        #   3. Map BUY→OPTION_BUY and SELL→OPTION_SELL so the ACB service correctly
+        #      handles covered-call short positions (negative lot quantity).
+        is_option = (asset_category == "OPT")
+        txn_type  = ("OPTION_" + buy_sell) if is_option else buy_sell
+
+        sec = get_or_create_security(
+            db, ticker=ticker, currency=t["currency"],
+            is_option=is_option,
+            exchange=None if is_option else (t["exchange"] or None),
+        )
 
         currency    = t["currency"] or "USD"
         qty         = _d(t["quantity"])
@@ -363,7 +393,7 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
         txn_amount = abs(trade_money) if trade_money is not None else None
 
         # Check for existing CSV-imported trade (no external_ref) — stamp and skip
-        if _stamp_existing_trade(db, account_id, trade_date, buy_sell, sec.id, qty, ext_ref):
+        if _stamp_existing_trade(db, account_id, trade_date, txn_type, sec.id, qty, ext_ref):
             continue
 
         fx_to_cad = None
@@ -378,7 +408,7 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
             security_id=sec.id,
             transaction_date=trade_date,
             settlement_date=_parse_ibkr_date(t["settle_date"]),
-            transaction_type=buy_sell,
+            transaction_type=txn_type,
             quantity=qty,
             price=price,
             commission=commission,

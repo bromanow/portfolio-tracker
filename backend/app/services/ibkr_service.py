@@ -104,6 +104,244 @@ def get_status() -> dict:
     }
 
 
+# ── Scanner session ───────────────────────────────────────────────────────────
+
+# Scanner uses client_id + 5 to avoid conflicting with other operations
+_CID_SCAN = 5
+
+class IBKRScannerSession:
+    """
+    Context manager that opens a dedicated read-only IB connection for scanning.
+    Usage:
+        with IBKRScannerSession() as ib:
+            opps = scan_ticker_live(ib, 'AAPL', ...)
+    """
+    def __init__(self):
+        self._ib = None
+
+    def __enter__(self):
+        if not _IB_AVAILABLE:
+            raise RuntimeError("ib_insync not installed")
+        import asyncio
+        from ib_insync import IB
+        try:
+            asyncio.get_event_loop()
+        except RuntimeError:
+            asyncio.set_event_loop(asyncio.new_event_loop())
+
+        s = get_settings()
+        self._ib = IB()
+        self._ib.connect(
+            s.get("host", "127.0.0.1"),
+            s.get("port", 4001),
+            clientId=s.get("client_id", 10) + _CID_SCAN,
+            timeout=20,
+            readonly=True,
+        )
+        # Live data (type 1). Falls back to frozen (type 2) automatically when
+        # the market is closed for equity options on most exchanges.
+        self._ib.reqMarketDataType(1)
+        logger.info("IBKRScannerSession: connected (clientId=%d)", s.get("client_id", 10) + _CID_SCAN)
+        return self._ib
+
+    def __exit__(self, *_):
+        try:
+            if self._ib and self._ib.isConnected():
+                self._ib.disconnect()
+                logger.info("IBKRScannerSession: disconnected")
+        except Exception:
+            pass
+
+
+def scan_ticker_live(
+    ib,
+    ticker: str,
+    currency: str = "USD",
+    exchange: str = "SMART",
+    min_dte: int = 14,
+    max_dte: int = 60,
+    min_otm_pct: float = 0.5,
+    max_otm_pct: float = 25.0,
+    min_oi: int = 50,
+    min_vol: int = 3,
+) -> list[dict]:
+    """
+    Fetch covered-call option chain with live Greeks for one ticker.
+    `ib` must be an already-connected ib_insync.IB instance.
+    Returns a list of raw opportunity dicts (no portfolio context yet).
+    """
+    import asyncio, math
+    from datetime import date, datetime as dt
+    from ib_insync import Stock, Option
+
+    # ── Qualify underlying ────────────────────────────────────────────────────
+    stock = Stock(ticker, exchange, currency)
+    try:
+        qualified = ib.qualifyContracts(stock)
+    except Exception as e:
+        logger.debug("qualifyContracts failed for %s: %s", ticker, e)
+        return []
+    if not qualified:
+        return []
+    stock = qualified[0]
+
+    # ── Get underlying price via snapshot ─────────────────────────────────────
+    try:
+        [snap] = ib.reqTickers(stock)
+        price = snap.marketPrice()
+        if not price or (isinstance(price, float) and math.isnan(price)) or price <= 0:
+            price = snap.close
+        if not price or (isinstance(price, float) and math.isnan(price)) or price <= 0:
+            logger.debug("No price for %s", ticker)
+            return []
+    except Exception as e:
+        logger.debug("reqTickers (underlying) failed for %s: %s", ticker, e)
+        return []
+
+    # ── Option chain parameters ───────────────────────────────────────────────
+    try:
+        chains = ib.reqSecDefOptParams(stock.symbol, "", stock.secType, stock.conId)
+    except Exception as e:
+        logger.debug("reqSecDefOptParams failed for %s: %s", ticker, e)
+        return []
+
+    smart = next((c for c in chains if c.exchange == "SMART"), None) or (chains[0] if chains else None)
+    if not smart:
+        return []
+
+    today = date.today()
+    all_options: list = []
+
+    for exp_str in sorted(smart.expirations):
+        # Parse expiry — IB uses YYYYMMDD
+        try:
+            exp_date = dt.strptime(exp_str, "%Y%m%d").date()
+        except ValueError:
+            try:
+                exp_date = date.fromisoformat(exp_str)
+            except ValueError:
+                continue
+
+        dte = (exp_date - today).days
+        if not (min_dte <= dte <= max_dte):
+            continue
+
+        lo = price * (1 + min_otm_pct / 100)
+        hi = price * (1 + max_otm_pct / 100)
+        strikes = sorted(s for s in smart.strikes if lo <= s <= hi)
+        if not strikes:
+            continue
+
+        for s in strikes:
+            all_options.append((Option(ticker, exp_str, s, "C", "SMART"), exp_date, dte, s))
+
+    if not all_options:
+        return []
+
+    # ── Qualify all option contracts in one batch ─────────────────────────────
+    try:
+        raw_contracts = [o[0] for o in all_options]
+        qualified_opts = ib.qualifyContracts(*raw_contracts)
+    except Exception as e:
+        logger.debug("qualifyContracts (options) failed for %s: %s", ticker, e)
+        return []
+
+    # Build map: conId → (exp_date, dte, strike) for qualified contracts
+    qual_map = {c.conId: c for c in qualified_opts}
+    meta_map = {}
+    for opt, exp_date, dte, strike in all_options:
+        # Match by strike+expiry since conId not yet known pre-qualify
+        for qc in qualified_opts:
+            if abs(qc.strike - strike) < 0.01 and qc.lastTradeDateOrContractMonth == opt.lastTradeDateOrContractMonth:
+                meta_map[qc.conId] = (exp_date, dte)
+                break
+
+    if not qualified_opts:
+        return []
+
+    # ── Snapshot market data — Greeks come with option data ───────────────────
+    try:
+        tickers = ib.reqTickers(*qualified_opts)
+    except Exception as e:
+        logger.debug("reqTickers (options) failed for %s: %s", ticker, e)
+        return []
+
+    results = []
+    for t in tickers:
+        try:
+            cid = t.contract.conId
+            exp_meta = meta_map.get(cid)
+            if not exp_meta:
+                continue
+            exp_date, dte = exp_meta
+
+            bid = t.bid if t.bid and not math.isnan(t.bid) and t.bid > 0 else 0.0
+            ask = t.ask if t.ask and not math.isnan(t.ask) and t.ask > 0 else 0.0
+            if bid <= 0:
+                continue
+
+            greeks = t.modelGreeks
+            if not greeks or greeks.delta is None or math.isnan(greeks.delta):
+                continue
+
+            delta     = abs(greeks.delta)
+            iv_raw    = greeks.impliedVol
+            iv_pct    = round(iv_raw * 100, 2) if iv_raw and not math.isnan(iv_raw) else None
+            gamma     = round(greeks.gamma, 6)  if greeks.gamma and not math.isnan(greeks.gamma)  else None
+            theta     = round(greeks.theta, 4)  if greeks.theta and not math.isnan(greeks.theta)  else None
+            vega      = round(greeks.vega,  4)  if greeks.vega  and not math.isnan(greeks.vega)   else None
+
+            strike = float(t.contract.strike)
+            oi     = int(t.callOpenInterest or 0) or int(t.openInterest or 0)
+            vol    = int(t.callVolume or 0)    or int(t.volume or 0)
+
+            if oi < min_oi or vol < min_vol:
+                continue
+
+            mid            = round((bid + ask) / 2, 4)
+            spread_pct     = round((ask - bid) / ask * 100, 1) if ask > 0 else None
+            otm_pct        = round((strike / price - 1) * 100, 2)
+            annual_yield   = round((mid / price) * (365 / dte) * 100, 2)
+            max_return     = round(((strike - price + mid) / price) * 100, 2)
+            breakeven      = round(price - mid, 4)
+            iv_hv          = None  # hv_30 injected by caller
+
+            results.append({
+                "strike":            strike,
+                "expiry_date":       exp_date,
+                "dte":               dte,
+                "bid":               round(bid, 4),
+                "ask":               round(ask, 4),
+                "mid":               mid,
+                "volume":            vol,
+                "open_interest":     oi,
+                "iv_pct":            iv_pct,
+                "delta":             round(delta, 4),
+                "gamma":             gamma,
+                "theta":             theta,
+                "vega":              vega,
+                "otm_pct":           otm_pct,
+                "annual_yield_pct":  annual_yield,
+                "max_return_pct":    max_return,
+                "breakeven":         breakeven,
+                "bid_ask_spread_pct": spread_pct,
+                "current_price":     round(price, 4),
+            })
+        except Exception as e:
+            logger.debug("Option row parse error for %s: %s", ticker, e)
+            continue
+
+    # Cancel market data lines we opened
+    try:
+        ib.cancelMktData(stock)
+        for qc in qualified_opts:
+            ib.cancelMktData(qc)
+    except Exception:
+        pass
+
+    return results
+
+
 # ── Gateway launch helpers ────────────────────────────────────────────────────
 
 # Candidate glob patterns — include one level of subdirectory for versioned installs

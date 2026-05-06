@@ -1,7 +1,15 @@
 """
-IBKR Flex Query endpoints.
+IBKR endpoints — two independent integrations:
 
-Any authenticated user:
+TWS / IB Gateway (live socket connection — requires Gateway running locally):
+  GET    /api/ibkr/status                  — gateway status + last refresh info
+  POST   /api/ibkr/connect                 — test & save host/port/clientId
+  POST   /api/ibkr/launch                  — launch IB Gateway app (macOS)
+  GET    /api/ibkr/managed-accounts        — list IB account numbers
+  POST   /api/ibkr/refresh-prices          — fetch live prices via TWS
+  POST   /api/ibkr/sync-transactions       — import today's executions via TWS
+
+Flex Query (pulls historical trade CSVs from IBKR servers — no Gateway needed):
   GET    /api/ibkr/flex/my-config          — get own config
   POST   /api/ibkr/flex/my-config          — create / update own config
   DELETE /api/ibkr/flex/my-config          — remove own config
@@ -39,6 +47,12 @@ def _require_admin(current_user: User = Depends(get_current_user)) -> User:
 
 # ── Schemas ───────────────────────────────────────────────────────────────────
 
+class ConnectRequest(BaseModel):
+    host:      str = "127.0.0.1"
+    port:      int = 7497
+    client_id: int = 10
+
+
 class FlexConfigIn(BaseModel):
     query_id: str
     token:    str
@@ -72,6 +86,130 @@ def _config_dict(cfg: IBKRFlexConfig, include_user: bool = False) -> dict:
 # ── Reuse background job store ─────────────────────────────────────────────────
 
 from app.routers.prices import background_jobs  # noqa: E402
+
+# Import ibkr_service at module level so ib_insync's eventkit initialises in
+# the main thread (it calls asyncio.get_event_loop() at import time, which
+# fails inside AnyIO worker threads used by FastAPI).
+from app.services import ibkr_service  # noqa: E402
+
+# ── TWS / IB Gateway endpoints ────────────────────────────────────────────────
+
+@router.get("/status")
+def get_status():
+    """Return current TWS/Gateway connection status."""
+    return ibkr_service.get_status()
+
+
+@router.post("/connect")
+def connect(body: ConnectRequest):
+    """
+    Test connection to TWS/IB Gateway and persist the settings if successful.
+    Runs synchronously (may take up to ~10 s).
+    """
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(
+            ibkr_service.test_connection, body.host, body.port, body.client_id
+        ).result(timeout=20)
+    if result["ok"]:
+        ibkr_service.save_settings(body.host, body.port, body.client_id)
+        return {
+            "connected":   True,
+            "tws_version": result.get("tws_version", ""),
+            "message":     f"Connected to {body.host}:{body.port}",
+        }
+    raise HTTPException(status_code=502, detail=result.get("error", "Connection failed"))
+
+
+@router.post("/launch")
+def launch():
+    """Launch IB Gateway (or TWS) using macOS `open`. macOS only."""
+    result = ibkr_service.launch_gateway()
+    if not result["ok"]:
+        raise HTTPException(status_code=500, detail=result.get("error", "Could not launch"))
+    return result
+
+
+@router.get("/managed-accounts")
+def managed_accounts():
+    """Connect to Gateway briefly and return the list of IB account numbers."""
+    import concurrent.futures
+    with concurrent.futures.ThreadPoolExecutor(max_workers=1) as pool:
+        result = pool.submit(ibkr_service.get_managed_accounts).result(timeout=15)
+    return result
+
+
+@router.post("/refresh-prices")
+def refresh_prices_ibkr():
+    """
+    Fetch live prices for all non-option securities via TWS/Gateway.
+    Falls back to yfinance for any that IBKR can't price.
+    Returns a job_id — poll GET /api/prices/jobs/{job_id} for status.
+    """
+    if not ibkr_service.is_available():
+        raise HTTPException(status_code=503, detail="ib_insync not installed")
+    if not ibkr_service.get_status().get("last_connected_at"):
+        raise HTTPException(status_code=400, detail="Not connected — click 'Test & Save' in the IB modal first")
+
+    name = "ibkr_refresh_prices"
+    if background_jobs.is_running(name):
+        running = [j for j in background_jobs.list_jobs() if j["name"] == name and j["status"] == "running"]
+        return {"job_id": running[0]["id"] if running else None, "status": "already_running", "already_running": True}
+
+    job_id = background_jobs.start_job(name)
+
+    def _run():
+        try:
+            from app.database import SessionLocal
+            from app.models.master import Security
+            from app.services.price_service import refresh_all_prices
+            with SessionLocal() as db:
+                result = ibkr_service.fetch_prices(
+                    db.query(Security).filter(Security.is_option == False).all(), db
+                )
+            background_jobs.finish_job(job_id, result)
+        except Exception as exc:
+            logger.exception("IBKR refresh-prices job failed")
+            background_jobs.fail_job(job_id, str(exc))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "status": "started", "already_running": False}
+
+
+@router.post("/sync-transactions")
+def sync_transactions():
+    """
+    Import today's executions from the running IB Gateway session.
+    This is separate from Flex Query — it captures same-day trades.
+    Returns a job_id — poll GET /api/prices/jobs/{job_id} for status.
+    """
+    if not ibkr_service.is_available():
+        raise HTTPException(status_code=503, detail="ib_insync not installed")
+    if not ibkr_service.get_status().get("last_connected_at"):
+        raise HTTPException(status_code=400, detail="Not connected — click 'Test & Save' in the IB modal first")
+
+    name = "ibkr_sync_transactions"
+    if background_jobs.is_running(name):
+        running = [j for j in background_jobs.list_jobs() if j["name"] == name and j["status"] == "running"]
+        return {"job_id": running[0]["id"] if running else None, "status": "already_running", "already_running": True}
+
+    job_id = background_jobs.start_job(name)
+
+    def _run():
+        try:
+            from app.database import SessionLocal
+            with SessionLocal() as db:
+                result = ibkr_service.sync_transactions(db)
+            background_jobs.finish_job(job_id, result)
+        except Exception as exc:
+            logger.exception("IBKR sync-transactions job failed")
+            background_jobs.fail_job(job_id, str(exc))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "status": "started", "already_running": False}
+
+
+# ── Flex Query endpoints ───────────────────────────────────────────────────────
 
 
 def _spawn_sync(job_name: str, user_ids: list[int]) -> dict:
@@ -118,8 +256,6 @@ def _spawn_sync(job_name: str, user_ids: list[int]) -> dict:
     threading.Thread(target=_worker, daemon=True).start()
     return {"job_id": job_id, "status": "started", "already_running": False}
 
-
-# ── Any user — own config ─────────────────────────────────────────────────────
 
 @router.get("/flex/my-config")
 def get_my_config(

@@ -500,6 +500,17 @@ export const getSecuritySignals = (id: number) =>
   api.get<SecuritySignals>(`/securities/${id}/signals`).then(r => r.data)
 export const computeSecuritySignals = (id: number) =>
   api.post(`/securities/${id}/compute-signals`).then(r => r.data)
+
+export interface BulkFundamentalsSignals {
+  [securityId: string]: {
+    fundamentals: StoredFundamentals | null
+    signals: SecuritySignals | null
+  }
+}
+export const getBulkFundamentalsSignals = (securityIds: number[]) =>
+  api.get<BulkFundamentalsSignals>('/securities/bulk/fundamentals-signals', {
+    params: { security_ids: securityIds.join(',') },
+  }).then(r => r.data)
 export const getPortfolioSummary = (params?: { as_of?: string }) =>
   api.get<PortfolioSummary>('/portfolio/summary', { params }).then(r => r.data)
 export const getRealizedPnl = (params?: { account_id?: number; account_ids?: string; year?: number; brokerage_name?: string }) =>
@@ -1083,5 +1094,99 @@ export const getIBKRManagedAccounts = () =>
 
 export const syncIBKRTransactions = () =>
   api.post<{ job_id: string; status: string; already_running: boolean }>('/ibkr/sync-transactions').then(r => r.data)
+
+// ─── Covered-call Scanner ────────────────────────────────────────────────────
+
+export interface ScannerMeta {
+  available: boolean
+  scan_run_id?: string
+  scanned_at?: string
+  total_rows?: number
+  tickers?: number
+  ibkr_available?: boolean
+  ibkr_connected?: boolean
+  gateway_running?: boolean
+}
+
+export interface ScannerResult {
+  id: number
+  ticker: string
+  company_name: string | null
+  current_price: number | null
+  avg_stock_volume: number | null
+  currency: string | null
+  dividend_yield: number | null
+  strike: number
+  expiry_date: string | null
+  dte: number
+  bid: number | null
+  ask: number | null
+  mid: number | null
+  volume: number | null
+  open_interest: number | null
+  iv_pct: number | null
+  hv_30_pct: number | null
+  iv_hv_ratio: number | null
+  otm_pct: number | null
+  annual_yield_pct: number | null
+  max_return_pct: number | null
+  breakeven: number | null
+  score: number | null
+  delta: number | null
+  gamma: number | null
+  theta: number | null
+  vega: number | null
+  bid_ask_spread_pct: number | null
+  data_source: string | null
+  recommendation: string | null
+  in_portfolio: boolean
+  portfolio_qty: number
+  portfolio_contracts: number
+}
+
+export interface ScanTriggerParams {
+  min_avg_stock_vol?: number
+  min_option_oi?: number
+  min_option_vol?: number
+  min_dte?: number
+  max_dte?: number
+  min_otm_pct?: number
+  max_otm_pct?: number
+  min_div_yield?: number
+}
+
+export interface WatchlistItem {
+  id: number
+  ticker: string
+  company_name: string | null
+  notes: string | null
+  added_at: string | null
+}
+
+export const getScannerMeta = () =>
+  api.get<ScannerMeta>('/scanner/meta').then(r => r.data)
+
+export const getScannerResults = (params?: {
+  min_yield?: number
+  max_otm?: number
+  min_oi?: number
+  min_dte?: number
+  max_dte?: number
+  min_div_yield?: number
+  in_portfolio?: boolean
+  limit?: number
+}) => api.get<ScannerResult[]>('/scanner/results', { params }).then(r => r.data)
+
+export const triggerScan = (params?: ScanTriggerParams) =>
+  api.post<{ job_id: string; status: string; already_running: boolean }>('/scanner/run', params ?? {}).then(r => r.data)
+
+export const getWatchlist = () =>
+  api.get<WatchlistItem[]>('/scanner/watchlist').then(r => r.data)
+
+export const addToWatchlist = (ticker: string, notes?: string) =>
+  api.post<WatchlistItem>('/scanner/watchlist', { ticker, notes }).then(r => r.data)
+
+export const removeFromWatchlist = (ticker: string) =>
+  api.delete(`/scanner/watchlist/${ticker}`).then(r => r.data)
 
 export default api

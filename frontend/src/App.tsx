@@ -8,6 +8,7 @@ import Performance from './pages/Performance'
 import Import from './pages/Import'
 import Transactions from './pages/Transactions'
 import Options from './pages/Options'
+import Scanner from './pages/Scanner'
 import Prices from './pages/Prices'
 import Admin from './pages/Admin'
 import Reports from './pages/Reports'
@@ -48,6 +49,7 @@ export default function App() {
         <Route path="performance"  element={<Performance />} />
         <Route path="import"       element={<Import />} />
         <Route path="transactions" element={<Transactions />} />
+        <Route path="scanner"      element={<Scanner />} />
         <Route path="options"      element={<Options />} />
         <Route path="prices"       element={<Prices />} />
         <Route path="admin"        element={<Admin />} />

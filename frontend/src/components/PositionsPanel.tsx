@@ -100,9 +100,15 @@ type SortDir = 'asc' | 'desc'
 
 function sortRows<T>(rows: T[], col: string, dir: SortDir): T[] {
   return [...rows].sort((a, b) => {
-    const va = String((a as Record<string, unknown>)[col] ?? '')
-    const vb = String((b as Record<string, unknown>)[col] ?? '')
-    const cmp = va.localeCompare(vb, undefined, { numeric: true, sensitivity: 'base' })
+    const rawA = (a as Record<string, unknown>)[col] ?? ''
+    const rawB = (b as Record<string, unknown>)[col] ?? ''
+    const numA = parseFloat(String(rawA))
+    const numB = parseFloat(String(rawB))
+    // Use numeric comparison when both values are numbers (handles negatives correctly).
+    // Fall back to locale-aware string compare for text columns (ticker, name, etc.).
+    const cmp = (!isNaN(numA) && !isNaN(numB))
+      ? numA - numB
+      : String(rawA).localeCompare(String(rawB), undefined, { sensitivity: 'base' })
     return dir === 'asc' ? cmp : -cmp
   })
 }

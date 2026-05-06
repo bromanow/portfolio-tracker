@@ -493,3 +493,37 @@ def compute_security_signals_endpoint(security_id: int, db: Session = Depends(ge
     if result is None:
         return {"success": False, "message": "Insufficient price history to compute signals."}
     return {"success": True, "as_of_date": result.get("as_of_date", "").isoformat() if result.get("as_of_date") else None}
+
+
+@router.get("/bulk/fundamentals-signals")
+def get_bulk_fundamentals_signals(
+    security_ids: str = Query(..., description="Comma-separated security IDs"),
+    db: Session = Depends(get_db),
+):
+    """
+    Return stored fundamentals and signals for multiple securities in one request.
+    Used by the Holdings Fundamentals and Signals tabs to populate the comparison table.
+    Response: { security_id: { fundamentals: {...} | null, signals: {...} | null } }
+    """
+    from app.models.master import SecurityFundamentals, SecuritySignals
+
+    ids = [int(x.strip()) for x in security_ids.split(",") if x.strip().isdigit()]
+    if not ids:
+        return {}
+
+    fund_map = {
+        f.security_id: _fundamentals_to_dict(f)
+        for f in db.query(SecurityFundamentals).filter(SecurityFundamentals.security_id.in_(ids)).all()
+    }
+    sig_map = {
+        s.security_id: _signals_to_dict(s)
+        for s in db.query(SecuritySignals).filter(SecuritySignals.security_id.in_(ids)).all()
+    }
+
+    return {
+        str(sec_id): {
+            "fundamentals": fund_map.get(sec_id),
+            "signals":      sig_map.get(sec_id),
+        }
+        for sec_id in ids
+    }

@@ -522,20 +522,22 @@ export default function Header() {
         {/* ── Right: IBKR status + price status + refresh buttons ── */}
         <div className="flex items-center gap-3 ml-auto shrink-0">
 
-          {/* IBKR status badge */}
+          {/* IBKR Gateway badge — always show if ib_insync is installed */}
           {ibkrStatus?.available && (
             <button
               onClick={() => setShowIBKRModal(true)}
-              className="flex items-center gap-1.5 text-xs group"
-              title={ibkrConfigured ? 'IBKR connected — click to configure' : 'Click to configure IBKR connection'}
+              className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border font-medium transition-colors group ${
+                ibkrConfigured
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                  : 'bg-gray-50 border-gray-200 text-gray-500 hover:bg-gray-100'
+              }`}
+              title={ibkrConfigured ? 'IB Gateway connected — click to configure' : 'IB Gateway not connected — click to set up'}
             >
               {ibkrConfigured
-                ? <Wifi className="h-3.5 w-3.5 text-emerald-500" />
-                : <WifiOff className="h-3.5 w-3.5 text-gray-300" />}
-              <span className={ibkrConfigured ? 'text-emerald-600 font-medium' : 'text-gray-400'}>
-                IB
-              </span>
-              <Settings className="h-3 w-3 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                ? <Wifi className="h-3.5 w-3.5" />
+                : <WifiOff className="h-3.5 w-3.5" />}
+              <span>IB Gateway</span>
+              <Settings className="h-3 w-3 opacity-40 group-hover:opacity-80 transition-opacity" />
             </button>
           )}
 

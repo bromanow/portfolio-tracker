@@ -2837,7 +2837,11 @@ function IBKRFlexTab() {
                 </button>
               </div>
               {syncError && (
-                <p className="text-sm text-red-600 max-w-md">{syncError}</p>
+                <p className="text-sm text-red-600 max-w-md">
+                  {syncError.includes('429')
+                    ? 'IBKR limits syncs to once every 10 minutes. The last sync status is shown below — check if it already completed successfully.'
+                    : syncError}
+                </p>
               )}
             </div>
           )}

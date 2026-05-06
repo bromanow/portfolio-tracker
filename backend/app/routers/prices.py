@@ -69,6 +69,11 @@ def _spawn_job(name: str, fn) -> dict:
     job_id = background_jobs.start_job(name)
 
     def _worker():
+        # Background threads have no event loop; create one so that libraries
+        # like ib_insync (which use asyncio) work correctly in this thread.
+        import asyncio
+        asyncio.set_event_loop(asyncio.new_event_loop())
+
         from app.database import SessionLocal
         db2 = SessionLocal()
         try:

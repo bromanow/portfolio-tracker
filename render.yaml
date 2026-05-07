@@ -10,7 +10,7 @@ services:
     rootDir: backend
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
-    plan: free                # upgrade to "starter" ($7/mo) to avoid cold starts
+    plan: starter             # "starter" ($7/mo) avoids cold starts
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -33,6 +33,37 @@ services:
         value: Brian Romanow
       - key: ADMIN_PASSWORD
         sync: false   # set this manually in Render → Environment tab
+      # IBeam Client Portal Gateway — internal URL for live option data.
+      # Leave empty to disable IBeam and fall back to yfinance.
+      - key: IBEAM_BASE_URL
+        value: https://ibeam:5000
+
+  # ── IBeam — IBKR Client Portal Gateway (headless, containerised) ─────────────
+  # Authenticates against IBKR and proxies the Client Portal REST API so the
+  # backend can fetch live option chains + Greeks without a local desktop app.
+  # Requires ~2 GB RAM (IB Gateway + Chromium). Uses the "standard" plan.
+  # Credentials and TOTP secret are set manually in Render → Environment tab.
+  - type: pserv               # private service — not exposed to the internet
+    name: ibeam
+    runtime: image
+    image:
+      url: docker.io/voyz/ibeam:latest
+    plan: standard            # 2 GB RAM / 1 CPU — required for IB Gateway + Chrome
+    envVars:
+      - key: IBEAM_ACCOUNT
+        sync: false           # set in Render dashboard: your IBKR API sub-username
+      - key: IBEAM_PASSWORD
+        sync: false           # set in Render dashboard: that user's password
+      - key: IBEAM_TWO_FA_HANDLER
+        value: pyotp          # automated TOTP — no human interaction needed
+      - key: IBEAM_PYOTP_SECRET
+        sync: false           # set in Render dashboard: base32 secret from IBKR TOTP setup
+      - key: IBEAM_LOG_LEVEL
+        value: INFO
+      - key: IBEAM_MAX_FAILED_AUTH
+        value: "3"            # stop after 3 failures to avoid IBKR account lockout
+      - key: IBEAM_GATEWAY_STARTUP
+        value: "30"           # seconds to wait for Gateway to boot on cold start
 
   # ── Frontend (React / Vite — served by Node via "serve") ────────────────────
   # Render Blueprints don't support type:static; we use a lightweight Node web

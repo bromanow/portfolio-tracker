@@ -391,28 +391,42 @@ def _scan_ticker(
     return opportunities
 
 
-def _scan_ticker_ibkr(
-    ib,
+def _scan_ticker_live(
     ticker: str,
     db: Session,
     portfolio_map: dict,
     hv_cache: dict,
     params: ScanParams,
+    ib=None,   # ib_insync IB instance (local gateway path); None = use IBeam REST
 ) -> list[dict]:
-    from app.services.ibkr_service import scan_ticker_live
+    """
+    Scan one ticker using live IBKR data.
+    When ib=None  → uses Client Portal REST API via IBeam (cloud / Render).
+    When ib≠None  → uses ib_insync socket connection (local gateway).
+    Both paths return identical raw dicts; scoring + enrichment is shared below.
+    """
     import yfinance as yf
 
-    currency = "USD"
-    exchange = "SMART"
-    if ticker.endswith(".TO"):
-        currency = "CAD"
-        exchange = "TSX"
+    is_canadian = ticker.upper().endswith(".TO") or ticker.upper().endswith(".V")
+    currency = "CAD" if is_canadian else "USD"
+    exchange = "TSX" if is_canadian else "SMART"
 
-    raw = scan_ticker_live(
-        ib, ticker, currency=currency, exchange=exchange,
-        min_dte=params.min_dte, max_dte=params.max_dte,
-        min_otm_pct=params.min_otm_pct, max_otm_pct=params.max_otm_pct,
-    )
+    if ib is None:
+        from app.services.ibkr_service import scan_ticker_ibeam
+        raw = scan_ticker_ibeam(
+            ticker, currency=currency, exchange=exchange,
+            min_dte=params.min_dte, max_dte=params.max_dte,
+            min_otm_pct=params.min_otm_pct, max_otm_pct=params.max_otm_pct,
+            min_oi=params.min_option_oi, min_vol=params.min_option_vol,
+        )
+    else:
+        from app.services.ibkr_service import scan_ticker_live
+        raw = scan_ticker_live(
+            ib, ticker, currency=currency, exchange=exchange,
+            min_dte=params.min_dte, max_dte=params.max_dte,
+            min_otm_pct=params.min_otm_pct, max_otm_pct=params.max_otm_pct,
+        )
+
     if not raw:
         return []
 
@@ -494,7 +508,7 @@ def _scan_ticker_ibkr(
             "bid_ask_spread_pct": r.get("bid_ask_spread_pct"),
             "score":              score,
             "recommendation":     rec,
-            "data_source":        "ibkr",
+            "data_source":        "ibkr_ibeam" if ib is None else "ibkr",
             "in_portfolio":       portfolio_qty > 0,
             "portfolio_qty":      portfolio_qty,
             "portfolio_contracts": portfolio_qty // 100,
@@ -518,21 +532,27 @@ def run_covered_call_scan(db: Session, params: Optional[ScanParams] = None) -> d
     scan_run_id = str(uuid.uuid4())
     started_at  = datetime.utcnow()
 
-    ibkr_available = False
-    ibkr_connected = False
+    ibeam_available = False
+    ibkr_connected  = False
     try:
         from app.services import ibkr_service
-        ibkr_available = ibkr_service.is_available()
-        status = ibkr_service.get_status()
-        ibkr_connected = bool(
-            ibkr_available
-            and status.get("gateway_running")
-            and status.get("last_connected_at")
-        )
+        ibeam_available = ibkr_service.is_ibeam_available()
+        if not ibeam_available:
+            status = ibkr_service.get_status()
+            ibkr_connected = bool(
+                ibkr_service.is_available()
+                and status.get("gateway_running")
+                and status.get("last_connected_at")
+            )
     except Exception:
         pass
 
-    logger.info("Scanner: IB Gateway %s", "connected — using live Greeks" if ibkr_connected else "not connected — using yfinance")
+    data_mode = (
+        "IBeam Client Portal REST API (live Greeks)"  if ibeam_available else
+        "local IB Gateway (live Greeks)"              if ibkr_connected  else
+        "yfinance (delayed, Black-Scholes Greeks)"
+    )
+    logger.info("Scanner: using %s", data_mode)
     logger.info("Scanner params: %s", params)
 
     watchlist = {row.ticker for row in db.query(ScannerWatchlist).all()}
@@ -555,24 +575,38 @@ def run_covered_call_scan(db: Session, params: Optional[ScanParams] = None) -> d
     all_opportunities: list[dict] = []
     errors: list[str] = []
 
-    if ibkr_connected:
+    if ibeam_available:
+        # ── Cloud path: IBeam Client Portal REST API ──────────────────────────
+        for i, ticker in enumerate(all_tickers, 1):
+            logger.info("  [%d/%d] IBeam scanning %s …", i, len(all_tickers), ticker)
+            try:
+                opps = _scan_ticker_live(ticker, db, portfolio_map, hv_cache, params, ib=None)
+                all_opportunities.extend(opps)
+                logger.info("    → %d opportunities (live IBeam)", len(opps))
+            except Exception as exc:
+                logger.exception("Scanner IBeam: error for %s", ticker)
+                errors.append(f"{ticker}: {exc}")
+
+    elif ibkr_connected:
+        # ── Local path: ib_insync socket to local Gateway ─────────────────────
         from app.services.ibkr_service import IBKRScannerSession
         try:
             with IBKRScannerSession() as ib:
                 for i, ticker in enumerate(all_tickers, 1):
-                    logger.info("  [%d/%d] IBKR scanning %s …", i, len(all_tickers), ticker)
+                    logger.info("  [%d/%d] IBKR (local) scanning %s …", i, len(all_tickers), ticker)
                     try:
-                        opps = _scan_ticker_ibkr(ib, ticker, db, portfolio_map, hv_cache, params)
+                        opps = _scan_ticker_live(ticker, db, portfolio_map, hv_cache, params, ib=ib)
                         all_opportunities.extend(opps)
-                        logger.info("    → %d opportunities (live)", len(opps))
+                        logger.info("    → %d opportunities (live local)", len(opps))
                     except Exception as exc:
                         logger.exception("Scanner IBKR: error for %s", ticker)
                         errors.append(f"{ticker}: {exc}")
         except Exception as exc:
-            logger.warning("IBKR scanner session failed (%s) — falling back to yfinance", exc)
+            logger.warning("Local IBKR session failed (%s) — falling back to yfinance", exc)
             ibkr_connected = False
 
-    if not ibkr_connected:
+    if not ibeam_available and not ibkr_connected:
+        # ── Fallback: yfinance (delayed, US only) ─────────────────────────────
         for i, ticker in enumerate(all_tickers, 1):
             logger.info("  [%d/%d] yfinance scanning %s …", i, len(all_tickers), ticker)
             try:
@@ -592,13 +626,18 @@ def run_covered_call_scan(db: Session, params: Optional[ScanParams] = None) -> d
     else:
         logger.warning("Scanner found 0 opportunities — keeping previous results")
 
+    data_source = (
+        "ibkr_ibeam" if ibeam_available else
+        "ibkr"       if ibkr_connected  else
+        "yfinance"
+    )
     return {
-        "scan_run_id":     scan_run_id,
-        "tickers_scanned": len(all_tickers),
-        "opportunities":   len(all_opportunities),
-        "errors":          errors,
-        "elapsed_seconds": round((datetime.utcnow() - started_at).total_seconds(), 1),
-        "data_source":     "ibkr" if ibkr_connected else "yfinance",
-        "ibkr_connected":  ibkr_connected,
-        "ibkr_available":  ibkr_available,
+        "scan_run_id":      scan_run_id,
+        "tickers_scanned":  len(all_tickers),
+        "opportunities":    len(all_opportunities),
+        "errors":           errors,
+        "elapsed_seconds":  round((datetime.utcnow() - started_at).total_seconds(), 1),
+        "data_source":      data_source,
+        "ibeam_available":  ibeam_available,
+        "ibkr_connected":   ibkr_connected,
     }

@@ -1,0 +1,15 @@
+## IBeam / Client Portal Gateway configuration
+## Mounted into the container at /srv/inputs/conf.yaml
+## Docs: https://github.com/Voyz/ibeam
+
+listenSsl: True
+listenPort: 5000
+
+## Allow connections from within Render's internal private network.
+## The backend service connects to this container at https://ibeam:5000.
+## All traffic stays within Render's private network — never exposed publicly.
+listenAllAddresses: True
+
+## Keep the brokerage session alive.  IBeam ticks every 60 s by default;
+## the Gateway disconnects after ~10 min of silence, so this keeps it warm.
+keepAliveInterval: 60

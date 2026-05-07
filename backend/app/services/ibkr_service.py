@@ -1,21 +1,27 @@
 """
-Interactive Brokers price service via ib_insync.
+Interactive Brokers service.
 
-Requires TWS (port 7497) or IB Gateway (port 4001) to be running on the same
-machine and configured to accept API connections (File → Global Config → API →
-Settings → Enable ActiveX and Socket Clients).
+Two modes — the service picks the right one automatically:
 
-No credentials are stored here — authentication happens inside TWS/Gateway.
-This service simply connects over a local socket.
+1. IBeam / Client Portal REST API  (cloud / Render)
+   IBeam runs as a private Docker service alongside the backend.
+   Set IBEAM_BASE_URL=https://ibeam:5000 in the environment.
+   No local software needed — IBeam handles Gateway auth automatically.
+
+2. ib_insync / TWS socket  (local development)
+   Requires IB Gateway or TWS running on localhost.
+   Credentials handled by the desktop app.
 """
 from __future__ import annotations
 
 import glob
 import json
 import logging
+import math
 import os
 import subprocess
 import threading
+import time
 from datetime import date, datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
@@ -102,6 +108,330 @@ def get_status() -> dict:
         "gateway_running": is_gateway_running(),
         "gateway_app_path": find_gateway_app(),
     }
+
+
+# ── IBeam / Client Portal REST API ───────────────────────────────────────────
+#
+# When IBEAM_BASE_URL is set (e.g. https://ibeam:5000) the scanner uses the
+# IBKR Client Portal REST API instead of the ib_insync socket path.
+# IBeam proxies all /v1/api/* calls to IBKR after handling authentication.
+#
+# Option chain flow (4 steps, all REST):
+#   1. GET /iserver/secdef/search?symbol=X     → underlying conId + expiry months
+#   2. GET /iserver/secdef/strikes?conid=…     → call strike prices for each month
+#   3. GET /iserver/secdef/info?conid=…&strike=… → option conId for each strike
+#   4. GET /iserver/marketdata/snapshot?conids=… → bid/ask/Greeks for all options
+#
+# Greek field IDs (from Client Portal API v1 docs):
+#   84=Bid  86=Ask  7635=Mark  7308=Delta  7309=Gamma  7310=Theta  7311=Vega
+#   7633=IV%  31=Last  87=Ask Size  85=Bid Size
+
+_IBEAM_BASE = os.environ.get("IBEAM_BASE_URL", "").rstrip("/")
+_CP_FIELDS   = "84,86,7635,31,7308,7309,7310,7311,7633"   # snapshot fields we care about
+_CP_TIMEOUT  = 30    # seconds per REST call
+_CP_RATE_DELAY = 0.12  # 120 ms between calls → stays under 10 req/s IBKR limit
+
+
+def is_ibeam_available() -> bool:
+    """True if IBEAM_BASE_URL is configured and IBeam reports authenticated."""
+    if not _IBEAM_BASE:
+        return False
+    try:
+        import httpx
+        r = httpx.get(
+            f"{_IBEAM_BASE}/v1/api/iserver/auth/status",
+            verify=False, timeout=5,
+        )
+        return bool(r.json().get("authenticated"))
+    except Exception:
+        return False
+
+
+def _cp_get(path: str, params: Optional[dict] = None) -> list | dict:
+    """GET one Client Portal API endpoint via the IBeam proxy."""
+    import httpx
+    url = f"{_IBEAM_BASE}/v1/api{path}"
+    r = httpx.get(url, params=params or {}, verify=False, timeout=_CP_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
+    """
+    Fetch a market-data snapshot for a batch of conIds (max 100).
+    Returns a dict keyed by conId string.
+
+    The Client Portal API requires a "pre-flight" call before data arrives —
+    the first response may contain empty/partial data.  We retry up to
+    `retries` times with a 1-second pause between attempts.
+    """
+    conids_str = ",".join(str(c) for c in conids)
+    result: dict[str, dict] = {}
+
+    for attempt in range(retries + 1):
+        try:
+            data = _cp_get(
+                "/iserver/marketdata/snapshot",
+                {"conids": conids_str, "fields": _CP_FIELDS},
+            )
+        except Exception as exc:
+            logger.debug("snapshot attempt %d failed: %s", attempt + 1, exc)
+            time.sleep(1)
+            continue
+
+        for item in (data if isinstance(data, list) else []):
+            cid = str(item.get("conid", item.get("conidEx", "")))
+            if cid:
+                result[cid] = item
+
+        # If we got useful data (at least bid or ask for any item) return now
+        if any("84" in v or "86" in v for v in result.values()):
+            break
+
+        if attempt < retries:
+            time.sleep(1)   # wait for stream to warm up, then retry
+
+    return result
+
+
+def scan_ticker_ibeam(
+    ticker: str,
+    currency: str = "USD",
+    exchange: str = "SMART",
+    min_dte: int = 14,
+    max_dte: int = 60,
+    min_otm_pct: float = 0.5,
+    max_otm_pct: float = 25.0,
+    min_oi: int = 50,
+    min_vol: int = 3,
+) -> list[dict]:
+    """
+    Fetch covered-call option chain for one ticker via Client Portal REST API.
+    Returns the same raw dict format as scan_ticker_live() so _scan_ticker_ibkr
+    can process either source identically.
+    """
+    from datetime import datetime as dt
+    import calendar
+
+    today = date.today()
+    is_canadian = ticker.upper().endswith(".TO") or ticker.upper().endswith(".V")
+    clean = ticker.split(".")[0]   # strip .TO / .V
+
+    # ── Step 1: Search for underlying to get conId + option months ────────────
+    # NOTE: /search MUST be called before /strikes even if conId is known.
+    try:
+        search_results = _cp_get("/iserver/secdef/search", {"symbol": clean})
+        time.sleep(_CP_RATE_DELAY)
+    except Exception as exc:
+        logger.debug("IBeam search failed for %s: %s", ticker, exc)
+        return []
+
+    if not search_results:
+        return []
+
+    # Pick the right underlying: prefer TSX listing for Canadian, SMART/US otherwise
+    underlying = None
+    for item in (search_results if isinstance(search_results, list) else []):
+        desc = (item.get("description") or "").upper()
+        has_options = any(
+            s.get("secType") == "OPT"
+            for s in item.get("sections", [])
+        )
+        if not has_options:
+            continue
+        if is_canadian and ("TSX" in desc or "TORONTO" in desc):
+            underlying = item
+            break
+        if not is_canadian and underlying is None:
+            underlying = item   # take first match with options
+
+    if underlying is None:
+        logger.debug("IBeam: no optionable underlying found for %s", ticker)
+        return []
+
+    under_conid = underlying["conid"]
+
+    # Get available option expiry months
+    opt_section = next(
+        (s for s in underlying.get("sections", []) if s.get("secType") == "OPT"),
+        None,
+    )
+    if not opt_section:
+        return []
+
+    months_str = opt_section.get("months", "")
+    all_months = [m.strip() for m in months_str.split(";") if m.strip()]
+
+    # Filter to months that overlap with our DTE window (rough check)
+    target_months = []
+    for month in all_months:
+        try:
+            # IBeam months look like "JAN25", "FEB25" etc.
+            month_dt = dt.strptime(month, "%b%y").date()
+            last_day = calendar.monthrange(month_dt.year, month_dt.month)[1]
+            # 3rd Friday is typically the expiry — estimate as day 21 of the month
+            third_friday = month_dt.replace(day=21)
+            dte_approx = (third_friday - today).days
+            if min_dte - 7 <= dte_approx <= max_dte + 14:   # generous window
+                target_months.append(month)
+        except ValueError:
+            continue
+
+    if not target_months:
+        return []
+
+    # ── Get underlying price for OTM filtering ────────────────────────────────
+    snap = _cp_snapshot([under_conid])
+    time.sleep(_CP_RATE_DELAY)
+    under_data = snap.get(str(under_conid), {})
+
+    def _f(d: dict, key, default=None):
+        v = d.get(str(key))
+        if v is None:
+            return default
+        try:
+            f = float(str(v).replace(",", ""))
+            return None if math.isnan(f) else f
+        except Exception:
+            return default
+
+    current_price = _f(under_data, 31) or _f(under_data, 84) or _f(under_data, 86)
+    if not current_price or current_price <= 0:
+        logger.debug("IBeam: no price for underlying %s (conid=%s)", ticker, under_conid)
+        return []
+
+    lo_strike = current_price * (1 + min_otm_pct / 100)
+    hi_strike = current_price * (1 + max_otm_pct / 100)
+
+    # ── Steps 2 + 3: strikes → option conIds ─────────────────────────────────
+    option_meta: list[tuple[int, float, str]] = []   # (conid, strike, maturityDate YYYYMMDD)
+
+    opt_exchange = "MX" if is_canadian else exchange   # Canadian options trade on MX
+
+    for month in target_months:
+        try:
+            strikes_params = {
+                "conid": under_conid,
+                "sectype": "OPT",
+                "month": month,
+            }
+            if is_canadian:
+                strikes_params["exchange"] = opt_exchange
+
+            strikes_resp = _cp_get("/iserver/secdef/strikes", strikes_params)
+            time.sleep(_CP_RATE_DELAY)
+        except Exception as exc:
+            logger.debug("IBeam strikes failed for %s %s: %s", ticker, month, exc)
+            continue
+
+        call_strikes = strikes_resp.get("call", []) if isinstance(strikes_resp, dict) else []
+        # Filter to OTM range before making per-strike /info calls
+        otm_strikes = [s for s in call_strikes if lo_strike <= float(s) <= hi_strike]
+
+        for strike in otm_strikes:
+            try:
+                info_params = {
+                    "conid": under_conid,
+                    "secType": "OPT",
+                    "month": month,
+                    "strike": strike,
+                    "right": "C",
+                }
+                if is_canadian:
+                    info_params["exchange"] = opt_exchange
+
+                info_resp = _cp_get("/iserver/secdef/info", info_params)
+                time.sleep(_CP_RATE_DELAY)
+
+                for opt in (info_resp if isinstance(info_resp, list) else []):
+                    opt_conid = opt.get("conid")
+                    maturity  = opt.get("maturityDate", "")   # YYYYMMDD
+                    if opt_conid and maturity:
+                        option_meta.append((int(opt_conid), float(strike), maturity))
+            except Exception as exc:
+                logger.debug("IBeam info failed for %s %s strike=%s: %s", ticker, month, strike, exc)
+                continue
+
+    if not option_meta:
+        return []
+
+    # ── Step 4: Market data snapshot for all option conIds ────────────────────
+    all_results: list[dict] = []
+    BATCH = 100
+
+    for batch_start in range(0, len(option_meta), BATCH):
+        batch = option_meta[batch_start: batch_start + BATCH]
+        conids = [c for c, _, _ in batch]
+
+        snap = _cp_snapshot(conids)
+        time.sleep(_CP_RATE_DELAY)
+
+        for opt_conid, strike, maturity in batch:
+            item = snap.get(str(opt_conid), {})
+
+            # Parse expiry and DTE
+            try:
+                exp_date = dt.strptime(maturity, "%Y%m%d").date()
+                dte = (exp_date - today).days
+                if not (min_dte <= dte <= max_dte):
+                    continue
+            except Exception:
+                continue
+
+            bid   = _f(item, 84, 0.0) or 0.0
+            ask   = _f(item, 86)
+            mark  = _f(item, 7635)
+            delta = _f(item, 7308)
+            gamma = _f(item, 7309)
+            theta = _f(item, 7310)
+            vega  = _f(item, 7311)
+            iv_pct = _f(item, 7633)   # already in % (e.g. 25.0 = 25%)
+
+            if bid <= 0:
+                continue
+
+            # OI and volume aren't in the standard snapshot fields —
+            # use 0 and rely on post-scan filters (we already filtered by OTM)
+            oi  = int(_f(item, 7084, 0) or 0)
+            vol = int(_f(item, 7762, 0) or 0)
+
+            if oi < min_oi or vol < min_vol:
+                # Skip only if we actually got non-zero data; 0 may mean field
+                # not subscribed — don't discard good opportunities silently
+                if oi > 0 or vol > 0:
+                    continue
+
+            mid        = mark if mark else round((bid + (ask or bid)) / 2, 4)
+            spread_pct = round((ask - bid) / ask * 100, 1) if (ask and ask > 0) else None
+            otm_pct    = round((strike / current_price - 1) * 100, 2)
+            annual_yield = round((mid / current_price) * (365 / dte) * 100, 2)
+            max_return = round(((strike - current_price + mid) / current_price) * 100, 2)
+            breakeven  = round(current_price - mid, 4)
+
+            all_results.append({
+                "strike":             strike,
+                "expiry_date":        exp_date,
+                "dte":                dte,
+                "bid":                round(bid, 4),
+                "ask":                round(ask, 4) if ask else None,
+                "mid":                round(mid, 4),
+                "volume":             vol,
+                "open_interest":      oi,
+                "iv_pct":             iv_pct,
+                "delta":              round(abs(delta), 4) if delta is not None else None,
+                "gamma":              round(gamma, 6) if gamma is not None else None,
+                "theta":              round(theta, 4) if theta is not None else None,
+                "vega":               round(vega, 4) if vega is not None else None,
+                "otm_pct":            otm_pct,
+                "annual_yield_pct":   annual_yield,
+                "max_return_pct":     max_return,
+                "breakeven":          breakeven,
+                "bid_ask_spread_pct": spread_pct,
+                "current_price":      round(current_price, 4),
+            })
+
+    logger.info("IBeam: %s → %d option rows", ticker, len(all_results))
+    return all_results
 
 
 # ── Scanner session ───────────────────────────────────────────────────────────

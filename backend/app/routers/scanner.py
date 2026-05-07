@@ -90,6 +90,20 @@ def trigger_scan(body: ScanRequest = None):
     return _spawn_scan(body or ScanRequest())
 
 
+@router.get("/ibeam-debug")
+def ibeam_debug():
+    """Debug endpoint — shows IBeam connectivity details without auth."""
+    import os, httpx
+    base = os.environ.get("IBEAM_BASE_URL", "")
+    if not base:
+        return {"error": "IBEAM_BASE_URL not set", "base": base}
+    try:
+        r = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=10)
+        return {"base": base, "status_code": r.status_code, "body": r.json()}
+    except Exception as exc:
+        return {"base": base, "error": str(exc), "error_type": type(exc).__name__}
+
+
 @router.get("/meta")
 def get_scan_meta(db: Session = Depends(get_db)):
     """Return last scan timestamp, stats, and current Gateway status."""

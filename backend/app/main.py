@@ -242,3 +242,17 @@ app.include_router(scanner_router.router, dependencies=_auth)
 @app.get("/api/health")
 def health():
     return {"status": "ok", "service": "portfolio-tracker"}
+
+
+@app.get("/api/ibeam-debug")
+def ibeam_debug():
+    """Public debug endpoint — shows IBeam connectivity details."""
+    import os, httpx
+    base = os.environ.get("IBEAM_BASE_URL", "")
+    if not base:
+        return {"error": "IBEAM_BASE_URL not set", "base": ""}
+    try:
+        r = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=10)
+        return {"base": base, "status_code": r.status_code, "body": r.json()}
+    except Exception as exc:
+        return {"base": base, "error": str(exc), "error_type": type(exc).__name__}

@@ -36,7 +36,7 @@ services:
       # IBeam Client Portal Gateway — internal URL for live option data.
       # Leave empty to disable IBeam and fall back to yfinance.
       - key: IBEAM_BASE_URL
-        value: https://ibeam:5000
+        value: https://ibeam-lmhj:5000
 
   # ── IBeam — IBKR Client Portal Gateway (headless, containerised) ─────────────
   # Authenticates against IBKR and proxies the Client Portal REST API so the
@@ -64,6 +64,8 @@ services:
         value: "3"            # stop after 3 failures to avoid IBKR account lockout
       - key: IBEAM_GATEWAY_STARTUP
         value: "30"           # seconds to wait for Gateway to boot on cold start
+      - key: IBEAM_KEEP_ALIVE_INTERVAL
+        value: "60"           # tickle the session every 60s to prevent expiry
 
   # ── Frontend (React / Vite — served by Node via "serve") ────────────────────
   # Render Blueprints don't support type:static; we use a lightweight Node web

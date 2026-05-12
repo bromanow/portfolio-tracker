@@ -1,5 +1,5 @@
-import { useState, useMemo, useEffect, Fragment } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useState, useMemo, useEffect, Fragment, useCallback } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
   Treemap, Cell, ResponsiveContainer, LineChart, Line,
@@ -7,12 +7,13 @@ import {
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
   TrendingUp, DollarSign, Landmark, RefreshCw, X, PanelLeftClose, PanelLeftOpen,
-  Activity, Calculator, CalendarRange, FileSearch, Globe, Play,
+  Activity, Calculator, CalendarRange, FileSearch, Globe, Play, Trash2, Database,
 } from 'lucide-react'
 import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
   getPortfolioHistory, getPortfolioContinuity,
   getMonthlyReturns, getReturnsDetail, getFxRates,
+  computeSnapshots, purgeSnapshots,
 } from '../api/client'
 import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
@@ -1064,6 +1065,25 @@ function PortfolioValueReport() {
   } | null>(null)
 
   const [lastRunTime, setLastRunTime] = useState<string | null>(null)
+  const [rebuildStatus, setRebuildStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const queryClient = useQueryClient()
+
+  const handleRebuildSnapshots = useCallback(async () => {
+    setRebuildStatus('running')
+    try {
+      // 1. Purge existing snapshots for selected accounts so phantom data is gone
+      await purgeSnapshots(accountIds ? { account_ids: accountIds } : undefined)
+      // 2. Recompute from scratch
+      await computeSnapshots(accountIds ? { account_ids: accountIds } : undefined)
+      // 3. Invalidate queries so the chart refreshes when user hits Run
+      await queryClient.invalidateQueries({ queryKey: ['portfolio-history'] })
+      setRebuildStatus('done')
+      setTimeout(() => setRebuildStatus('idle'), 3000)
+    } catch {
+      setRebuildStatus('error')
+      setTimeout(() => setRebuildStatus('idle'), 4000)
+    }
+  }, [accountIds, queryClient])
 
   const { data: history = [], isLoading } = useQuery({
     queryKey: ['portfolio-history', committed?.fromDate, committed?.toDate, committed?.accountIds, committed?.interval],
@@ -1145,6 +1165,27 @@ function PortfolioValueReport() {
             <Play className="w-3.5 h-3.5" /> Run
           </button>
           {lastRunTime && <span className="text-xs text-gray-400 text-center">Last run: {lastRunTime}</span>}
+        </div>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={handleRebuildSnapshots}
+            disabled={rebuildStatus === 'running'}
+            title="Purge and regenerate portfolio snapshots for selected accounts. Use this to fix phantom positions."
+            className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors
+              ${rebuildStatus === 'running' ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+              : rebuildStatus === 'done'    ? 'bg-green-50 text-green-700 border-green-300'
+              : rebuildStatus === 'error'   ? 'bg-red-50 text-red-700 border-red-300'
+              : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+          >
+            {rebuildStatus === 'running'
+              ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Rebuilding…</>
+              : rebuildStatus === 'done'
+              ? <><Database className="w-3.5 h-3.5" /> Rebuilt!</>
+              : rebuildStatus === 'error'
+              ? <><Trash2 className="w-3.5 h-3.5" /> Failed</>
+              : <><Database className="w-3.5 h-3.5" /> Rebuild Snapshots</>}
+          </button>
+          <span className="text-xs text-gray-400 text-center">Fixes phantom positions</span>
         </div>
       </div>
 

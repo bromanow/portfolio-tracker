@@ -1008,6 +1008,16 @@ export const getReturnsDetail = (params?: {
   account_ids?: string
 }) => api.get<ReturnDetailRow[]>('/portfolio/performance/returns-detail', { params }).then(r => r.data)
 
+export const computeSnapshots = (params?: {
+  account_ids?: string
+  from_date?:   string
+}) => api.post<{ job_id: string; status: string }>('/portfolio/compute-snapshots', null, { params }).then(r => r.data)
+
+export const purgeSnapshots = (params?: {
+  account_ids?: string
+  from_date?:   string
+}) => api.delete<{ deleted: number; account_ids: number[] | null; from_date: string | null }>('/portfolio/purge-snapshots', { params }).then(r => r.data)
+
 export const setManualPrice = (securityId: number, price: number, currency: string) =>
   api.put(`/prices/${securityId}/manual`, { price, currency }).then(r => r.data)
 

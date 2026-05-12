@@ -364,11 +364,22 @@ def compute_portfolio_snapshots(
             elif t_type in _QTY_SET:
                 positions[acct_id][sec_id] = abs(qty)
             elif t_type == "JOURNAL":
-                # Quantity can be positive (inflow) or negative (outflow)
+                # Quantity can be positive (inflow) or negative (outflow).
+                # Clamp to zero: a JOURNAL outflow that exactly matches the position
+                # should result in zero, never a negative residual (matches ACB service).
                 positions[acct_id][sec_id] += qty
+                if positions[acct_id][sec_id] < ZERO:
+                    positions[acct_id][sec_id] = ZERO
+            elif t_type == "OPTION_EXERCISE":
+                # Long option exercised — removes the option position (goes to zero).
+                # The underlying shares are handled via a separate BUY/SELL transaction.
+                positions[acct_id][sec_id] = ZERO
             elif t_type == "SPLIT":
-                # Some SPLIT rows add shares (+), some are adjustments
-                positions[acct_id][sec_id] += qty  # qty may be negative (net delta)
+                # Some SPLIT rows add shares (+), some are adjustments (net delta).
+                # Clamp to zero: a corrective SPLIT should never produce a negative.
+                positions[acct_id][sec_id] += qty
+                if positions[acct_id][sec_id] < ZERO:
+                    positions[acct_id][sec_id] = ZERO
 
             # ── Invested capital ──────────────────────────────────────────────
             if t_type in _INVESTED_ADD and cad_amt > ZERO:

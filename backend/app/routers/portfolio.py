@@ -1165,6 +1165,30 @@ def compute_snapshots(
     )
 
 
+@router.delete("/purge-snapshots")
+def purge_snapshots(
+    account_ids: Optional[str] = Query(None, description="Comma-separated account IDs; omit for all"),
+    from_date: Optional[date] = Query(None, description="Delete snapshots on or after this date"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Delete stored portfolio snapshots so they can be cleanly regenerated.
+    Use this after fixing transaction data or when phantom positions are suspected.
+    After purging, call POST /api/portfolio/compute-snapshots to rebuild.
+    """
+    from app.models.master import PortfolioSnapshot
+    parsed_ids = parse_account_ids(account_ids, current_user, db)
+    q = db.query(PortfolioSnapshot)
+    if parsed_ids:
+        q = q.filter(PortfolioSnapshot.account_id.in_(parsed_ids))
+    if from_date:
+        q = q.filter(PortfolioSnapshot.snapshot_date >= from_date)
+    deleted = q.delete(synchronize_session=False)
+    db.commit()
+    return {"deleted": deleted, "account_ids": parsed_ids, "from_date": str(from_date) if from_date else None}
+
+
 @router.get("/performance/timeline")
 def get_performance_timeline(
     group_by: str = Query("account", regex="^(total|brokerage|account_type|account)$"),

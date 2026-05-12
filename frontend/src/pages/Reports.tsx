@@ -1063,13 +1063,6 @@ function PortfolioValueReport() {
     fromDate: string | undefined; toDate: string; accountIds: string | undefined; interval: 'daily' | 'weekly' | 'monthly'
   } | null>(null)
 
-  // Auto-commit on mount with defaults
-  useEffect(() => {
-    if (committed === null && accountIds !== undefined) {
-      setCommitted({ fromDate, toDate, accountIds, interval: chartInterval })
-    }
-  }, [accountIds]) // eslint-disable-line
-
   const [lastRunTime, setLastRunTime] = useState<string | null>(null)
 
   const { data: history = [], isLoading } = useQuery({
@@ -1157,7 +1150,11 @@ function PortfolioValueReport() {
 
       {/* Chart */}
       <div className="bg-white rounded-xl border border-gray-200 p-5">
-        {isLoading ? (
+        {committed === null ? (
+          <div className="h-72 flex flex-col items-center justify-center gap-2 text-gray-400">
+            <p className="text-sm">Configure your filters and click <strong className="text-blue-600">Run</strong> to generate this report.</p>
+          </div>
+        ) : isLoading ? (
           <div className="h-72 flex items-center justify-center">
             <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" />
           </div>
@@ -1216,13 +1213,6 @@ function PortfolioContinuityReport() {
     fromDate: string; toDate: string; accountIds: string | undefined
   } | null>(null)
 
-  // Auto-commit on mount with defaults
-  useEffect(() => {
-    if (committed === null && accountIds !== undefined) {
-      setCommitted({ fromDate: fromDateStr, toDate: toDate, accountIds })
-    }
-  }, [accountIds]) // eslint-disable-line
-
   const { data: continuity, isLoading } = useQuery({
     queryKey: ['portfolio-continuity', committed?.fromDate, committed?.toDate, committed?.accountIds],
     queryFn: () => getPortfolioContinuity({
@@ -1277,7 +1267,11 @@ function PortfolioContinuityReport() {
       </div>
 
       {/* Continuity table */}
-      {isLoading ? (
+      {committed === null ? (
+        <div className="text-center py-16 text-gray-400">
+          <p className="text-sm">Configure your filters and click <strong className="text-blue-600">Run</strong> to generate this report.</p>
+        </div>
+      ) : isLoading ? (
         <div className="flex justify-center py-16">
           <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" />
         </div>
@@ -2277,6 +2271,45 @@ function FxRatesReport() {
           </div>
         ))}
       </div>
+
+      {/* FX Rate Line Chart */}
+      {(() => {
+        // Build chart data: one entry per date, one key per currency pair
+        const chartDates = [...new Set(filtered.map(r => r.rate_date))].sort()
+        const chartPairs = [...new Set(filtered.map(r => `${r.from_currency}/${r.to_currency}`))]
+        const rateMap: Record<string, Record<string, number>> = {}
+        for (const r of filtered) {
+          if (!rateMap[r.rate_date]) rateMap[r.rate_date] = {}
+          rateMap[r.rate_date][`${r.from_currency}/${r.to_currency}`] = Number(r.rate)
+        }
+        const chartData = chartDates.map(d => ({ date: d, ...rateMap[d] }))
+        const LINE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
+        if (chartData.length < 2) return null
+        const xInterval = Math.max(0, Math.floor(chartData.length / 10) - 1)
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Exchange Rate Over Time</h3>
+            <ResponsiveContainer width="100%" height={220}>
+              <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                <XAxis dataKey="date" tick={{ fontSize: 10 }} interval={xInterval}
+                  tickFormatter={v => v.slice(0, 7)} />
+                <YAxis tick={{ fontSize: 10 }} tickFormatter={v => v.toFixed(4)} width={60} />
+                <Tooltip
+                  formatter={(v: number, name: string) => [v.toFixed(6), name]}
+                  labelFormatter={v => String(v)}
+                />
+                <Legend iconType="line" wrapperStyle={{ fontSize: 11 }} />
+                {chartPairs.map((pair, i) => (
+                  <Line key={pair} type="monotone" dataKey={pair}
+                    stroke={LINE_COLORS[i % LINE_COLORS.length]} strokeWidth={1.5}
+                    dot={false} connectNulls />
+                ))}
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )
+      })()}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-4 items-end">

@@ -1577,6 +1577,25 @@ def get_returns_detail(
         ex  = by_group[key][row.snapshot_date]
         by_group[key][row.snapshot_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
 
+    # ── Last transaction date per group (used to skip dormant/closed accounts) ──
+    from app.models.transactions import Transaction
+    from sqlalchemy import func as sqlfunc
+    _last_txn_q = (
+        db.query(Transaction.account_id, sqlfunc.max(Transaction.transaction_date))
+        .group_by(Transaction.account_id)
+    )
+    if parsed_ids:
+        _last_txn_q = _last_txn_q.filter(Transaction.account_id.in_(parsed_ids))
+    _group_last_txn: dict[tuple, date] = {}
+    for acct_id, last_dt in _last_txn_q.all():
+        key = acct_to_group.get(acct_id)
+        if key and last_dt:
+            dt = last_dt if isinstance(last_dt, date) else last_dt.date()
+            prev = _group_last_txn.get(key)
+            _group_last_txn[key] = max(dt, prev) if prev else dt
+
+    _TWO_YEARS = timedelta(days=730)
+
     results = []
     for key, date_map in by_group.items():
         meta = group_meta.get(key)
@@ -1587,6 +1606,13 @@ def get_returns_detail(
 
         # Determine period start date
         effective_start = from_date if from_date else sorted_dates[0]
+
+        # Skip accounts whose last transaction is more than 2 years before the
+        # period start — these are closed/dormant accounts where snapshot data
+        # represents stale carry-forward positions, not real holdings.
+        last_txn = _group_last_txn.get(key)
+        if last_txn and (effective_start - last_txn) > _TWO_YEARS:
+            continue
 
         md_result = _modified_dietz(date_map, effective_start, to_date)
         if md_result is None:
@@ -1693,6 +1719,25 @@ def get_monthly_returns(
         ex  = by_group[key][row.snapshot_date]
         by_group[key][row.snapshot_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
 
+    # ── Last transaction date per group (to skip dormant/closed accounts) ────
+    from app.models.transactions import Transaction
+    from sqlalchemy import func as sqlfunc
+    _ltq = (
+        db.query(Transaction.account_id, sqlfunc.max(Transaction.transaction_date))
+        .group_by(Transaction.account_id)
+    )
+    if parsed_ids:
+        _ltq = _ltq.filter(Transaction.account_id.in_(parsed_ids))
+    _group_last_txn: dict[tuple, date] = {}
+    for acct_id, last_dt in _ltq.all():
+        key = acct_to_group.get(acct_id)
+        if key and last_dt:
+            dt = last_dt if isinstance(last_dt, date) else last_dt.date()
+            prev = _group_last_txn.get(key)
+            _group_last_txn[key] = max(dt, prev) if prev else dt
+
+    _TWO_YEARS = timedelta(days=730)
+
     def _eom(y: int, m: int) -> date:
         return date(y, m, calendar.monthrange(y, m)[1])
 
@@ -1735,12 +1780,13 @@ def get_monthly_returns(
             dec31_this = min(date(y, 12, 31), date.today())
             annual[yk] = _modified_dietz_return(date_map, dec31_prev, dec31_this)
 
-        # Skip accounts whose most recent snapshot is before the requested year range
-        # (closed accounts that have no data in the requested period)
-        if date_map:
-            last_snap_date = max(date_map.keys())
-            if last_snap_date.year < y_from:
-                continue
+        # Skip accounts whose last transaction is more than 2 years before the
+        # start of the requested year range — closed/dormant accounts with stale
+        # snapshot data that would produce phantom returns.
+        _period_start = date(y_from, 1, 1)
+        last_txn = _group_last_txn.get(key)
+        if last_txn and (_period_start - last_txn) > _TWO_YEARS:
+            continue
 
         # Skip accounts with no meaningful data in range
         if all(v is None for v in monthly.values()):

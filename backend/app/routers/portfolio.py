@@ -1735,6 +1735,13 @@ def get_monthly_returns(
             dec31_this = min(date(y, 12, 31), date.today())
             annual[yk] = _modified_dietz_return(date_map, dec31_prev, dec31_this)
 
+        # Skip accounts whose most recent snapshot is before the requested year range
+        # (closed accounts that have no data in the requested period)
+        if date_map:
+            last_snap_date = max(date_map.keys())
+            if last_snap_date.year < y_from:
+                continue
+
         # Skip accounts with no meaningful data in range
         if all(v is None for v in monthly.values()):
             continue

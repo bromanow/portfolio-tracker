@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
@@ -7,7 +7,7 @@ import {
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
   TrendingUp, DollarSign, Landmark, RefreshCw, X, PanelLeftClose, PanelLeftOpen,
-  Activity, Calculator, CalendarRange, FileSearch, Globe,
+  Activity, Calculator, CalendarRange, FileSearch, Globe, Play,
 } from 'lucide-react'
 import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
@@ -144,6 +144,9 @@ function RealizedGainsReport() {
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
   const [gainFilter, setGainFilter] = useState<'all' | 'gains' | 'losses'>('all')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [viewMode, setViewMode] = useState<'account' | 'security'>('account')
 
   const rows = gains as GainRow[]
 
@@ -157,8 +160,10 @@ function RealizedGainsReport() {
     if (tickerFilter && !g.ticker.toLowerCase().includes(tickerFilter.toLowerCase())) return false
     if (gainFilter === 'gains'  && parseFloat(g.gain_cad) <  0) return false
     if (gainFilter === 'losses' && parseFloat(g.gain_cad) >= 0) return false
+    if (dateFrom && g.date < dateFrom) return false
+    if (dateTo && g.date > dateTo) return false
     return true
-  }), [rows, brokerageFilter, tickerFilter, gainFilter])
+  }), [rows, brokerageFilter, tickerFilter, gainFilter, dateFrom, dateTo])
 
   // Group by account, then sort within each group
   const groupedRows = useMemo(() => {
@@ -182,7 +187,7 @@ function RealizedGainsReport() {
 
   const byYear = useMemo(() => {
     const m: Record<number, { gain: number; loss: number; net: number }> = {}
-    for (const g of rows) {
+    for (const g of filtered) {
       const yr = new Date(g.date).getFullYear()
       if (!m[yr]) m[yr] = { gain: 0, loss: 0, net: 0 }
       const v = parseFloat(g.gain_cad)
@@ -192,14 +197,28 @@ function RealizedGainsReport() {
     return Object.entries(m).sort((a, b) => Number(a[0]) - Number(b[0])).map(([yr, v]) => ({
       year: yr, gain: +v.gain.toFixed(2), loss: +v.loss.toFixed(2), net: +v.net.toFixed(2),
     }))
-  }, [rows])
+  }, [filtered])
 
   const byTicker = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const g of rows) m[g.ticker] = (m[g.ticker] || 0) + parseFloat(g.gain_cad)
+    for (const g of filtered) m[g.ticker] = (m[g.ticker] || 0) + parseFloat(g.gain_cad)
     return Object.entries(m).sort((a, b) => Math.abs(b[1]) - Math.abs(a[1])).slice(0, 12)
       .map(([ticker, net]) => ({ ticker, net: +net.toFixed(2) }))
-  }, [rows])
+  }, [filtered])
+
+  const securityGroups = useMemo(() => {
+    const m = new Map<string, { ticker: string; rows: GainRow[]; proceeds: number; acb: number; net: number }>()
+    for (const g of filtered) {
+      if (!m.has(g.ticker)) m.set(g.ticker, { ticker: g.ticker, rows: [], proceeds: 0, acb: 0, net: 0 })
+      const entry = m.get(g.ticker)!
+      entry.rows.push(g)
+      entry.proceeds += parseFloat(g.proceeds_cad)
+      entry.acb += parseFloat(g.acb_cad)
+      entry.net += parseFloat(g.gain_cad)
+    }
+    return [...m.values()].sort((a, b) => Math.abs(b.net) - Math.abs(a.net))
+      .map(e => ({ ...e, rows: sortRows(e.rows, sort.col, sort.dir) }))
+  }, [filtered, sort])
 
   const totalAll      = rows.reduce((s, g)     => s + parseFloat(g.gain_cad),    0)
   const totalFiltered = filtered.reduce((s, g) => s + parseFloat(g.gain_cad),    0)
@@ -232,6 +251,14 @@ function RealizedGainsReport() {
             <option value="">All years</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">From Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">To Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
         </div>
       </div>
 
@@ -289,6 +316,14 @@ function RealizedGainsReport() {
               {(tickerFilter || gainFilter !== 'all' || brokerageFilter) && (
                 <span className="text-xs text-gray-400">{filtered.length} of {rows.length} rows</span>
               )}
+              <div className="flex gap-1 ml-auto">
+                {(['account', 'security'] as const).map(v => (
+                  <button key={v} onClick={() => setViewMode(v)}
+                    className={`px-3 py-1.5 text-xs rounded border capitalize ${viewMode === v ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                    By {v}
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -307,37 +342,74 @@ function RealizedGainsReport() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
-                    {groupedRows.length === 0 && (
-                      <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No realized gains/losses found.</td></tr>
-                    )}
-                    {groupedRows.map(({ acctName, brokerage, rows: acctRows, proceeds, acb, net }) => (
-                      <Fragment key={acctName}>
-                        {acctRows.map((g, i) => {
-                          const gain = parseFloat(g.gain_cad)
-                          return (
-                            <tr key={`${acctName}-${i}`} className="hover:bg-gray-50">
-                              <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{g.brokerage_name}</td>
-                              <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap max-w-[10rem] truncate" title={acctName}>{acctName}</td>
-                              <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{g.date}</td>
-                              <td className="px-4 py-2 font-mono font-semibold text-blue-700">{g.ticker}</td>
-                              <td className="px-4 py-2 text-right text-gray-600">{parseFloat(g.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
-                              <td className="px-4 py-2 text-right">{fmtCAD(g.proceeds_cad)}</td>
-                              <td className="px-4 py-2 text-right text-gray-500">{fmtCAD(g.acb_cad)}</td>
-                              <td className={`px-4 py-2 text-right font-semibold ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtCAD(gain)}</td>
+                    {viewMode === 'security' ? (
+                      <>
+                        {securityGroups.length === 0 && (
+                          <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No realized gains/losses found.</td></tr>
+                        )}
+                        {securityGroups.map(({ ticker, rows: secRows, proceeds, acb, net }) => (
+                          <Fragment key={ticker}>
+                            {secRows.map((g, i) => {
+                              const gain = parseFloat(g.gain_cad)
+                              return (
+                                <tr key={i} className="hover:bg-gray-50">
+                                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{g.brokerage_name}</td>
+                                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap max-w-[10rem] truncate">{g.account_name}</td>
+                                  <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{g.date}</td>
+                                  <td className="px-4 py-2 font-mono font-semibold text-blue-700">{g.ticker}</td>
+                                  <td className="px-4 py-2 text-right text-gray-600">{parseFloat(g.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                                  <td className="px-4 py-2 text-right">{fmtCAD(g.proceeds_cad)}</td>
+                                  <td className="px-4 py-2 text-right text-gray-500">{fmtCAD(g.acb_cad)}</td>
+                                  <td className={`px-4 py-2 text-right font-semibold ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtCAD(gain)}</td>
+                                </tr>
+                              )
+                            })}
+                            <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
+                              <td className="px-4 py-1.5 text-blue-700" colSpan={3}>{secRows.length} dispositions</td>
+                              <td className="px-4 py-1.5 text-blue-800 font-mono">{ticker} subtotal</td>
+                              <td className="px-4 py-1.5" />
+                              <td className="px-4 py-1.5 text-right text-blue-800">{fmtCAD(proceeds)}</td>
+                              <td className="px-4 py-1.5 text-right text-blue-600">{fmtCAD(acb)}</td>
+                              <td className={`px-4 py-1.5 text-right ${net >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtCAD(net)}</td>
                             </tr>
-                          )
-                        })}
-                        {/* Account subtotal row */}
-                        <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
-                          <td className="px-4 py-1.5 text-blue-700 whitespace-nowrap">{brokerage}</td>
-                          <td className="px-4 py-1.5 text-blue-800 whitespace-nowrap max-w-[10rem] truncate" title={acctName}>{acctName} subtotal</td>
-                          <td className="px-4 py-1.5 text-blue-600 text-right" colSpan={3}>{acctRows.length} dispositions</td>
-                          <td className="px-4 py-1.5 text-right text-blue-800">{fmtCAD(proceeds)}</td>
-                          <td className="px-4 py-1.5 text-right text-blue-600">{fmtCAD(acb)}</td>
-                          <td className={`px-4 py-1.5 text-right ${net >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtCAD(net)}</td>
-                        </tr>
-                      </Fragment>
-                    ))}
+                          </Fragment>
+                        ))}
+                      </>
+                    ) : (
+                      <>
+                        {groupedRows.length === 0 && (
+                          <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No realized gains/losses found.</td></tr>
+                        )}
+                        {groupedRows.map(({ acctName, brokerage, rows: acctRows, proceeds, acb, net }) => (
+                          <Fragment key={acctName}>
+                            {acctRows.map((g, i) => {
+                              const gain = parseFloat(g.gain_cad)
+                              return (
+                                <tr key={`${acctName}-${i}`} className="hover:bg-gray-50">
+                                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{g.brokerage_name}</td>
+                                  <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap max-w-[10rem] truncate" title={acctName}>{acctName}</td>
+                                  <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{g.date}</td>
+                                  <td className="px-4 py-2 font-mono font-semibold text-blue-700">{g.ticker}</td>
+                                  <td className="px-4 py-2 text-right text-gray-600">{parseFloat(g.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                                  <td className="px-4 py-2 text-right">{fmtCAD(g.proceeds_cad)}</td>
+                                  <td className="px-4 py-2 text-right text-gray-500">{fmtCAD(g.acb_cad)}</td>
+                                  <td className={`px-4 py-2 text-right font-semibold ${gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>{fmtCAD(gain)}</td>
+                                </tr>
+                              )
+                            })}
+                            {/* Account subtotal row */}
+                            <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
+                              <td className="px-4 py-1.5 text-blue-700 whitespace-nowrap">{brokerage}</td>
+                              <td className="px-4 py-1.5 text-blue-800 whitespace-nowrap max-w-[10rem] truncate" title={acctName}>{acctName} subtotal</td>
+                              <td className="px-4 py-1.5 text-blue-600 text-right" colSpan={3}>{acctRows.length} dispositions</td>
+                              <td className="px-4 py-1.5 text-right text-blue-800">{fmtCAD(proceeds)}</td>
+                              <td className="px-4 py-1.5 text-right text-blue-600">{fmtCAD(acb)}</td>
+                              <td className={`px-4 py-1.5 text-right ${net >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>{fmtCAD(net)}</td>
+                            </tr>
+                          </Fragment>
+                        ))}
+                      </>
+                    )}
                   </tbody>
                   {filtered.length > 0 && (
                     <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
@@ -392,6 +464,9 @@ function IncomeReport() {
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
   const [typeFilter, setTypeFilter]     = useState('')
+  const [dateFrom, setDateFrom] = useState('')
+  const [dateTo, setDateTo] = useState('')
+  const [viewMode, setViewMode] = useState<'account' | 'security'>('account')
 
   // Expand state — collapsed to brokerage level by default
   const [expandedBrokerages, setExpandedBrokerages] = useState<Set<string>>(new Set())
@@ -411,8 +486,10 @@ function IncomeReport() {
     if (brokerageFilter && r.brokerage_name !== brokerageFilter) return false
     if (tickerFilter && !r.ticker.toLowerCase().includes(tickerFilter.toLowerCase())) return false
     if (typeFilter && r.transaction_type !== typeFilter) return false
+    if (dateFrom && r.date < dateFrom) return false
+    if (dateTo && r.date > dateTo) return false
     return true
-  }), [rows, brokerageFilter, tickerFilter, typeFilter])
+  }), [rows, brokerageFilter, tickerFilter, typeFilter, dateFrom, dateTo])
 
   // Build hierarchical tree: Brokerage → Account → Security → Transactions
   const tree = useMemo((): IncomeTreeBrok[] => {
@@ -453,23 +530,23 @@ function IncomeReport() {
   // Bar chart data — income by year & type, with _total for labels
   const { byYear, incomeTypes } = useMemo(() => {
     const m: Record<number, Record<string, number>> = {}
-    for (const item of rows) {
+    for (const item of filtered) {
       if (!m[item.year]) m[item.year] = {}
       m[item.year][item.transaction_type] = (m[item.year][item.transaction_type] || 0) + parseFloat(item.amount_cad)
     }
-    const allTypes = [...new Set(rows.map(i => i.transaction_type))]
+    const allTypes = [...new Set(filtered.map(i => i.transaction_type))]
     const data = Object.entries(m).sort((a, b) => Number(a[0]) - Number(b[0])).map(([yr, v]) => ({
       year: yr,
       ...Object.fromEntries(allTypes.map(t => [t, +((v[t] || 0).toFixed(2))])),
       _total: +allTypes.reduce((s, t) => s + (v[t] || 0), 0).toFixed(2),
     }))
     return { byYear: data, incomeTypes: allTypes }
-  }, [rows])
+  }, [filtered])
 
   // Treemap data — income by security (positive only, top 20)
   const treemapData = useMemo(() => {
     const m: Record<string, number> = {}
-    for (const item of rows) {
+    for (const item of filtered) {
       const k = item.ticker || '(none)'
       m[k] = (m[k] || 0) + parseFloat(item.amount_cad)
     }
@@ -478,7 +555,21 @@ function IncomeReport() {
       .sort((a, b) => b[1] - a[1])
       .slice(0, 20)
       .map(([name, size], i) => ({ name, size: +size.toFixed(2), fill: COLORS[i % COLORS.length] }))
-  }, [rows])
+  }, [filtered])
+
+  // Security view groups
+  const incomeSecurityGroups = useMemo(() => {
+    const m = new Map<string, { ticker: string; rows: IncomeItem[]; total: number }>()
+    for (const item of filtered) {
+      const key = item.ticker || '(none)'
+      if (!m.has(key)) m.set(key, { ticker: key, rows: [], total: 0 })
+      const entry = m.get(key)!
+      entry.rows.push(item)
+      entry.total += parseFloat(item.amount_cad)
+    }
+    return [...m.values()].sort((a, b) => b.total - a.total)
+      .map(e => ({ ...e, rows: sortRows(e.rows, sort.col, sort.dir) }))
+  }, [filtered, sort])
 
   const totalAll      = rows.reduce((s, i)     => s + parseFloat(i.amount_cad), 0)
   const totalFiltered = filtered.reduce((s, i) => s + parseFloat(i.amount_cad), 0)
@@ -549,6 +640,14 @@ function IncomeReport() {
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">From Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">To Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+        </div>
       </div>
 
       {isLoading
@@ -614,16 +713,26 @@ function IncomeReport() {
               {(tickerFilter || typeFilter || brokerageFilter) && (
                 <span className="text-xs text-gray-400">{filtered.length} of {rows.length} rows</span>
               )}
-              <div className="ml-auto flex gap-2 text-xs text-gray-500">
-                <button
-                  onClick={() => { setExpandedBrokerages(new Set(tree.map(b => b.key))); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
-                  className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
-                >Expand all brokerages</button>
-                <button
-                  onClick={() => { setExpandedBrokerages(new Set()); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
-                  className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
-                >Collapse all</button>
+              <div className="flex gap-1 ml-auto">
+                {(['account', 'security'] as const).map(v => (
+                  <button key={v} onClick={() => setViewMode(v)}
+                    className={`px-3 py-1.5 text-xs rounded border capitalize ${viewMode === v ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                    By {v}
+                  </button>
+                ))}
               </div>
+              {viewMode === 'account' && (
+                <div className="flex gap-2 text-xs text-gray-500">
+                  <button
+                    onClick={() => { setExpandedBrokerages(new Set(tree.map(b => b.key))); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
+                    className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
+                  >Expand all brokerages</button>
+                  <button
+                    onClick={() => { setExpandedBrokerages(new Set()); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
+                    className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
+                  >Collapse all</button>
+                </div>
+              )}
             </div>
 
             {/* Hierarchical table */}
@@ -641,6 +750,35 @@ function IncomeReport() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-gray-100">
+                    {viewMode === 'security' ? (
+                      <>
+                        {incomeSecurityGroups.length === 0 && (
+                          <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No income transactions found.</td></tr>
+                        )}
+                        {incomeSecurityGroups.map(({ ticker, rows: secRows, total }) => (
+                          <Fragment key={ticker}>
+                            {secRows.map((item, i) => (
+                              <tr key={i} className="hover:bg-gray-50">
+                                <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
+                                <td className="px-3 py-1.5 text-xs text-gray-600 whitespace-nowrap">{item.account_name}</td>
+                                <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
+                                <td className="px-3 py-1.5">
+                                  <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
+                                </td>
+                                <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {parseFloat(item.amount_native).toFixed(2)}</td>
+                                <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
+                              </tr>
+                            ))}
+                            <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
+                              <td className="px-3 py-1.5 text-blue-700" colSpan={1}>{secRows.length} txns</td>
+                              <td className="px-3 py-1.5 text-blue-800 font-mono" colSpan={4}>{ticker} subtotal</td>
+                              <td className="px-3 py-1.5 text-right text-blue-700">{fmtCAD(total)}</td>
+                            </tr>
+                          </Fragment>
+                        ))}
+                      </>
+                    ) : (
+                    <>
                     {tree.length === 0 && (
                       <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No income transactions found.</td></tr>
                     )}
@@ -732,6 +870,8 @@ function IncomeReport() {
                         ))}
                       </Fragment>
                     ))}
+                    </>
+                    )}
                   </tbody>
                   {filtered.length > 0 && (
                     <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
@@ -809,8 +949,12 @@ function useAccountCascade(accts: Account[]) {
   const setBrokerageFilter = (brok: string) => {
     setBrokerageFilterRaw(brok)
     if (brok) {
-      const valid = new Set(accts.filter(a => a.brokerage_name === brok).map(a => String(a.id)))
-      setSelectedAccountIds(prev => prev.filter(id => valid.has(id)))
+      // Auto-select all accounts for this brokerage so the filter takes effect
+      const ids = accts.filter(a => a.brokerage_name === brok).map(a => String(a.id))
+      setSelectedAccountIds(ids)
+    } else {
+      // Clear selection to revert to "all accounts"
+      setSelectedAccountIds([])
     }
   }
   // Default to all user accounts when nothing selected (ensures non-admin users are scoped)
@@ -914,9 +1058,33 @@ function PortfolioValueReport() {
 
   const { fromDate, toDate } = useMemo(() => computePortfolioRange(range), [range])
 
+  // Committed state: what was last Run
+  const [committed, setCommitted] = useState<{
+    fromDate: string | undefined; toDate: string; accountIds: string | undefined; interval: 'daily' | 'weekly' | 'monthly'
+  } | null>(null)
+
+  // Auto-commit on mount with defaults
+  useEffect(() => {
+    if (committed === null && accountIds !== undefined) {
+      setCommitted({ fromDate, toDate, accountIds, interval: chartInterval })
+    }
+  }, [accountIds]) // eslint-disable-line
+
+  const [lastRunTime, setLastRunTime] = useState<string | null>(null)
+
   const { data: history = [], isLoading } = useQuery({
-    queryKey: ['portfolio-history', fromDate, toDate, accountIds, chartInterval],
-    queryFn: () => getPortfolioHistory({ from_date: fromDate, to_date: toDate, interval: chartInterval, account_ids: accountIds }),
+    queryKey: ['portfolio-history', committed?.fromDate, committed?.toDate, committed?.accountIds, committed?.interval],
+    queryFn: async () => {
+      const result = await getPortfolioHistory({
+        from_date: committed!.fromDate,
+        to_date: committed!.toDate,
+        interval: committed!.interval,
+        account_ids: committed!.accountIds,
+      })
+      setLastRunTime(new Date().toLocaleTimeString())
+      return result
+    },
+    enabled: committed !== null,
   })
 
   const histPoints = history as PortfolioHistoryPoint[]
@@ -976,6 +1144,15 @@ function PortfolioValueReport() {
             ))}
           </div>
         </div>
+        <div className="flex flex-col gap-1">
+          <button
+            onClick={() => setCommitted({ fromDate, toDate, accountIds, interval: chartInterval })}
+            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          >
+            <Play className="w-3.5 h-3.5" /> Run
+          </button>
+          {lastRunTime && <span className="text-xs text-gray-400 text-center">Last run: {lastRunTime}</span>}
+        </div>
       </div>
 
       {/* Chart */}
@@ -1034,9 +1211,26 @@ function PortfolioContinuityReport() {
   const { fromDate, toDate } = useMemo(() => computePortfolioRange(range), [range])
   const fromDateStr = fromDate ?? '2000-01-01'
 
+  // Pending (what the user is editing) vs committed (what was last run)
+  const [committed, setCommitted] = useState<{
+    fromDate: string; toDate: string; accountIds: string | undefined
+  } | null>(null)
+
+  // Auto-commit on mount with defaults
+  useEffect(() => {
+    if (committed === null && accountIds !== undefined) {
+      setCommitted({ fromDate: fromDateStr, toDate: toDate, accountIds })
+    }
+  }, [accountIds]) // eslint-disable-line
+
   const { data: continuity, isLoading } = useQuery({
-    queryKey: ['portfolio-continuity', fromDateStr, toDate, accountIds],
-    queryFn: () => getPortfolioContinuity({ from_date: fromDateStr, to_date: toDate, account_ids: accountIds }),
+    queryKey: ['portfolio-continuity', committed?.fromDate, committed?.toDate, committed?.accountIds],
+    queryFn: () => getPortfolioContinuity({
+      from_date: committed!.fromDate,
+      to_date: committed!.toDate,
+      account_ids: committed!.accountIds,
+    }),
+    enabled: committed !== null,
   })
 
   return (
@@ -1074,6 +1268,12 @@ function PortfolioContinuityReport() {
             ))}
           </div>
         </div>
+        <button
+          onClick={() => setCommitted({ fromDate: fromDateStr, toDate: toDate, accountIds })}
+          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+        >
+          <Play className="w-3.5 h-3.5" /> Run
+        </button>
       </div>
 
       {/* Continuity table */}
@@ -1997,33 +2197,77 @@ function ReturnDetailReport() {
 // ── Report registry ───────────────────────────────────────────────────────────
 // ── FX Rates Report ───────────────────────────────────────────────────────────
 function FxRatesReport() {
+  const [yearFilter, setYearFilter]   = useState('')
+  const [dateFrom,   setDateFrom]     = useState('')
+  const [dateTo,     setDateTo]       = useState('')
+  const [expanded,   setExpanded]     = useState<Set<string>>(new Set())
+
   const { data: rates = [], isLoading } = useQuery({
-    queryKey: ['fx-rates'],
-    queryFn: () => getFxRates(500),
+    queryKey: ['fx-rates', yearFilter, dateFrom, dateTo],
+    queryFn: () => getFxRates(10000),   // fetch all
     staleTime: 60_000,
   })
 
-  const sorted = useMemo(() =>
-    [...(rates as FXRate[])].sort((a, b) => b.rate_date.localeCompare(a.rate_date)),
-    [rates],
-  )
+  const years = useMemo(() =>
+    [...new Set((rates as FXRate[]).map(r => r.rate_date.slice(0, 4)))].sort().reverse(),
+  [rates])
 
-  // Group by currency pair
+  const filtered = useMemo(() => {
+    let r = [...(rates as FXRate[])]
+    if (yearFilter) r = r.filter(x => x.rate_date.startsWith(yearFilter))
+    if (dateFrom)   r = r.filter(x => x.rate_date >= dateFrom)
+    if (dateTo)     r = r.filter(x => x.rate_date <= dateTo)
+    return r.sort((a, b) => b.rate_date.localeCompare(a.rate_date))
+  }, [rates, yearFilter, dateFrom, dateTo])
+
+  // Group by currency pair, then by year, then by month
   const pairs = useMemo(() => {
     const seen = new Set<string>()
-    return sorted.filter(r => {
+    return (rates as FXRate[]).filter(r => {
       const key = `${r.from_currency}/${r.to_currency}`
       if (seen.has(key)) return false
       seen.add(key)
       return true
     })
-  }, [sorted])
+  }, [rates])
+
+  // Group filtered rows by "YYYY-MM"
+  const grouped = useMemo(() => {
+    const m = new Map<string, { year: string; month: string; monthKey: string; rows: FXRate[] }>()
+    for (const r of filtered) {
+      const mk = r.rate_date.slice(0, 7)  // "YYYY-MM"
+      if (!m.has(mk)) m.set(mk, {
+        year: r.rate_date.slice(0, 4),
+        month: r.rate_date.slice(5, 7),
+        monthKey: mk,
+        rows: [],
+      })
+      m.get(mk)!.rows.push(r)
+    }
+    return [...m.values()].sort((a, b) => b.monthKey.localeCompare(a.monthKey))
+  }, [filtered])
+
+  // Group months by year for year-level expand/collapse
+  const byYear = useMemo(() => {
+    const m = new Map<string, typeof grouped>()
+    for (const g of grouped) {
+      if (!m.has(g.year)) m.set(g.year, [])
+      m.get(g.year)!.push(g)
+    }
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  }, [grouped])
+
+  const MONTH_NAMES = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec']
+  const monthName = (mm: string) => MONTH_NAMES[parseInt(mm) - 1] ?? mm
+
+  const toggleYear  = (y: string) => setExpanded(s => { const n = new Set(s); n.has(y) ? n.delete(y) : n.add(y); return n })
+  const toggleMonth = (mk: string) => setExpanded(s => { const n = new Set(s); n.has(mk) ? n.delete(mk) : n.add(mk); return n })
 
   if (isLoading) return <div className="text-sm text-gray-400 py-6 text-center">Loading…</div>
 
   return (
     <div className="space-y-6">
-      {/* Latest rates summary */}
+      {/* Latest rates summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {pairs.map(r => (
           <div key={`${r.from_currency}${r.to_currency}`} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
@@ -2034,32 +2278,88 @@ function FxRatesReport() {
         ))}
       </div>
 
-      {/* Full rate history table */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50">
-          <h3 className="text-sm font-semibold text-gray-700">Rate History</h3>
+      {/* Filters */}
+      <div className="flex flex-wrap gap-4 items-end">
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">Year</label>
+          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={yearFilter} onChange={e => { setYearFilter(e.target.value); setDateFrom(''); setDateTo('') }}>
+            <option value="">All years</option>
+            {years.map(y => <option key={y} value={y}>{y}</option>)}
+          </select>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
-              <tr>
-                <th className="text-left px-4 py-2.5 font-medium">Date</th>
-                <th className="text-left px-4 py-2.5 font-medium">From</th>
-                <th className="text-left px-4 py-2.5 font-medium">To</th>
-                <th className="text-right px-4 py-2.5 font-medium">Rate</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {sorted.map(r => (
-                <tr key={r.id} className="hover:bg-gray-50">
-                  <td className="px-4 py-2 text-gray-700">{r.rate_date}</td>
-                  <td className="px-4 py-2 text-gray-700">{r.from_currency}</td>
-                  <td className="px-4 py-2 text-gray-700">{r.to_currency}</td>
-                  <td className="px-4 py-2 text-right font-mono text-gray-900">{Number(r.rate).toFixed(6)}</td>
-                </tr>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">From Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setYearFilter('') }} />
+        </div>
+        <div>
+          <label className="block text-xs text-gray-500 mb-1">To Date</label>
+          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => { setDateTo(e.target.value); setYearFilter('') }} />
+        </div>
+        {(yearFilter || dateFrom || dateTo) && (
+          <button className="text-xs text-blue-600 hover:underline" onClick={() => { setYearFilter(''); setDateFrom(''); setDateTo('') }}>Clear filters</button>
+        )}
+        <span className="text-xs text-gray-400 ml-auto">{filtered.length} entries</span>
+      </div>
+
+      {/* Grouped rate history */}
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-gray-700">Rate History</h3>
+          <div className="flex gap-2">
+            <button className="text-xs text-blue-600 hover:underline" onClick={() => {
+              const allKeys = new Set<string>()
+              byYear.forEach(([y, months]) => { allKeys.add(y); months.forEach(m => allKeys.add(m.monthKey)) })
+              setExpanded(allKeys)
+            }}>Expand all</button>
+            <span className="text-gray-300">|</span>
+            <button className="text-xs text-blue-600 hover:underline" onClick={() => setExpanded(new Set())}>Collapse all</button>
+          </div>
+        </div>
+        <div className="divide-y divide-gray-100">
+          {byYear.map(([year, months]) => (
+            <div key={year}>
+              {/* Year row */}
+              <button
+                onClick={() => toggleYear(year)}
+                className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-left"
+              >
+                <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded.has(year) ? 'rotate-90' : ''}`} />
+                <span className="font-semibold text-gray-800 text-sm">{year}</span>
+                <span className="text-xs text-gray-400 ml-1">({months.reduce((s, m) => s + m.rows.length, 0)} entries)</span>
+              </button>
+
+              {expanded.has(year) && months.map(({ monthKey, month, rows: mRows }) => (
+                <div key={monthKey}>
+                  {/* Month row */}
+                  <button
+                    onClick={() => toggleMonth(monthKey)}
+                    className="w-full flex items-center gap-2 px-8 py-2 hover:bg-gray-50 text-left"
+                  >
+                    <ChevronRight className={`w-3 h-3 text-gray-400 transition-transform ${expanded.has(monthKey) ? 'rotate-90' : ''}`} />
+                    <span className="text-sm text-gray-700">{monthName(month)} {year}</span>
+                    <span className="text-xs text-gray-400 ml-1">({mRows.length} entries)</span>
+                  </button>
+
+                  {expanded.has(monthKey) && (
+                    <table className="w-full text-sm">
+                      <tbody className="divide-y divide-gray-100">
+                        {mRows.map(r => (
+                          <tr key={r.id} className="hover:bg-gray-50">
+                            <td className="px-12 py-1.5 text-gray-600 text-xs">{r.rate_date}</td>
+                            <td className="px-4 py-1.5 text-gray-600 text-xs">{r.from_currency} → {r.to_currency}</td>
+                            <td className="px-4 py-1.5 text-right font-mono text-gray-900 text-xs">{Number(r.rate).toFixed(6)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
               ))}
-            </tbody>
-          </table>
+            </div>
+          ))}
+          {byYear.length === 0 && (
+            <div className="px-4 py-8 text-center text-gray-400 text-sm">No FX rates found.</div>
+          )}
         </div>
       </div>
     </div>

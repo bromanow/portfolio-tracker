@@ -700,8 +700,8 @@ export const updateTypeMapping = (id: number, data: Partial<TypeMapping>) =>
   api.put(`/admin/type-mappings/${id}`, data).then(r => r.data)
 export const deleteTypeMapping = (id: number) =>
   api.delete(`/admin/type-mappings/${id}`).then(r => r.data)
-export const getFxRates = (limit = 100) =>
-  api.get<FXRate[]>('/admin/fx-rates', { params: { limit } }).then(r => r.data)
+export const getFxRates = (limit = 100, params?: { year?: string; from_date?: string; to_date?: string }) =>
+  api.get<FXRate[]>('/admin/fx-rates', { params: { limit, ...params } }).then(r => r.data)
 export const getFxRateLookup = (date: string, fromCurrency: string, toCurrency = 'CAD') =>
   api.get<{ date: string; from_currency: string; to_currency: string; rate: string }>(
     '/admin/fx-rates/lookup',

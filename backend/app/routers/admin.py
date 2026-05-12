@@ -181,8 +181,22 @@ def delete_type_mapping(mapping_id: int, db: Session = Depends(get_db)):
 # ─── FX Rates ──────────────────────────────────────────────────────────────
 
 @router.get("/fx-rates")
-def list_fx_rates(limit: int = 100, db: Session = Depends(get_db)):
-    rates = db.query(FXRate).order_by(FXRate.rate_date.desc()).limit(limit).all()
+def list_fx_rates(
+    limit: int = 10000,
+    year: Optional[int] = Query(None),
+    from_date: Optional[date] = Query(None),
+    to_date: Optional[date] = Query(None),
+    db: Session = Depends(get_db)
+):
+    from sqlalchemy import extract
+    q = db.query(FXRate).order_by(FXRate.rate_date.desc())
+    if year:
+        q = q.filter(extract('year', FXRate.rate_date) == year)
+    if from_date:
+        q = q.filter(FXRate.rate_date >= from_date)
+    if to_date:
+        q = q.filter(FXRate.rate_date <= to_date)
+    rates = q.limit(limit).all()
     return [
         {
             "id": r.id, "rate_date": r.rate_date.isoformat(),

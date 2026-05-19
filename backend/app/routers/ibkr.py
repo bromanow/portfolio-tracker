@@ -25,7 +25,7 @@ import logging
 import threading
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
@@ -333,6 +333,43 @@ def sync_my_accounts(
             )
 
     return _spawn_sync(f"ibkr-flex-sync-{current_user.id}", [current_user.id])
+
+
+@router.post("/flex/upload-xml")
+def upload_flex_xml(
+    file: UploadFile = File(...),
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """
+    Import transactions directly from a Flex Query XML file downloaded from
+    the IBKR website. Bypasses the API rate limit — useful when the automatic
+    sync returns 'Statement could not be generated at this time.'
+    """
+    from app.services.ibkr_flex import import_from_xml_str
+
+    if not file.filename or not file.filename.lower().endswith(".xml"):
+        raise HTTPException(400, "Please upload a .xml file exported from IBKR Flex Query.")
+
+    content = file.file.read()
+    try:
+        xml_str = content.decode("utf-8")
+    except UnicodeDecodeError:
+        xml_str = content.decode("latin-1")
+
+    if len(xml_str) > 50 * 1024 * 1024:  # 50 MB guard
+        raise HTTPException(400, "File too large (max 50 MB)")
+
+    try:
+        result = import_from_xml_str(db, xml_str)
+    except Exception as exc:
+        logger.exception("Flex XML upload failed for user_id=%s", current_user.id)
+        raise HTTPException(400, f"Failed to parse XML: {exc}") from exc
+
+    if result.get("error"):
+        raise HTTPException(400, result["error"])
+
+    return result
 
 
 # ── Admin — diagnostics ──────────────────────────────────────────────────────

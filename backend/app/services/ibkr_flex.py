@@ -696,9 +696,58 @@ def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) 
 
 # ── High-level sync ───────────────────────────────────────────────────────────
 
+def import_from_xml_str(db: Session, xml_str: str) -> dict:
+    """
+    Parse a Flex Query XML string and import all transactions into the DB.
+    Matches each FlexStatement's accountId to an Account by account_number.
+    Deduplication via external_ref prevents double-importing.
+    Returns {"imported": int, "error": str|None, "message": str}.
+    """
+    statements = parse_flex_xml(xml_str)
+
+    total_trades            = 0
+    total_cash              = 0
+    total_option_events     = 0
+    total_corporate_actions = 0
+    unmatched               = []
+
+    for stmt in statements:
+        ibkr_id = stmt["ibkr_account_id"]
+        account = _find_account_by_number(db, ibkr_id)
+
+        if account is None:
+            logger.warning("No account with account_number=%r — skipping", ibkr_id)
+            unmatched.append(ibkr_id)
+            continue
+
+        t  = import_trades(db, account.id, stmt["trades"])
+        c  = import_cash(db, account.id, stmt["cash"], ibkr_id)
+        oe = import_option_events(db, account.id, stmt.get("option_events", []))
+        ca = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
+        logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions",
+                    ibkr_id, account.name, t, c, oe, ca)
+        total_trades            += t
+        total_cash              += c
+        total_option_events     += oe
+        total_corporate_actions += ca
+
+    total = total_trades + total_cash + total_option_events + total_corporate_actions
+    parts = [f"{total_trades} trade(s)", f"{total_cash} cash transaction(s)"]
+    if total_option_events:
+        parts.append(f"{total_option_events} option event(s)")
+    if total_corporate_actions:
+        parts.append(f"{total_corporate_actions} corporate action(s)")
+    msg = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
+    if unmatched:
+        msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"
+
+    logger.info("Flex import complete: %s", msg)
+    return {"imported": total, "error": None, "message": msg}
+
+
 def sync_config(db: Session, config) -> dict:
     """
-    Sync one user's Flex Query config.
+    Sync one user's Flex Query config via the IBKR API.
     Date range is set in IBKR portal (use "Year to Date").
     Deduplication via external_ref prevents double-importing existing data.
     """
@@ -709,52 +758,16 @@ def sync_config(db: Session, config) -> dict:
 
     try:
         xml_str = fetch_flex_report(config.token, config.query_id)
-        statements = parse_flex_xml(xml_str)
-
-        total_trades            = 0
-        total_cash              = 0
-        total_option_events     = 0
-        total_corporate_actions = 0
-        unmatched               = []
-
-        for stmt in statements:
-            ibkr_id = stmt["ibkr_account_id"]
-            account = _find_account_by_number(db, ibkr_id)
-
-            if account is None:
-                logger.warning("No account with account_number=%r — skipping", ibkr_id)
-                unmatched.append(ibkr_id)
-                continue
-
-            t  = import_trades(db, account.id, stmt["trades"])
-            c  = import_cash(db, account.id, stmt["cash"], ibkr_id)
-            oe = import_option_events(db, account.id, stmt.get("option_events", []))
-            ca = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
-            logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions",
-                        ibkr_id, account.name, t, c, oe, ca)
-            total_trades += t
-            total_cash   += c
-            total_option_events     += oe
-            total_corporate_actions += ca
-
-        total = total_trades + total_cash + total_option_events + total_corporate_actions
-        parts = [f"{total_trades} trade(s)", f"{total_cash} cash transaction(s)"]
-        if total_option_events:
-            parts.append(f"{total_option_events} option event(s)")
-        if total_corporate_actions:
-            parts.append(f"{total_corporate_actions} corporate action(s)")
-        msg   = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
-        if unmatched:
-            msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"
+        result  = import_from_xml_str(db, xml_str)
 
         config.last_sync_at       = datetime.utcnow()
         config.last_sync_status   = "ok"
-        config.last_sync_imported = total
-        config.last_sync_message  = msg
+        config.last_sync_imported = result["imported"]
+        config.last_sync_message  = result["message"]
         db.commit()
 
-        logger.info("Flex sync user_id=%s: %s", config.user_id, msg)
-        return {"imported": total, "error": None, "message": msg}
+        logger.info("Flex sync user_id=%s: %s", config.user_id, result["message"])
+        return result
 
     except Exception as exc:
         msg = str(exc) or type(exc).__name__

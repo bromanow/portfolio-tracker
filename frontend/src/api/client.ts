@@ -1068,6 +1068,15 @@ export const deleteMyFlexConfig = () =>
 export const syncMyFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync').then(r => r.data)
 
+export const uploadFlexXml = (file: File) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post<{ imported: number; message: string; error: string | null }>(
+    '/ibkr/flex/upload-xml', fd,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  ).then(r => r.data)
+}
+
 export const getAllFlexConfigs = () =>
   api.get<IBKRFlexConfig[]>('/ibkr/flex/configs').then(r => r.data)
 

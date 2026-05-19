@@ -18,7 +18,7 @@ import {
   getAccountCurrencySummary, splitCurrencyTransactions,
   changePassword,
   getClients, getUsers, createUser, updateUser, resetUserPassword,
-  getMyFlexConfig, saveMyFlexConfig, deleteMyFlexConfig, syncMyFlexAccounts,
+  getMyFlexConfig, saveMyFlexConfig, deleteMyFlexConfig, syncMyFlexAccounts, uploadFlexXml,
   getAllFlexConfigs, syncAllFlexAccounts,
 } from '../api/client'
 import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser, IBKRFlexConfig } from '../api/client'
@@ -2737,6 +2737,10 @@ function IBKRFlexTab() {
   const [editing, setEditing] = useState(false)
   const [showToken, setShowToken] = useState(false)
   const [syncError, setSyncError] = useState<string | null>(null)
+  const [uploadResult, setUploadResult] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const xmlInputRef = useRef<HTMLInputElement | null>(null)
 
   // Derive syncing from DB status + localStorage timestamp (survives navigation)
   const syncPending = (() => {
@@ -2782,6 +2786,28 @@ function IBKRFlexTab() {
     }
   }
 
+  const handleUploadXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setUploadResult(null)
+    setUploadError(null)
+    try {
+      const result = await uploadFlexXml(file)
+      setUploadResult(result.message ?? `Imported ${result.imported} transaction(s)`)
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['consolidated-positions'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-summary'] })
+    } catch (e: unknown) {
+      const msg = (e as { response?: { data?: { detail?: string } }; message?: string })
+      setUploadError(msg?.response?.data?.detail ?? msg?.message ?? 'Upload failed')
+    } finally {
+      setUploading(false)
+      if (xmlInputRef.current) xmlInputRef.current.value = ''
+    }
+  }
+
   // Admin: all configs
   const { data: allConfigs = [] } = useQuery({
     queryKey: ['ibkr-flex-configs'],
@@ -2820,7 +2846,7 @@ function IBKRFlexTab() {
           </div>
           {hasConfig && !editing && (
             <div className="flex flex-col gap-2 items-start">
-              <div className="flex gap-2">
+              <div className="flex gap-2 flex-wrap">
                 <button
                   onClick={handleSync}
                   disabled={syncPending}
@@ -2829,6 +2855,22 @@ function IBKRFlexTab() {
                   {syncPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
                   {syncPending ? 'Syncing…' : 'Sync Now'}
                 </button>
+                <button
+                  onClick={() => xmlInputRef.current?.click()}
+                  disabled={uploading}
+                  className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-3 py-1.5 hover:bg-green-700 disabled:opacity-50"
+                  title="Upload a Flex Query XML file downloaded directly from IBKR — bypasses the API rate limit"
+                >
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Database className="h-3.5 w-3.5" />}
+                  {uploading ? 'Importing…' : 'Upload XML'}
+                </button>
+                <input
+                  ref={xmlInputRef}
+                  type="file"
+                  accept=".xml"
+                  className="hidden"
+                  onChange={handleUploadXml}
+                />
                 <button onClick={startEdit} className="flex items-center gap-1.5 text-sm border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50">
                   <Pencil className="h-3.5 w-3.5" /> Edit
                 </button>
@@ -2842,6 +2884,12 @@ function IBKRFlexTab() {
                     ? 'IBKR limits syncs to once every 10 minutes. The last sync status is shown below — check if it already completed successfully.'
                     : syncError}
                 </p>
+              )}
+              {uploadResult && (
+                <p className="text-sm text-emerald-600 max-w-md">✓ {uploadResult}</p>
+              )}
+              {uploadError && (
+                <p className="text-sm text-red-600 max-w-md">Upload failed: {uploadError}</p>
               )}
             </div>
           )}

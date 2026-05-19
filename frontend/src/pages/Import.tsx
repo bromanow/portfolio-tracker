@@ -1,15 +1,17 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getImports, getAccounts, getSecurities, uploadFile, getImportPreview,
   commitImport, rejectImport, deleteImport, deleteAllImports, updateRawRow, remapImportTypes,
   checkImportDuplicates,
+  getMyFlexConfig, syncMyFlexAccounts, uploadFlexXml,
 } from '../api/client'
-import type { ImportBatch, Account, Security } from '../api/client'
+import type { ImportBatch, Account, Security, IBKRFlexConfig } from '../api/client'
 import {
   Upload, CheckCircle, XCircle, AlertCircle, Eye, Trash2,
   AlertTriangle, Edit2, X, SkipForward, RotateCcw, RefreshCw,
+  ChevronDown, ChevronRight, Database, Loader2,
 } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -100,9 +102,197 @@ const EDIT_KEYS = new Set([
   'quantity','price','settlement_amount','net_amount','commission','transaction_currency',
 ])
 
+// ── IBKR Flex tab ─────────────────────────────────────────────────────────────
+
+function IBKRFlexPanel() {
+  const qc = useQueryClient()
+  const xmlInputRef = useRef<HTMLInputElement | null>(null)
+  const SYNC_TS_KEY = 'ibkr_sync_started'
+
+  const { data: myConfig, isLoading } = useQuery<IBKRFlexConfig | null>({
+    queryKey: ['ibkr-flex-my-config'],
+    queryFn: getMyFlexConfig,
+    refetchInterval: (query) => {
+      const data = query.state.data as IBKRFlexConfig | null | undefined
+      if (data?.last_sync_status === 'running') return 3000
+      const ts = localStorage.getItem(SYNC_TS_KEY)
+      if (ts && Date.now() - Number(ts) < 5 * 60 * 1000) return 3000
+      return false
+    },
+    refetchIntervalInBackground: true,
+  })
+
+  const prevStatus = myConfig?.last_sync_status
+  if (prevStatus === 'ok' || prevStatus === 'error') {
+    localStorage.removeItem(SYNC_TS_KEY)
+  }
+
+  const [syncError, setSyncError] = useState<string | null>(null)
+  const [uploadResult, setUploadResult] = useState<string | null>(null)
+  const [uploadError, setUploadError] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+
+  const syncPending = (() => {
+    if (myConfig?.last_sync_status === 'running') return true
+    const ts = localStorage.getItem(SYNC_TS_KEY)
+    return !!ts && Date.now() - Number(ts) < 5 * 60 * 1000
+  })()
+
+  const handleSync = async () => {
+    setSyncError(null)
+    setUploadResult(null)
+    setUploadError(null)
+    try {
+      localStorage.setItem(SYNC_TS_KEY, String(Date.now()))
+      await syncMyFlexAccounts()
+      qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
+    } catch (e: unknown) {
+      localStorage.removeItem(SYNC_TS_KEY)
+      const err = e as { response?: { data?: { detail?: string } }; message?: string }
+      setSyncError(err?.response?.data?.detail ?? err?.message ?? 'Sync failed')
+    }
+  }
+
+  const handleUploadXml = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    setUploadResult(null)
+    setUploadError(null)
+    setSyncError(null)
+    try {
+      const result = await uploadFlexXml(file)
+      setUploadResult(result.message ?? `Imported ${result.imported} transaction(s)`)
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['consolidated-positions'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-summary'] })
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } }; message?: string }
+      setUploadError(err?.response?.data?.detail ?? err?.message ?? 'Upload failed')
+    } finally {
+      setUploading(false)
+      if (xmlInputRef.current) xmlInputRef.current.value = ''
+    }
+  }
+
+  if (isLoading) {
+    return <div className="text-sm text-gray-400 py-6">Loading Flex config…</div>
+  }
+
+  if (!myConfig) {
+    return (
+      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-sm text-amber-800 space-y-2">
+        <p className="font-semibold">No Flex Query configured</p>
+        <p>Set up your IBKR Flex Query token and Query ID in <strong>Admin → IBKR Flex</strong> first.</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-5">
+      {/* Status card */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div className="space-y-1">
+            <h2 className="font-semibold text-gray-800">IBKR Flex Query Sync</h2>
+            <p className="text-xs text-gray-500">
+              Pulls your Year-to-Date trades, cash transactions, option events and corporate actions from IBKR.
+              Duplicate transactions are automatically skipped.
+            </p>
+            {myConfig.last_sync_at && (
+              <p className="text-xs text-gray-400">
+                Last sync: {new Date(myConfig.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}
+                {' · '}
+                {myConfig.last_sync_status === 'ok' && (
+                  <span className="text-emerald-600">{myConfig.last_sync_message}</span>
+                )}
+                {myConfig.last_sync_status === 'error' && (
+                  <span className="text-red-600">{myConfig.last_sync_message}</span>
+                )}
+                {myConfig.last_sync_status === 'running' && (
+                  <span className="text-blue-600 inline-flex items-center gap-1">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Running…
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+
+          <div className="flex gap-2 flex-wrap">
+            <button
+              onClick={handleSync}
+              disabled={syncPending}
+              className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 disabled:opacity-50"
+            >
+              {syncPending
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Syncing…</>
+                : <><RefreshCw className="h-4 w-4" /> Sync Now</>}
+            </button>
+            <button
+              onClick={() => xmlInputRef.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 disabled:opacity-50"
+              title="Upload a Flex Query XML file downloaded from IBKR — bypasses the API rate limit"
+            >
+              {uploading
+                ? <><Loader2 className="h-4 w-4 animate-spin" /> Importing…</>
+                : <><Database className="h-4 w-4" /> Upload XML</>}
+            </button>
+            <input
+              ref={xmlInputRef}
+              type="file"
+              accept=".xml"
+              className="hidden"
+              onChange={handleUploadXml}
+            />
+          </div>
+        </div>
+
+        {syncError && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            {syncError.includes('429') || syncError.includes('10 minute')
+              ? 'IBKR limits Flex API requests to once per ~10 minutes. Use Upload XML to bypass this — download the XML directly from IBKR\'s Flex Query page and upload it here.'
+              : syncError}
+          </div>
+        )}
+        {uploadResult && (
+          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-700">
+            ✓ {uploadResult}
+          </div>
+        )}
+        {uploadError && (
+          <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+            Upload failed: {uploadError}
+          </div>
+        )}
+      </div>
+
+      {/* How-to hint */}
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-1">
+        <p className="font-semibold">When "Sync Now" fails with a rate-limit error:</p>
+        <ol className="list-decimal ml-4 space-y-0.5">
+          <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
+          <li>Run your <strong>Portfolio Tracker – All</strong> query and download the XML file</li>
+          <li>Click <strong>Upload XML</strong> above and select that file</li>
+        </ol>
+      </div>
+    </div>
+  )
+}
+
+// ── Main Import page ──────────────────────────────────────────────────────────
+
 export default function Import() {
   const qc = useQueryClient()
+
+  // Tab state
+  const [activeTab, setActiveTab] = useState<'csv' | 'flex'>('csv')
+
+  // CSV tab state
+  const [selectedBrokerageId, setSelectedBrokerageId] = useState<number | undefined>()
   const [selectedAccountId, setSelectedAccountId] = useState<number | undefined>()
+  const [historyOpen, setHistoryOpen] = useState(false)
   const [previewBatchId, setPreviewBatchId] = useState<number | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<ConfirmState | null>(null)
@@ -122,12 +312,40 @@ export default function Import() {
     enabled: !!previewBatchId,
   })
 
+  // Derive unique brokerages from accounts list
+  const brokerages = (() => {
+    const seen = new Map<number, string>()
+    ;(accounts as Account[]).forEach(a => {
+      if (!seen.has(a.brokerage_id)) seen.set(a.brokerage_id, a.brokerage_name)
+    })
+    return Array.from(seen.entries()).map(([id, name]) => ({ id, name }))
+  })()
+
+  // Accounts filtered to selected brokerage (all accounts when no brokerage selected)
+  const filteredAccounts = selectedBrokerageId
+    ? (accounts as Account[]).filter(a => a.brokerage_id === selectedBrokerageId)
+    : (accounts as Account[])
+
+  // When brokerage changes, clear account if it no longer belongs to it
+  const handleBrokerageChange = (brokId: number | undefined) => {
+    setSelectedBrokerageId(brokId)
+    if (brokId && selectedAccountId) {
+      const still = (accounts as Account[]).find(
+        a => a.id === selectedAccountId && a.brokerage_id === brokId
+      )
+      if (!still) setSelectedAccountId(undefined)
+    }
+  }
+
   const uploadMutation = useMutation({
     mutationFn: (file: File) => uploadFile(file, selectedAccountId),
     onSuccess: (data) => {
       qc.invalidateQueries({ queryKey: ['imports'] })
       setUploadError(null)
-      if (data?.batch_id) setPreviewBatchId(data.batch_id)
+      if (data?.batch_id) {
+        setPreviewBatchId(data.batch_id)
+        setHistoryOpen(true)  // auto-expand history when a new upload completes
+      }
     },
     onError: (err: Error) => setUploadError(err.message),
   })
@@ -185,7 +403,6 @@ export default function Import() {
     onSuccess: () => refetchPreview(),
   })
 
-  // Row update (edit or skip/restore)
   const rowMutation = useMutation({
     mutationFn: ({ rowId, updates }: { rowId: number; updates: Record<string, unknown> }) =>
       updateRawRow(previewBatchId!, rowId, updates),
@@ -206,7 +423,6 @@ export default function Import() {
   const saveEdit = () => {
     if (!editRow || !editFields) return
     const updates: Record<string, unknown> = {}
-    // Only send non-empty changed fields
     const raw = editRow.raw_data
     const fieldMap: Record<string, string> = {
       transaction_date: 'transaction_date',
@@ -226,9 +442,7 @@ export default function Import() {
         updates[rk] = val
       }
     }
-    // Always include ticker in updates if changed (also update raw_symbol for compatibility)
     if (updates.ticker) updates.raw_symbol = updates.ticker
-    // account_id should be a number
     if (updates.account_id) updates.account_id = Number(updates.account_id)
     rowMutation.mutate({ rowId: editRow.id, updates })
   }
@@ -264,319 +478,393 @@ export default function Import() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Import Transactions</h1>
-        <button
-          onClick={() => { setDialogError(null); setDialog({ type: 'delete-all' }) }}
-          className="flex items-center gap-2 text-sm text-red-600 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
-        >
-          <Trash2 className="h-4 w-4" /> Delete All Imports
-        </button>
-      </div>
-
-      {/* Upload zone */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
-        <h2 className="font-semibold text-gray-800">Upload CSV File</h2>
-        <div className="flex items-center gap-3">
-          <label className="text-sm text-gray-600">Account (required for iTrade &amp; Scotia Wealth files):</label>
-          <select
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
-            value={selectedAccountId ?? ''}
-            onChange={e => setSelectedAccountId(e.target.value ? Number(e.target.value) : undefined)}
+        {activeTab === 'csv' && (
+          <button
+            onClick={() => { setDialogError(null); setDialog({ type: 'delete-all' }) }}
+            className="flex items-center gap-2 text-sm text-red-600 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
           >
-            <option value="">Auto-detect (IBKR multi-account)</option>
-            {(accounts as Account[]).map(a => (
-              <option key={a.id} value={a.id}>{a.brokerage_name} – {a.name}</option>
-            ))}
-          </select>
-          {selectedAccountId && (() => {
-            const acct = (accounts as Account[]).find(a => a.id === selectedAccountId)
-            return acct ? (
-              <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded">
-                ✓ {acct.brokerage_name} · {acct.name}
-              </span>
-            ) : null
-          })()}
-        </div>
-        <div
-          {...getRootProps()}
-          className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-            isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
-          }`}
-        >
-          <input {...getInputProps()} />
-          <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-          <p className="text-gray-600 font-medium">
-            {isDragActive ? 'Drop the file here' : 'Drag & drop a CSV file here, or click to select'}
-          </p>
-          <p className="text-xs text-gray-400 mt-2">
-            Supports Scotia iTrade, Scotia Wealth and Interactive Brokers transaction history formats
-          </p>
-          <p className="text-xs text-blue-500 mt-1">
-            For IBKR multi-account files: leave account as "Auto-detect" and set the IB Alias on each account in Admin → Accounts to match the alias names used in the CSV (e.g. "Brian TFSA"). Rows with unrecognized aliases are skipped automatically.
-          </p>
-        </div>
-        {uploadMutation.isPending && (
-          <div className="text-blue-600 text-sm flex items-center gap-2">
-            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
-            Uploading and parsing...
-          </div>
-        )}
-        {uploadError && (
-          <div className="text-red-600 text-sm bg-red-50 rounded p-3 flex items-center gap-2">
-            <AlertCircle className="h-4 w-4 shrink-0" />{uploadError}
-          </div>
-        )}
-        {uploadMutation.isSuccess && (
-          <div className="text-green-600 text-sm bg-green-50 rounded p-3 flex items-center gap-2">
-            <CheckCircle className="h-4 w-4" />
-            File uploaded and parsed. Review and edit rows below, then commit.
-          </div>
+            <Trash2 className="h-4 w-4" /> Delete All Imports
+          </button>
         )}
       </div>
 
-      {/* Import history */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-        <h2 className="font-semibold text-gray-800 mb-4">Import History</h2>
-        {isLoading ? (
-          <div className="text-gray-400 text-sm">Loading...</div>
-        ) : imports.length === 0 ? (
-          <p className="text-gray-400 text-sm">No imports yet</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-100">
-              <thead>
-                <tr className="text-xs text-gray-500 uppercase">
-                  <th className="pb-2 text-left">File</th>
-                  <th className="pb-2 text-left">Date</th>
-                  <th className="pb-2 text-center">Rows</th>
-                  <th className="pb-2 text-center">Imported</th>
-                  <th className="pb-2 text-center">Errors</th>
-                  <th className="pb-2 text-center">Status</th>
-                  <th className="pb-2 text-center">Actions</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {(imports as ImportBatch[]).map(batch => (
-                  <tr key={batch.id} className="hover:bg-gray-50">
-                    <td className="py-2 pr-4 font-medium text-gray-800">{batch.filename}</td>
-                    <td className="py-2 pr-4 text-gray-500">{new Date(batch.import_date).toLocaleDateString()}</td>
-                    <td className="py-2 text-center">{batch.row_count}</td>
-                    <td className="py-2 text-center text-green-600 font-medium">{batch.imported_count}</td>
-                    <td className="py-2 text-center text-red-600 font-medium">{batch.error_count}</td>
-                    <td className="py-2 text-center">
-                      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[batch.status] || 'bg-gray-100 text-gray-600'}`}>
-                        {batch.status}
-                      </span>
-                    </td>
-                    <td className="py-2">
-                      <div className="flex items-center justify-center gap-2">
-                        <button
-                          onClick={() => setPreviewBatchId(previewBatchId === batch.id ? null : batch.id)}
-                          className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"
-                        >
-                          <Eye className="h-3.5 w-3.5" />
-                          {previewBatchId === batch.id ? 'Hide' : 'Preview'}
-                        </button>
-                        {batch.status === 'PENDING' && (
-                          <>
-                            <button onClick={() => remapMutation.mutate(batch.id)}
-                              disabled={remapMutation.isPending}
-                              title="Re-apply brokerage type mappings to all pending rows"
-                              className="text-purple-500 hover:text-purple-700 flex items-center gap-1 text-xs disabled:opacity-50">
-                              <RefreshCw className="h-3.5 w-3.5" /> Remap Types
-                            </button>
-                            <button onClick={() => commitMutation.mutate(batch.id)}
-                              disabled={commitMutation.isPending}
-                              className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs disabled:opacity-50">
-                              <CheckCircle className="h-3.5 w-3.5" /> Commit
-                            </button>
-                            <button
-                              onClick={() => { setDialogError(null); setDialog({ type: 'reject-batch', batchId: batch.id, label: batch.filename }) }}
-                              className="text-orange-600 hover:text-orange-800 flex items-center gap-1 text-xs">
-                              <XCircle className="h-3.5 w-3.5" /> Reject
-                            </button>
-                            <button
-                              onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
-                              className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
-                              <Trash2 className="h-3.5 w-3.5" /> Delete
-                            </button>
-                          </>
-                        )}
-                        {batch.status === 'REJECTED' && (
-                          <button
-                            onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
-                            className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
-                            <Trash2 className="h-3.5 w-3.5" /> Delete
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
+      {/* ── Tabs ── */}
+      <div className="flex border-b border-gray-200">
+        {(['csv', 'flex'] as const).map(tab => (
+          <button
+            key={tab}
+            onClick={() => setActiveTab(tab)}
+            className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
+              activeTab === tab
+                ? 'border-blue-600 text-blue-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {tab === 'csv' ? 'CSV Upload' : 'IBKR Flex Query'}
+          </button>
+        ))}
       </div>
 
-      {/* ── Preview / Edit panel ── */}
-      {previewBatchId && preview && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
-          {/* Header */}
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <h2 className="font-semibold text-gray-800">Preview: {preview.filename}</h2>
-              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[preview.status] || 'bg-gray-100 text-gray-600'}`}>
-                {preview.status}
-              </span>
-            </div>
-            <div className="flex gap-2 items-center">
-              <div className="flex gap-1.5 text-xs">
-                {pending  > 0 && <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">{pending} pending</span>}
-                {errors   > 0 && <span className="bg-red-100 text-red-700 px-2 py-1 rounded">{errors} errors</span>}
-                {skipped  > 0 && <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">{skipped} skipped</span>}
-                {imported > 0 && <span className="bg-green-100 text-green-700 px-2 py-1 rounded">{imported} imported</span>}
+      {/* ── CSV tab ── */}
+      {activeTab === 'csv' && (
+        <>
+          {/* Upload zone */}
+          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
+            <h2 className="font-semibold text-gray-800">Upload CSV File</h2>
+
+            {/* Brokerage + Account selectors */}
+            <div className="flex flex-wrap items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 whitespace-nowrap">Brokerage:</label>
+                <select
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  value={selectedBrokerageId ?? ''}
+                  onChange={e => handleBrokerageChange(e.target.value ? Number(e.target.value) : undefined)}
+                >
+                  <option value="">All brokerages</option>
+                  {brokerages.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}</option>
+                  ))}
+                </select>
               </div>
-              {preview.status === 'PENDING' && (
-                <>
-                  <button
-                    onClick={() => remapMutation.mutate(previewBatchId)}
-                    disabled={remapMutation.isPending}
-                    title="Re-apply brokerage type mappings to all pending rows"
-                    className="flex items-center gap-1.5 text-sm border border-purple-300 text-purple-600 rounded px-3 py-1.5 hover:bg-purple-50 disabled:opacity-50"
-                  >
-                    <RefreshCw className={`h-4 w-4 ${remapMutation.isPending ? 'animate-spin' : ''}`} />
-                    {remapMutation.isPending ? 'Remapping…' : 'Remap Types'}
-                  </button>
-                  {remapMutation.isSuccess && (
-                    <span className="text-xs text-purple-600">
-                      ✓ {(remapMutation.data as { remapped?: number })?.remapped ?? 0} rows updated
-                    </span>
-                  )}
-                  <button
-                    onClick={() => checkDupMutation.mutate(previewBatchId)}
-                    disabled={checkDupMutation.isPending}
-                    title="Pre-check rows for duplicates before committing"
-                    className="flex items-center gap-1.5 text-sm border border-orange-300 text-orange-600 rounded px-3 py-1.5 hover:bg-orange-50 disabled:opacity-50"
-                  >
-                    <AlertTriangle className={`h-4 w-4 ${checkDupMutation.isPending ? 'animate-spin' : ''}`} />
-                    {checkDupMutation.isPending ? 'Checking…' : 'Check Duplicates'}
-                  </button>
-                  {checkDupMutation.isSuccess && (
-                    <span className="text-xs text-orange-600">
-                      ✓ {(checkDupMutation.data as { duplicates_found?: number })?.duplicates_found ?? 0} duplicates found
-                    </span>
-                  )}
-                  <button
-                    onClick={() => commitMutation.mutate(previewBatchId)}
-                    disabled={commitMutation.isPending}
-                    className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700 disabled:opacity-50"
-                  >
-                    <CheckCircle className="h-4 w-4" />
-                    {commitMutation.isPending ? 'Committing…' : 'Commit Import'}
-                  </button>
-                </>
-              )}
+
+              <div className="flex items-center gap-2">
+                <label className="text-sm text-gray-600 whitespace-nowrap">Account:</label>
+                <select
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  value={selectedAccountId ?? ''}
+                  onChange={e => setSelectedAccountId(e.target.value ? Number(e.target.value) : undefined)}
+                >
+                  <option value="">Auto-detect</option>
+                  {filteredAccounts.map(a => (
+                    <option key={a.id} value={a.id}>{a.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {(selectedBrokerageId || selectedAccountId) && (() => {
+                const acct = selectedAccountId
+                  ? (accounts as Account[]).find(a => a.id === selectedAccountId)
+                  : null
+                const brok = selectedBrokerageId
+                  ? brokerages.find(b => b.id === selectedBrokerageId)
+                  : null
+                const label = acct
+                  ? `${acct.brokerage_name} · ${acct.name}`
+                  : brok ? brok.name : ''
+                return label ? (
+                  <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded">
+                    ✓ {label}
+                  </span>
+                ) : null
+              })()}
             </div>
+
+            <div
+              {...getRootProps()}
+              className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
+                isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+              }`}
+            >
+              <input {...getInputProps()} />
+              <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
+              <p className="text-gray-600 font-medium">
+                {isDragActive ? 'Drop the file here' : 'Drag & drop a CSV file here, or click to select'}
+              </p>
+              <p className="text-xs text-gray-400 mt-2">
+                Supports Scotia iTrade, Scotia Wealth and Interactive Brokers transaction history formats
+              </p>
+              <p className="text-xs text-blue-500 mt-1">
+                For IBKR multi-account files: leave account as "Auto-detect" and set the IB Alias on each account in Admin → Accounts to match the alias names used in the CSV (e.g. "Brian TFSA"). Rows with unrecognized aliases are skipped automatically.
+              </p>
+            </div>
+            {uploadMutation.isPending && (
+              <div className="text-blue-600 text-sm flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+                Uploading and parsing...
+              </div>
+            )}
+            {uploadError && (
+              <div className="text-red-600 text-sm bg-red-50 rounded p-3 flex items-center gap-2">
+                <AlertCircle className="h-4 w-4 shrink-0" />{uploadError}
+              </div>
+            )}
+            {uploadMutation.isSuccess && (
+              <div className="text-green-600 text-sm bg-green-50 rounded p-3 flex items-center gap-2">
+                <CheckCircle className="h-4 w-4" />
+                File uploaded and parsed. Review and edit rows below, then commit.
+              </div>
+            )}
           </div>
 
-          {/* Row table */}
-          <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
-            <table className="min-w-full text-xs divide-y divide-gray-100">
-              <thead className="sticky top-0 bg-white shadow-sm z-10">
-                <tr className="text-gray-500 uppercase">
-                  <th className="pb-2 px-2 text-left">#</th>
-                  <th className="pb-2 px-2 text-left">Date</th>
-                  <th className="pb-2 px-2 text-left">Account</th>
-                  <th className="pb-2 px-2 text-left">Type</th>
-                  <th className="pb-2 px-2 text-left">Ticker</th>
-                  <th className="pb-2 px-2 text-right">Qty</th>
-                  <th className="pb-2 px-2 text-right">Amount</th>
-                  <th className="pb-2 px-2 text-center">Status</th>
-                  <th className="pb-2 px-2 text-left">Error / Note</th>
-                  {preview.status === 'PENDING' && <th className="pb-2 px-2 text-center">Actions</th>}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.map(row => {
-                  const isDuplicate = row.status === 'PENDING' && row.error_message === 'Duplicate transaction'
-                  return (
-                  <tr key={row.id} className={`${getRowBg(row)} border-b border-gray-100`}>
-                    <td className="px-2 py-1.5 text-gray-400">{row.row_number}</td>
-                    <td className="px-2 py-1.5">{(row.raw_data.transaction_date as string) || row.parsed_date || '—'}</td>
-                    <td className="px-2 py-1.5 max-w-[10rem]">
-                      {row.resolved_account_name ? (
-                        <span className="text-gray-800 truncate block" title={row.resolved_account_name}>
-                          {row.resolved_account_name}
-                        </span>
-                      ) : (row.raw_data.account_name as string) ? (
-                        <span className="text-gray-500 truncate block" title={(row.raw_data.account_name as string)}>
-                          {row.raw_data.account_name as string}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    <td className="px-2 py-1.5">{(row.raw_data.transaction_type as string) || '—'}</td>
-                    <td className="px-2 py-1.5 font-mono">{(row.raw_data.ticker as string) || (row.raw_data.raw_symbol as string) || '—'}</td>
-                    <td className="px-2 py-1.5 text-right">{String(row.raw_data.quantity ?? '—')}</td>
-                    <td className="px-2 py-1.5 text-right">
-                      {String(row.raw_data.settlement_amount ?? row.raw_data.net_amount ?? '—')}
-                    </td>
-                    <td className="px-2 py-1.5 text-center">
-                      {isDuplicate ? (
-                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
-                          DUPLICATE
-                        </span>
-                      ) : (
-                        <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ROW_STATUS_BADGE[row.status] || 'bg-gray-200 text-gray-600'}`}>
-                          {row.status}
+          {/* Import history — collapsible */}
+          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+            <button
+              onClick={() => setHistoryOpen(o => !o)}
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+            >
+              <div className="flex items-center gap-2">
+                {historyOpen
+                  ? <ChevronDown className="h-4 w-4 text-gray-400" />
+                  : <ChevronRight className="h-4 w-4 text-gray-400" />}
+                <h2 className="font-semibold text-gray-800">Import History</h2>
+                {!historyOpen && (imports as ImportBatch[]).length > 0 && (
+                  <span className="text-xs text-gray-400">
+                    ({(imports as ImportBatch[]).length} batch{(imports as ImportBatch[]).length !== 1 ? 'es' : ''})
+                  </span>
+                )}
+              </div>
+            </button>
+
+            {historyOpen && (
+              <div className="px-6 pb-5 border-t border-gray-100">
+                {isLoading ? (
+                  <div className="text-gray-400 text-sm py-4">Loading...</div>
+                ) : (imports as ImportBatch[]).length === 0 ? (
+                  <p className="text-gray-400 text-sm py-4">No imports yet</p>
+                ) : (
+                  <div className="overflow-x-auto mt-4">
+                    <table className="min-w-full text-sm divide-y divide-gray-100">
+                      <thead>
+                        <tr className="text-xs text-gray-500 uppercase">
+                          <th className="pb-2 text-left">File</th>
+                          <th className="pb-2 text-left">Date</th>
+                          <th className="pb-2 text-center">Rows</th>
+                          <th className="pb-2 text-center">Imported</th>
+                          <th className="pb-2 text-center">Errors</th>
+                          <th className="pb-2 text-center">Status</th>
+                          <th className="pb-2 text-center">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {(imports as ImportBatch[]).map(batch => (
+                          <tr key={batch.id} className="hover:bg-gray-50">
+                            <td className="py-2 pr-4 font-medium text-gray-800">{batch.filename}</td>
+                            <td className="py-2 pr-4 text-gray-500">{new Date(batch.import_date).toLocaleDateString()}</td>
+                            <td className="py-2 text-center">{batch.row_count}</td>
+                            <td className="py-2 text-center text-green-600 font-medium">{batch.imported_count}</td>
+                            <td className="py-2 text-center text-red-600 font-medium">{batch.error_count}</td>
+                            <td className="py-2 text-center">
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[batch.status] || 'bg-gray-100 text-gray-600'}`}>
+                                {batch.status}
+                              </span>
+                            </td>
+                            <td className="py-2">
+                              <div className="flex items-center justify-center gap-2">
+                                <button
+                                  onClick={() => setPreviewBatchId(previewBatchId === batch.id ? null : batch.id)}
+                                  className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"
+                                >
+                                  <Eye className="h-3.5 w-3.5" />
+                                  {previewBatchId === batch.id ? 'Hide' : 'Preview'}
+                                </button>
+                                {batch.status === 'PENDING' && (
+                                  <>
+                                    <button onClick={() => remapMutation.mutate(batch.id)}
+                                      disabled={remapMutation.isPending}
+                                      title="Re-apply brokerage type mappings to all pending rows"
+                                      className="text-purple-500 hover:text-purple-700 flex items-center gap-1 text-xs disabled:opacity-50">
+                                      <RefreshCw className="h-3.5 w-3.5" /> Remap Types
+                                    </button>
+                                    <button onClick={() => commitMutation.mutate(batch.id)}
+                                      disabled={commitMutation.isPending}
+                                      className="text-green-600 hover:text-green-800 flex items-center gap-1 text-xs disabled:opacity-50">
+                                      <CheckCircle className="h-3.5 w-3.5" /> Commit
+                                    </button>
+                                    <button
+                                      onClick={() => { setDialogError(null); setDialog({ type: 'reject-batch', batchId: batch.id, label: batch.filename }) }}
+                                      className="text-orange-600 hover:text-orange-800 flex items-center gap-1 text-xs">
+                                      <XCircle className="h-3.5 w-3.5" /> Reject
+                                    </button>
+                                    <button
+                                      onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
+                                      className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
+                                      <Trash2 className="h-3.5 w-3.5" /> Delete
+                                    </button>
+                                  </>
+                                )}
+                                {batch.status === 'REJECTED' && (
+                                  <button
+                                    onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
+                                    className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
+                                    <Trash2 className="h-3.5 w-3.5" /> Delete
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* ── Preview / Edit panel ── */}
+          {previewBatchId && preview && (
+            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+              {/* Header */}
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-3">
+                  <h2 className="font-semibold text-gray-800">Preview: {preview.filename}</h2>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[preview.status] || 'bg-gray-100 text-gray-600'}`}>
+                    {preview.status}
+                  </span>
+                </div>
+                <div className="flex gap-2 items-center">
+                  <div className="flex gap-1.5 text-xs">
+                    {pending  > 0 && <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">{pending} pending</span>}
+                    {errors   > 0 && <span className="bg-red-100 text-red-700 px-2 py-1 rounded">{errors} errors</span>}
+                    {skipped  > 0 && <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">{skipped} skipped</span>}
+                    {imported > 0 && <span className="bg-green-100 text-green-700 px-2 py-1 rounded">{imported} imported</span>}
+                  </div>
+                  {preview.status === 'PENDING' && (
+                    <>
+                      <button
+                        onClick={() => remapMutation.mutate(previewBatchId)}
+                        disabled={remapMutation.isPending}
+                        title="Re-apply brokerage type mappings to all pending rows"
+                        className="flex items-center gap-1.5 text-sm border border-purple-300 text-purple-600 rounded px-3 py-1.5 hover:bg-purple-50 disabled:opacity-50"
+                      >
+                        <RefreshCw className={`h-4 w-4 ${remapMutation.isPending ? 'animate-spin' : ''}`} />
+                        {remapMutation.isPending ? 'Remapping…' : 'Remap Types'}
+                      </button>
+                      {remapMutation.isSuccess && (
+                        <span className="text-xs text-purple-600">
+                          ✓ {(remapMutation.data as { remapped?: number })?.remapped ?? 0} rows updated
                         </span>
                       )}
-                    </td>
-                    <td className="px-2 py-1.5 text-red-600 max-w-xs truncate">
-                      {isDuplicate ? '' : (row.error_message || '')}
-                    </td>
-                    {preview.status === 'PENDING' && (
-                      <td className="px-2 py-1.5">
-                        <div className="flex items-center justify-center gap-1.5">
-                          {row.status !== 'IMPORTED' && (
-                            <button onClick={() => openEdit(row)}
-                              className="text-gray-400 hover:text-blue-600" title="Edit row">
-                              <Edit2 className="h-3.5 w-3.5" />
-                            </button>
+                      <button
+                        onClick={() => checkDupMutation.mutate(previewBatchId)}
+                        disabled={checkDupMutation.isPending}
+                        title="Pre-check rows for duplicates before committing"
+                        className="flex items-center gap-1.5 text-sm border border-orange-300 text-orange-600 rounded px-3 py-1.5 hover:bg-orange-50 disabled:opacity-50"
+                      >
+                        <AlertTriangle className={`h-4 w-4 ${checkDupMutation.isPending ? 'animate-spin' : ''}`} />
+                        {checkDupMutation.isPending ? 'Checking…' : 'Check Duplicates'}
+                      </button>
+                      {checkDupMutation.isSuccess && (
+                        <span className="text-xs text-orange-600">
+                          ✓ {(checkDupMutation.data as { duplicates_found?: number })?.duplicates_found ?? 0} duplicates found
+                        </span>
+                      )}
+                      <button
+                        onClick={() => commitMutation.mutate(previewBatchId)}
+                        disabled={commitMutation.isPending}
+                        className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700 disabled:opacity-50"
+                      >
+                        <CheckCircle className="h-4 w-4" />
+                        {commitMutation.isPending ? 'Committing…' : 'Commit Import'}
+                      </button>
+                    </>
+                  )}
+                </div>
+              </div>
+
+              {/* Row table */}
+              <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
+                <table className="min-w-full text-xs divide-y divide-gray-100">
+                  <thead className="sticky top-0 bg-white shadow-sm z-10">
+                    <tr className="text-gray-500 uppercase">
+                      <th className="pb-2 px-2 text-left">#</th>
+                      <th className="pb-2 px-2 text-left">Date</th>
+                      <th className="pb-2 px-2 text-left">Account</th>
+                      <th className="pb-2 px-2 text-left">Type</th>
+                      <th className="pb-2 px-2 text-left">Ticker</th>
+                      <th className="pb-2 px-2 text-right">Qty</th>
+                      <th className="pb-2 px-2 text-right">Amount</th>
+                      <th className="pb-2 px-2 text-center">Status</th>
+                      <th className="pb-2 px-2 text-left">Error / Note</th>
+                      {preview.status === 'PENDING' && <th className="pb-2 px-2 text-center">Actions</th>}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(row => {
+                      const isDuplicate = row.status === 'PENDING' && row.error_message === 'Duplicate transaction'
+                      return (
+                        <tr key={row.id} className={`${getRowBg(row)} border-b border-gray-100`}>
+                          <td className="px-2 py-1.5 text-gray-400">{row.row_number}</td>
+                          <td className="px-2 py-1.5">{(row.raw_data.transaction_date as string) || row.parsed_date || '—'}</td>
+                          <td className="px-2 py-1.5 max-w-[10rem]">
+                            {row.resolved_account_name ? (
+                              <span className="text-gray-800 truncate block" title={row.resolved_account_name}>
+                                {row.resolved_account_name}
+                              </span>
+                            ) : (row.raw_data.account_name as string) ? (
+                              <span className="text-gray-500 truncate block" title={(row.raw_data.account_name as string)}>
+                                {row.raw_data.account_name as string}
+                              </span>
+                            ) : '—'}
+                          </td>
+                          <td className="px-2 py-1.5">{(row.raw_data.transaction_type as string) || '—'}</td>
+                          <td className="px-2 py-1.5 font-mono">{(row.raw_data.ticker as string) || (row.raw_data.raw_symbol as string) || '—'}</td>
+                          <td className="px-2 py-1.5 text-right">{String(row.raw_data.quantity ?? '—')}</td>
+                          <td className="px-2 py-1.5 text-right">
+                            {String(row.raw_data.settlement_amount ?? row.raw_data.net_amount ?? '—')}
+                          </td>
+                          <td className="px-2 py-1.5 text-center">
+                            {isDuplicate ? (
+                              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-orange-100 text-orange-700">
+                                DUPLICATE
+                              </span>
+                            ) : (
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ROW_STATUS_BADGE[row.status] || 'bg-gray-200 text-gray-600'}`}>
+                                {row.status}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-2 py-1.5 text-red-600 max-w-xs truncate">
+                            {isDuplicate ? '' : (row.error_message || '')}
+                          </td>
+                          {preview.status === 'PENDING' && (
+                            <td className="px-2 py-1.5">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {row.status !== 'IMPORTED' && (
+                                  <button onClick={() => openEdit(row)}
+                                    className="text-gray-400 hover:text-blue-600" title="Edit row">
+                                    <Edit2 className="h-3.5 w-3.5" />
+                                  </button>
+                                )}
+                                {isDuplicate ? (
+                                  <button onClick={() => forceImportRow(row)}
+                                    className="text-xs px-1.5 py-0.5 border border-orange-400 text-orange-600 hover:bg-orange-50 rounded"
+                                    title="Import anyway, ignoring duplicate check">
+                                    Force
+                                  </button>
+                                ) : row.status === 'SKIPPED' ? (
+                                  <button onClick={() => restoreRow(row)}
+                                    className="text-gray-400 hover:text-green-600" title="Restore to pending">
+                                    <RotateCcw className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : row.status !== 'IMPORTED' ? (
+                                  <button onClick={() => skipRow(row)}
+                                    className="text-gray-400 hover:text-orange-500" title="Skip this row">
+                                    <SkipForward className="h-3.5 w-3.5" />
+                                  </button>
+                                ) : null}
+                              </div>
+                            </td>
                           )}
-                          {isDuplicate ? (
-                            <button onClick={() => forceImportRow(row)}
-                              className="text-xs px-1.5 py-0.5 border border-orange-400 text-orange-600 hover:bg-orange-50 rounded"
-                              title="Import anyway, ignoring duplicate check">
-                              Force
-                            </button>
-                          ) : row.status === 'SKIPPED' ? (
-                            <button onClick={() => restoreRow(row)}
-                              className="text-gray-400 hover:text-green-600" title="Restore to pending">
-                              <RotateCcw className="h-3.5 w-3.5" />
-                            </button>
-                          ) : row.status !== 'IMPORTED' ? (
-                            <button onClick={() => skipRow(row)}
-                              className="text-gray-400 hover:text-orange-500" title="Skip this row">
-                              <SkipForward className="h-3.5 w-3.5" />
-                            </button>
-                          ) : null}
-                        </div>
-                      </td>
-                    )}
-                  </tr>
-                  )
-                })}
-              </tbody>
-            </table>
-          </div>
-        </div>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          )}
+        </>
       )}
+
+      {/* ── IBKR Flex tab ── */}
+      {activeTab === 'flex' && <IBKRFlexPanel />}
 
       {/* ── Row Edit Modal ── */}
       {editRow && editFields && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            {/* Modal header */}
             <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
               <div>
                 <h3 className="font-semibold text-gray-900">Edit Row #{editRow.row_number}</h3>
@@ -588,10 +876,7 @@ export default function Import() {
               </button>
             </div>
 
-            {/* Two-panel body */}
             <div className="flex gap-0 flex-1 min-h-0 overflow-hidden">
-
-              {/* Left: Original CSV data */}
               <div className="w-2/5 border-r border-gray-200 overflow-y-auto p-5 bg-gray-50">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
                   Original CSV Data
@@ -612,22 +897,17 @@ export default function Import() {
                 </p>
               </div>
 
-              {/* Right: Editable mapped fields */}
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
                 <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
                   Edit Mapped Fields
                 </h4>
-
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {/* Date */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Transaction Date</label>
                     <input type="date" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.transaction_date}
                       onChange={e => setEditFields(f => f && ({ ...f, transaction_date: e.target.value }))} />
                   </div>
-
-                  {/* Type */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Transaction Type</label>
                     <select className="border rounded px-3 py-1.5 text-sm w-full"
@@ -637,8 +917,6 @@ export default function Import() {
                       {ALL_TX_TYPES.map(t => <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>)}
                     </select>
                   </div>
-
-                  {/* Ticker */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Ticker / Security</label>
                     <input
@@ -654,8 +932,6 @@ export default function Import() {
                       ))}
                     </datalist>
                   </div>
-
-                  {/* Account override */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Account Override</label>
                     <select className="border rounded px-3 py-1.5 text-sm w-full"
@@ -667,48 +943,36 @@ export default function Import() {
                       ))}
                     </select>
                   </div>
-
-                  {/* Quantity */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Quantity</label>
                     <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.quantity}
                       onChange={e => setEditFields(f => f && ({ ...f, quantity: e.target.value }))} />
                   </div>
-
-                  {/* Price */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Price per Unit</label>
                     <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.price}
                       onChange={e => setEditFields(f => f && ({ ...f, price: e.target.value }))} />
                   </div>
-
-                  {/* Settlement amount (iTrade) */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Settlement Amount (iTrade)</label>
                     <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.settlement_amount}
                       onChange={e => setEditFields(f => f && ({ ...f, settlement_amount: e.target.value }))} />
                   </div>
-
-                  {/* Net amount (IBKR) */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Net Amount (IBKR)</label>
                     <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.net_amount}
                       onChange={e => setEditFields(f => f && ({ ...f, net_amount: e.target.value }))} />
                   </div>
-
-                  {/* Commission */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Commission</label>
                     <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.commission}
                       onChange={e => setEditFields(f => f && ({ ...f, commission: e.target.value }))} />
                   </div>
-
-                  {/* Currency */}
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Transaction Currency</label>
                     <select className="border rounded px-3 py-1.5 text-sm w-full"
@@ -719,7 +983,6 @@ export default function Import() {
                     </select>
                   </div>
                 </div>
-
                 {editError && (
                   <div className="bg-red-50 border border-red-200 rounded p-2 text-xs text-red-700">
                     Error: {editError}
@@ -728,7 +991,6 @@ export default function Import() {
               </div>
             </div>
 
-            {/* Footer */}
             <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
               <button
                 onClick={() => { setEditRow(null); setEditFields(null); setEditError(null) }}

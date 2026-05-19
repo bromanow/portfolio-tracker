@@ -56,34 +56,67 @@ try:
             break
 
     if _found:
-        # Log all visible buttons so we know what's on the page
-        _all_btns = [b for b in driver.find_elements(_By.TAG_NAME, 'button') if b.is_displayed()]
-        for _bi, _b in enumerate(_all_btns):
-            _plog.info('[patch] Button[%d] type=%s text=%r', _bi, _b.get_attribute('type'), _b.text.strip())
-
-        # Click Continue — try submit buttons first, then any visible button
-        _clicked = False
-        for _css in ("button[type='submit']", "input[type='submit']",
-                     "button[type='button']", "button"):
-            _btns = [b for b in driver.find_elements(_By.CSS_SELECTOR, _css)
-                     if b.is_displayed()]
-            if _btns:
-                _btn = _btns[0]
-                _plog.info('[patch] Clicking (%s) text=%r via JS click', _css, _btn.text.strip())
-                # Use JS click — more reliable for IBKR's SPA event handlers
-                driver.execute_script("arguments[0].click();", _btn)
-                _clicked = True
-                _t.sleep(3)
-                break
-
-        # Log what page looks like after clicking Continue
+        # Use keyboard navigation to trigger native browser change events.
+        # IBKR uses a React-controlled select; keyboard interaction fires
+        # native events that React's onChange handler can respond to.
+        # Also try the React native-setter trick so state is updated.
         try:
-            _after = driver.find_element(_By.TAG_NAME, 'body').text
-            _plog.info('[patch] After Continue body: %s', _after[:500])
-        except Exception as _pe:
-            _plog.info('[patch] Could not read post-Continue page: %s', _pe)
+            from selenium.webdriver.common.keys import Keys as _Keys
+            # Re-read the current value and decide how many DOWN presses needed
+            # Options: Select Type (0), IB Key (1), Mobile Authenticator App (2)
+            # We want index 2 regardless of current position — reset first with HOME
+            _s.send_keys(_Keys.HOME)
+            _t.sleep(0.2)
+            _s.send_keys(_Keys.DOWN)   # → IB Key
+            _t.sleep(0.1)
+            _s.send_keys(_Keys.DOWN)   # → Mobile Authenticator App
+            _t.sleep(0.3)
+            _plog.info('[patch] Keyboard-navigated to Mobile Authenticator App, current value=%s',
+                       _s.get_attribute('value'))
+        except Exception as _ke:
+            _plog.info('[patch] Keyboard nav failed: %s', _ke)
 
-        _plog.info('[patch] Device selection complete (clicked=%s)', _clicked)
+        # Also apply the React native-setter so state is updated
+        try:
+            driver.execute_script(
+                "var s=arguments[0];"
+                "var ns=Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype,'value').set;"
+                "ns.call(s,'4');"
+                "s.dispatchEvent(new Event('input',{bubbles:true}));"
+                "s.dispatchEvent(new Event('change',{bubbles:true}));",
+                _s
+            )
+            _plog.info('[patch] React native-setter fired')
+        except Exception as _je:
+            _plog.info('[patch] JS setter failed: %s', _je)
+
+        # Wait to see if the page auto-advances without a button click
+        _t.sleep(4)
+        _after_body = ''
+        try:
+            _after_body = driver.find_element(_By.TAG_NAME, 'body').text
+            _plog.info('[patch] After-select body (no click): %s', _after_body[:400])
+        except Exception:
+            pass
+
+        # Only click a button if we're still on the device selection page
+        if 'Select Second Factor Device' in _after_body:
+            _plog.info('[patch] Page did not auto-advance — scanning for non-Login buttons')
+            _all_btns = [b for b in driver.find_elements(_By.TAG_NAME, 'button') if b.is_displayed()]
+            for _bi, _b in enumerate(_all_btns):
+                _plog.info('[patch] Button[%d] type=%s text=%r', _bi,
+                           _b.get_attribute('type'), _b.text.strip())
+            # Click anything that is NOT the main Login button
+            _non_login = [b for b in _all_btns
+                          if b.text.strip().lower() not in ('login', 'log in')]
+            if _non_login:
+                _plog.info('[patch] Clicking non-Login button: %r', _non_login[0].text.strip())
+                driver.execute_script("arguments[0].click();", _non_login[0])
+                _t.sleep(2)
+            else:
+                _plog.info('[patch] No non-Login button found — will not click')
+
+        _plog.info('[patch] Device selection done, handing off to wait_and_identify_trigger')
     else:
         _plog.info('[patch] No device-selection dropdown found — proceeding normally')
 

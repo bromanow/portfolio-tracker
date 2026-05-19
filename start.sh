@@ -58,7 +58,7 @@ echo "[backend] Installing Python dependencies..."
 pip install -q -r requirements.txt
 
 echo "[backend] Running seed data..."
-python seed_data.py
+python seed_data.py 2>&1 || echo "[backend] Seed skipped (data already exists or non-fatal error)"
 
 echo "[backend] Starting FastAPI on port 8000..."
 uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload &

@@ -148,6 +148,7 @@ def _run_migrations(eng):
         ("scanner_results",  "data_source",             "VARCHAR(20)"),
         ("scanner_results",  "recommendation",          "VARCHAR(10)"),
         ("scanner_results",  "dividend_yield",           "FLOAT"),
+        ("ibkr_flex_configs", "last_sync_details",        "TEXT"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

@@ -1036,6 +1036,17 @@ export const recordOptionHistory = () =>
   api.post('/prices/record-option-history').then(r => r.data)
 
 // ─── IBKR Flex Query ──────────────────────────────────────────────────────────
+
+export interface ImportDetail {
+  date: string
+  type: string
+  ticker: string
+  qty: string
+  amount: string
+  currency: string
+  account: string
+}
+
 export interface IBKRFlexConfig {
   id: number
   user_id: number
@@ -1048,6 +1059,7 @@ export interface IBKRFlexConfig {
   last_sync_status: 'ok' | 'error' | 'running' | null
   last_sync_message: string | null
   last_sync_imported: number | null
+  last_sync_details: string | null   // JSON-encoded ImportDetail[]
 }
 
 export interface FlexConfigIn {
@@ -1071,7 +1083,7 @@ export const syncMyFlexAccounts = () =>
 export const uploadFlexXml = (file: File) => {
   const fd = new FormData()
   fd.append('file', file)
-  return api.post<{ imported: number; message: string; error: string | null }>(
+  return api.post<{ imported: number; message: string; error: string | null; details?: ImportDetail[] }>(
     '/ibkr/flex/upload-xml', fd,
     { headers: { 'Content-Type': 'multipart/form-data' } },
   ).then(r => r.data)

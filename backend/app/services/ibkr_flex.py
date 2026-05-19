@@ -184,6 +184,22 @@ _TRANSIENT_SUBMIT_PHRASES = (
 )
 
 
+def _normalize_ibkr_url(raw: Optional[str], fallback: str) -> str:
+    """
+    Normalize a URL returned by the IBKR Flex API.
+    Some IBKR environments omit the https:// scheme; add it if missing.
+    Falls back to `fallback` when `raw` is None/empty.
+    """
+    if not raw:
+        return fallback
+    raw = raw.strip()
+    if not raw:
+        return fallback
+    if not raw.startswith("http://") and not raw.startswith("https://"):
+        raw = "https://" + raw
+    return raw
+
+
 def fetch_flex_report(token: str, query_id: str) -> str:
     """
     Call the IBKR Flex Query API (synchronous, for background threads).
@@ -191,14 +207,14 @@ def fetch_flex_report(token: str, query_id: str) -> str:
     "Year to Date" in the IBKR portal). Deduplication prevents re-importing.
     Returns raw XML string.
 
-    Retries the submit step up to 3 times (15 s apart) for transient IBKR
-    errors such as "Statement could not be generated at this time."
+    Retries the submit step up to 5× for:
+      - IBKR transient API errors ("Statement could not be generated …")
+      - Network / DNS errors (httpx.ConnectError, httpx.TimeoutException)
+    Wait schedule: 0 s, 30 s, 60 s, 90 s, 120 s.
     """
     with httpx.Client(timeout=60, follow_redirects=True) as client:
 
         # Step 1 — submit request
-        # IBKR rate-limits Flex API to roughly one request per 10 minutes per token.
-        # Retry up to 5× with increasing back-off (30 s, 60 s, 90 s, 120 s).
         ref_code: Optional[str] = None
         url: str = FLEX_GET_URL
         last_err: str = ""
@@ -210,8 +226,15 @@ def fetch_flex_report(token: str, query_id: str) -> str:
                             submit_attempt, len(_submit_waits) - 1, wait, last_err)
                 time.sleep(wait)
 
-            resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
-            resp.raise_for_status()
+            # ── Network / DNS errors are retried just like IBKR transient errors ──
+            try:
+                resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
+                resp.raise_for_status()
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                last_err = f"Network error connecting to IBKR: {exc}"
+                logger.warning("Flex Query network error (attempt %d/%d): %s",
+                               submit_attempt + 1, len(_submit_waits), exc)
+                continue  # retry after back-off
 
             try:
                 xml1 = ET.fromstring(resp.text)
@@ -221,7 +244,8 @@ def fetch_flex_report(token: str, query_id: str) -> str:
             status = xml1.findtext("Status")
             if status == "Success":
                 ref_code = xml1.findtext("ReferenceCode")
-                url = xml1.findtext("Url") or FLEX_GET_URL
+                # Normalize URL: some IBKR envs omit the https:// scheme
+                url = _normalize_ibkr_url(xml1.findtext("Url"), FLEX_GET_URL)
                 break
 
             last_err = xml1.findtext("ErrorMessage") or resp.text[:300]
@@ -231,19 +255,30 @@ def fetch_flex_report(token: str, query_id: str) -> str:
             raise RuntimeError(f"Flex Query submit failed: {last_err}")
 
         if not ref_code:
+            # Distinguish network failures from IBKR rate-limiting
+            if "Network error" in last_err:
+                raise RuntimeError(
+                    f"Could not reach IBKR servers after {len(_submit_waits)} attempts — "
+                    "please check your internet connection and try again. "
+                    f"({last_err})"
+                )
             raise RuntimeError(
                 "IBKR Flex API is rate-limiting this request — please wait a few minutes "
-                f"and try again. (IBKR error: {last_err})"
+                f"and try again, or use Upload XML to bypass the limit. (IBKR error: {last_err})"
                 if last_err else "No ReferenceCode in Flex API response"
             )
 
-        logger.info("Flex Query submitted, reference=%s", ref_code)
+        logger.info("Flex Query submitted, reference=%s  poll_url=%s", ref_code, url)
 
         # Step 2 — poll until ready (up to ~80 s)
         for attempt in range(14):
             time.sleep(3 if attempt == 0 else 6)
-            resp2 = client.get(url, params={"q": ref_code, "t": token, "v": "3"})
-            resp2.raise_for_status()
+            try:
+                resp2 = client.get(url, params={"q": ref_code, "t": token, "v": "3"})
+                resp2.raise_for_status()
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                logger.warning("Flex Query poll network error (attempt %d): %s", attempt + 1, exc)
+                continue  # try the next poll interval
 
             if (
                 "Statement generation" in resp2.text
@@ -374,12 +409,13 @@ def _find_account_by_number(db: Session, account_number: str):
     return db.query(Account).filter(Account.account_number == account_number).first()
 
 
-def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
+def import_trades(db: Session, account_id: int, trades: list[dict]) -> tuple[int, list[dict]]:
     from app.models.transactions import Transaction
     from app.services.normalizer import get_or_create_security
     from app.services.fx_service import get_rate
 
     imported = 0
+    details: list[dict] = []
     for t in trades:
         ext_ref = _ext_ref_trade(t["trade_id"])
         if _already_imported(db, ext_ref):
@@ -463,18 +499,27 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> int:
             raw_description=(t["description"] or "")[:500] or None,
             external_ref=ext_ref,
         ))
+        details.append({
+            "date": trade_date.isoformat(),
+            "type": txn_type,
+            "ticker": ticker,
+            "qty": str(qty) if qty is not None else "",
+            "amount": str(txn_amount) if txn_amount is not None else "",
+            "currency": currency,
+        })
         imported += 1
 
     db.commit()   # also persists external_ref stamps on existing rows
-    return imported
+    return imported, details
 
 
-def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_account_id: str) -> int:
+def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_account_id: str) -> tuple[int, list[dict]]:
     from app.models.transactions import Transaction
     from app.services.normalizer import get_or_create_security
     from app.services.fx_service import get_rate
 
     imported = 0
+    details: list[dict] = []
     for row in cash_rows:
         txn_type_raw = row["type"]
         if txn_type_raw in SKIP_CASH_TYPES:
@@ -538,10 +583,18 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
             raw_description=(row["desc"] or "")[:500] or None,
             external_ref=ext_ref,
         ))
+        details.append({
+            "date": txn_date.isoformat(),
+            "type": our_type,
+            "ticker": ticker or "",
+            "qty": "",
+            "amount": str(abs_amount),
+            "currency": currency,
+        })
         imported += 1
 
     db.commit()   # also persists external_ref stamps on existing rows
-    return imported
+    return imported, details
 
 
 def _ext_ref_option_event(symbol: str, dt: str, event_type: str) -> str:
@@ -554,7 +607,7 @@ def _ext_ref_split(symbol: str, dt: str, qty: str) -> str:
     return f"ibkr-split-{h}"
 
 
-def import_option_events(db: Session, account_id: int, events: list[dict]) -> int:
+def import_option_events(db: Session, account_id: int, events: list[dict]) -> tuple[int, list[dict]]:
     """
     Import option exercise / assignment / expiration events.
 
@@ -577,6 +630,7 @@ def import_option_events(db: Session, account_id: int, events: list[dict]) -> in
     }
 
     imported = 0
+    details: list[dict] = []
     for ev in events:
         our_type = EVENT_TYPE_MAP.get(ev["event_type"])
         if not our_type:
@@ -627,14 +681,22 @@ def import_option_events(db: Session, account_id: int, events: list[dict]) -> in
             raw_description=(ev["description"] or "")[:500] or None,
             external_ref=ext_ref,
         ))
+        details.append({
+            "date": event_date.isoformat(),
+            "type": our_type,
+            "ticker": ticker,
+            "qty": str(qty) if qty is not None else "",
+            "amount": str(amount or "0"),
+            "currency": currency,
+        })
         imported += 1
         logger.info("Option event: %s %s %s qty=%s", our_type, ticker, event_date, qty)
 
     db.commit()
-    return imported
+    return imported, details
 
 
-def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) -> int:
+def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) -> tuple[int, list[dict]]:
     """
     Import stock split / reverse split corporate actions.
 
@@ -649,6 +711,7 @@ def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) 
     from app.services.fx_service import get_rate
 
     imported = 0
+    details: list[dict] = []
     for ca in actions:
         ticker = ca["symbol"].upper().strip()
         if not ticker:
@@ -687,11 +750,19 @@ def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) 
             raw_description=(ca["description"] or "")[:500] or None,
             external_ref=ext_ref,
         ))
+        details.append({
+            "date": ca_date.isoformat(),
+            "type": txn_type,
+            "ticker": ticker,
+            "qty": str(abs(qty)),
+            "amount": "0",
+            "currency": currency,
+        })
         imported += 1
         logger.info("Corporate action: %s %s %s qty=%s", txn_type, ticker, ca_date, qty)
 
     db.commit()
-    return imported
+    return imported, details
 
 
 # ── High-level sync ───────────────────────────────────────────────────────────
@@ -701,8 +772,10 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
     Parse a Flex Query XML string and import all transactions into the DB.
     Matches each FlexStatement's accountId to an Account by account_number.
     Deduplication via external_ref prevents double-importing.
-    Returns {"imported": int, "error": str|None, "message": str}.
+    Returns {"imported": int, "error": str|None, "message": str, "details": list[dict]}.
     """
+    import json as _json
+
     statements = parse_flex_xml(xml_str)
 
     total_trades            = 0
@@ -710,6 +783,7 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
     total_option_events     = 0
     total_corporate_actions = 0
     unmatched               = []
+    all_details: list[dict] = []
 
     for stmt in statements:
         ibkr_id = stmt["ibkr_account_id"]
@@ -720,16 +794,24 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
             unmatched.append(ibkr_id)
             continue
 
-        t  = import_trades(db, account.id, stmt["trades"])
-        c  = import_cash(db, account.id, stmt["cash"], ibkr_id)
-        oe = import_option_events(db, account.id, stmt.get("option_events", []))
-        ca = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
+        t,  t_rows  = import_trades(db, account.id, stmt["trades"])
+        c,  c_rows  = import_cash(db, account.id, stmt["cash"], ibkr_id)
+        oe, oe_rows = import_option_events(db, account.id, stmt.get("option_events", []))
+        ca, ca_rows = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
         logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions",
                     ibkr_id, account.name, t, c, oe, ca)
+
+        acct_name = account.name
+        for row in (t_rows + c_rows + oe_rows + ca_rows):
+            all_details.append({**row, "account": acct_name})
+
         total_trades            += t
         total_cash              += c
         total_option_events     += oe
         total_corporate_actions += ca
+
+    # Sort by date desc so newest show first
+    all_details.sort(key=lambda r: r.get("date", ""), reverse=True)
 
     total = total_trades + total_cash + total_option_events + total_corporate_actions
     parts = [f"{total_trades} trade(s)", f"{total_cash} cash transaction(s)"]
@@ -742,7 +824,13 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
         msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"
 
     logger.info("Flex import complete: %s", msg)
-    return {"imported": total, "error": None, "message": msg}
+    return {
+        "imported": total,
+        "error": None,
+        "message": msg,
+        "details": all_details,
+        "details_json": _json.dumps(all_details),
+    }
 
 
 def sync_config(db: Session, config) -> dict:
@@ -764,6 +852,7 @@ def sync_config(db: Session, config) -> dict:
         config.last_sync_status   = "ok"
         config.last_sync_imported = result["imported"]
         config.last_sync_message  = result["message"]
+        config.last_sync_details  = result.get("details_json")
         db.commit()
 
         logger.info("Flex sync user_id=%s: %s", config.user_id, result["message"])

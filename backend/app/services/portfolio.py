@@ -406,12 +406,15 @@ def get_cash_balances(
         #   iTrade DRIP: amount is NEGATIVE (actual share purchase; a separate DIVIDEND
         #     row already credited the income → the purchase debit must reduce cash).
         # We include DRIPs only when their account_currency_amount is negative (iTrade style).
+        # Note: IBKR-imported transactions leave account_currency_amount NULL (they populate
+        # transaction_amount and cad_amount instead).  The filter below does NOT gate on
+        # account_currency_amount so that IBKR transactions are included; the balance
+        # accumulation loop uses transaction_amount / cad_amount as fallbacks.
         from sqlalchemy import or_, and_ as sqland_
         txn_q = (
             db.query(Transaction)
             .filter(
                 Transaction.account_id == acct.id,
-                Transaction.account_currency_amount.isnot(None),
                 or_(
                     Transaction.transaction_type.notin_(CASH_NEUTRAL_TYPES),
                     # DRIP inclusion rules (three formats across brokerages):
@@ -420,6 +423,8 @@ def get_cash_balances(
                     #                              separate BUY row handles the share purchase)
                     #   amount > 0, quantity > 0 → Scotia Wealth reinvestment (dividend never
                     #                              hit cash — stay excluded / cash-neutral)
+                    #   amount IS NULL          → IBKR DRIP (cash-neutral reinvestment; stays
+                    #                              excluded because neither condition is met)
                     sqland_(
                         Transaction.transaction_type == "DRIP",
                         or_(
@@ -452,17 +457,23 @@ def get_cash_balances(
                 else:
                     foreign[ccy] = foreign.get(ccy, ZERO) + amount
             else:
-                # Use the same currency-routing logic as the cash statement:
+                # Currency-routing (mirrors _sub_account_impact / cash-statement logic):
                 # - Same currency as account → transaction_amount is the reliable native figure
                 #   (account_currency_amount may hold a CAD-converted value for USD accounts
                 #   due to legacy import behaviour — transaction_amount is always native)
-                # - Cross-currency transaction → account_currency_amount is the FX-converted
-                #   figure already expressed in the account's base currency
+                # - Cross-currency transaction → prefer account_currency_amount (FX-converted
+                #   to account base currency by the import parser); fall back to cad_amount
+                #   for IBKR-imported rows where account_currency_amount is NULL.
                 tx_ccy = (txn.transaction_currency or base_ccy).upper()
                 if tx_ccy == base_ccy.upper():
                     amount = txn.transaction_amount if txn.transaction_amount is not None else (txn.account_currency_amount or ZERO)
                 else:
-                    amount = txn.account_currency_amount or ZERO
+                    if txn.account_currency_amount is not None:
+                        amount = txn.account_currency_amount
+                    elif txn.cad_amount is not None:
+                        amount = txn.cad_amount   # IBKR: already converted to CAD at import time
+                    else:
+                        amount = ZERO
                 base_balance += amount
 
         # Emit base-currency entry

@@ -76,6 +76,7 @@ def _config_dict(cfg: IBKRFlexConfig, include_user: bool = False) -> dict:
         "last_sync_status":   cfg.last_sync_status,
         "last_sync_message":  cfg.last_sync_message,
         "last_sync_imported": cfg.last_sync_imported,
+        "last_sync_details":  cfg.last_sync_details,
     }
     if include_user and cfg.user:
         d["user_name"]  = cfg.user.name

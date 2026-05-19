@@ -5,9 +5,9 @@ import {
   getImports, getAccounts, getSecurities, uploadFile, getImportPreview,
   commitImport, rejectImport, deleteImport, deleteAllImports, updateRawRow, remapImportTypes,
   checkImportDuplicates,
-  getMyFlexConfig, syncMyFlexAccounts, uploadFlexXml,
+  getMyFlexConfig, syncMyFlexAccounts, uploadFlexXml, saveMyFlexConfig, deleteMyFlexConfig,
 } from '../api/client'
-import type { ImportBatch, Account, Security, IBKRFlexConfig } from '../api/client'
+import type { ImportBatch, Account, Security, IBKRFlexConfig, FlexConfigIn, ImportDetail } from '../api/client'
 import {
   Upload, CheckCircle, XCircle, AlertCircle, Eye, Trash2,
   AlertTriangle, Edit2, X, SkipForward, RotateCcw, RefreshCw,
@@ -109,12 +109,13 @@ function IBKRFlexPanel() {
   const xmlInputRef = useRef<HTMLInputElement | null>(null)
   const SYNC_TS_KEY = 'ibkr_sync_started'
 
+  // ── Config query (poll when sync is running) ────────────────────────────────
   const { data: myConfig, isLoading } = useQuery<IBKRFlexConfig | null>({
     queryKey: ['ibkr-flex-my-config'],
     queryFn: getMyFlexConfig,
     refetchInterval: (query) => {
-      const data = query.state.data as IBKRFlexConfig | null | undefined
-      if (data?.last_sync_status === 'running') return 3000
+      const d = query.state.data as IBKRFlexConfig | null | undefined
+      if (d?.last_sync_status === 'running') return 3000
       const ts = localStorage.getItem(SYNC_TS_KEY)
       if (ts && Date.now() - Number(ts) < 5 * 60 * 1000) return 3000
       return false
@@ -122,15 +123,61 @@ function IBKRFlexPanel() {
     refetchIntervalInBackground: true,
   })
 
+  // Stop polling when sync finishes
   const prevStatus = myConfig?.last_sync_status
   if (prevStatus === 'ok' || prevStatus === 'error') {
     localStorage.removeItem(SYNC_TS_KEY)
   }
 
+  // ── Config form state ───────────────────────────────────────────────────────
+  const [showConfigForm, setShowConfigForm] = useState(false)
+  const [configForm, setConfigForm] = useState<FlexConfigIn>({ query_id: '', token: '', enabled: true })
+  const [configError, setConfigError] = useState<string | null>(null)
+  const [deleteConfirm, setDeleteConfirm] = useState(false)
+
+  const openConfigForm = () => {
+    setConfigForm({ query_id: myConfig?.query_id ?? '', token: '', enabled: myConfig?.enabled ?? true })
+    setConfigError(null)
+    setShowConfigForm(true)
+  }
+
+  const saveConfigMutation = useMutation({
+    mutationFn: (data: FlexConfigIn) => saveMyFlexConfig(data),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
+      setShowConfigForm(false)
+      setConfigError(null)
+    },
+    onError: (err: { response?: { data?: { detail?: string } }; message?: string }) =>
+      setConfigError(err?.response?.data?.detail ?? err?.message ?? 'Save failed'),
+  })
+
+  const deleteConfigMutation = useMutation({
+    mutationFn: deleteMyFlexConfig,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['ibkr-flex-my-config'] })
+      setDeleteConfirm(false)
+      setShowConfigForm(false)
+      setSyncError(null)
+      setUploadDetails(null)
+    },
+    onError: (err: { response?: { data?: { detail?: string } }; message?: string }) =>
+      setConfigError(err?.response?.data?.detail ?? err?.message ?? 'Delete failed'),
+  })
+
+  const handleSaveConfig = () => {
+    if (!configForm.query_id.trim()) { setConfigError('Query ID is required'); return }
+    if (!configForm.token.trim()) { setConfigError('Token is required'); return }
+    saveConfigMutation.mutate(configForm)
+  }
+
+  // ── Sync / upload state ─────────────────────────────────────────────────────
   const [syncError, setSyncError] = useState<string | null>(null)
-  const [uploadResult, setUploadResult] = useState<string | null>(null)
+  const [uploadDetails, setUploadDetails] = useState<ImportDetail[] | null>(null)
+  const [uploadMessage, setUploadMessage] = useState<string | null>(null)
   const [uploadError, setUploadError] = useState<string | null>(null)
   const [uploading, setUploading] = useState(false)
+  const [logOpen, setLogOpen] = useState(false)
 
   const syncPending = (() => {
     if (myConfig?.last_sync_status === 'running') return true
@@ -140,7 +187,8 @@ function IBKRFlexPanel() {
 
   const handleSync = async () => {
     setSyncError(null)
-    setUploadResult(null)
+    setUploadDetails(null)
+    setUploadMessage(null)
     setUploadError(null)
     try {
       localStorage.setItem(SYNC_TS_KEY, String(Date.now()))
@@ -157,12 +205,17 @@ function IBKRFlexPanel() {
     const file = e.target.files?.[0]
     if (!file) return
     setUploading(true)
-    setUploadResult(null)
+    setUploadDetails(null)
+    setUploadMessage(null)
     setUploadError(null)
     setSyncError(null)
     try {
       const result = await uploadFlexXml(file)
-      setUploadResult(result.message ?? `Imported ${result.imported} transaction(s)`)
+      setUploadMessage(result.message ?? `Imported ${result.imported} transaction(s)`)
+      if (result.details && result.details.length > 0) {
+        setUploadDetails(result.details)
+        setLogOpen(true)
+      }
       qc.invalidateQueries({ queryKey: ['transactions'] })
       qc.invalidateQueries({ queryKey: ['positions'] })
       qc.invalidateQueries({ queryKey: ['consolidated-positions'] })
@@ -176,107 +229,304 @@ function IBKRFlexPanel() {
     }
   }
 
+  // Details for the log: upload result takes priority; fall back to last sync details
+  const lastSyncDetails: ImportDetail[] | null = (() => {
+    if (!myConfig?.last_sync_details) return null
+    try { return JSON.parse(myConfig.last_sync_details) as ImportDetail[] }
+    catch { return null }
+  })()
+  const logDetails = uploadDetails ?? (myConfig?.last_sync_status === 'ok' ? lastSyncDetails : null)
+
   if (isLoading) {
     return <div className="text-sm text-gray-400 py-6">Loading Flex config…</div>
   }
 
-  if (!myConfig) {
-    return (
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-6 text-sm text-amber-800 space-y-2">
-        <p className="font-semibold">No Flex Query configured</p>
-        <p>Set up your IBKR Flex Query token and Query ID in <strong>Admin → IBKR Flex</strong> first.</p>
-      </div>
-    )
-  }
-
   return (
     <div className="space-y-5">
-      {/* Status card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-        <div className="flex items-start justify-between gap-4 flex-wrap">
-          <div className="space-y-1">
-            <h2 className="font-semibold text-gray-800">IBKR Flex Query Sync</h2>
-            <p className="text-xs text-gray-500">
-              Pulls your Year-to-Date trades, cash transactions, option events and corporate actions from IBKR.
-              Duplicate transactions are automatically skipped.
-            </p>
-            {myConfig.last_sync_at && (
-              <p className="text-xs text-gray-400">
-                Last sync: {new Date(myConfig.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}
-                {' · '}
-                {myConfig.last_sync_status === 'ok' && (
-                  <span className="text-emerald-600">{myConfig.last_sync_message}</span>
-                )}
-                {myConfig.last_sync_status === 'error' && (
-                  <span className="text-red-600">{myConfig.last_sync_message}</span>
-                )}
-                {myConfig.last_sync_status === 'running' && (
-                  <span className="text-blue-600 inline-flex items-center gap-1">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Running…
-                  </span>
-                )}
-              </p>
-            )}
-          </div>
 
-          <div className="flex gap-2 flex-wrap">
-            <button
-              onClick={handleSync}
-              disabled={syncPending}
-              className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 disabled:opacity-50"
-            >
-              {syncPending
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Syncing…</>
-                : <><RefreshCw className="h-4 w-4" /> Sync Now</>}
-            </button>
-            <button
-              onClick={() => xmlInputRef.current?.click()}
-              disabled={uploading}
-              className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 disabled:opacity-50"
-              title="Upload a Flex Query XML file downloaded from IBKR — bypasses the API rate limit"
-            >
-              {uploading
-                ? <><Loader2 className="h-4 w-4 animate-spin" /> Importing…</>
-                : <><Database className="h-4 w-4" /> Upload XML</>}
-            </button>
-            <input
-              ref={xmlInputRef}
-              type="file"
-              accept=".xml"
-              className="hidden"
-              onChange={handleUploadXml}
-            />
-          </div>
+      {/* ── Configuration card ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+        <div className="flex items-center justify-between">
+          <h2 className="font-semibold text-gray-800">Flex Query Configuration</h2>
+          {myConfig && !showConfigForm && (
+            <div className="flex gap-2 items-center">
+              <button onClick={openConfigForm}
+                className="text-sm text-blue-600 border border-blue-300 rounded px-3 py-1 hover:bg-blue-50">
+                Edit
+              </button>
+              {!deleteConfirm ? (
+                <button onClick={() => setDeleteConfirm(true)}
+                  className="text-sm text-red-600 border border-red-300 rounded px-3 py-1 hover:bg-red-50">
+                  Remove
+                </button>
+              ) : (
+                <span className="flex items-center gap-1.5 text-sm">
+                  <span className="text-red-700 font-medium">Remove config?</span>
+                  <button onClick={() => deleteConfigMutation.mutate()}
+                    disabled={deleteConfigMutation.isPending}
+                    className="text-white bg-red-600 rounded px-2 py-0.5 hover:bg-red-700 disabled:opacity-50">
+                    {deleteConfigMutation.isPending ? '…' : 'Yes'}
+                  </button>
+                  <button onClick={() => { setDeleteConfirm(false); setConfigError(null) }}
+                    className="text-gray-600 border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50">
+                    No
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
-        {syncError && (
-          <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-            {syncError.includes('429') || syncError.includes('10 minute')
-              ? 'IBKR limits Flex API requests to once per ~10 minutes. Use Upload XML to bypass this — download the XML directly from IBKR\'s Flex Query page and upload it here.'
-              : syncError}
+        {/* Config summary view */}
+        {myConfig && !showConfigForm && (
+          <div className="grid grid-cols-3 gap-4 text-sm">
+            <div>
+              <p className="text-xs text-gray-500 mb-0.5">Query ID</p>
+              <p className="font-mono text-gray-800">{myConfig.query_id}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-0.5">Token</p>
+              <p className="font-mono text-gray-500">{myConfig.token_hint}</p>
+            </div>
+            <div>
+              <p className="text-xs text-gray-500 mb-0.5">Auto-sync</p>
+              <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
+                myConfig.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+              }`}>
+                {myConfig.enabled ? '● Enabled' : '○ Disabled'}
+              </span>
+            </div>
           </div>
         )}
-        {uploadResult && (
-          <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-700">
-            ✓ {uploadResult}
+
+        {/* No config yet → prompt to set up */}
+        {!myConfig && !showConfigForm && (
+          <div className="text-sm text-gray-500 space-y-3">
+            <p>Connect to IBKR Flex Query to automatically import your trades, dividends, and other transactions.</p>
+            <button
+              onClick={() => { setConfigForm({ query_id: '', token: '', enabled: true }); setConfigError(null); setShowConfigForm(true) }}
+              className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700">
+              Set Up Flex Query
+            </button>
           </div>
         )}
-        {uploadError && (
-          <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
-            Upload failed: {uploadError}
+
+        {/* Config form (create or edit) */}
+        {showConfigForm && (
+          <div className="space-y-3 border-t border-gray-100 pt-4">
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Query ID <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full font-mono"
+                  value={configForm.query_id}
+                  onChange={e => setConfigForm(f => ({ ...f, query_id: e.target.value }))}
+                  placeholder="e.g. 123456"
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">
+                  Token <span className="text-red-500">*</span>
+                  {myConfig && <span className="ml-1 text-gray-400">(re-enter to update)</span>}
+                </label>
+                <input
+                  type="password"
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full font-mono"
+                  value={configForm.token}
+                  onChange={e => setConfigForm(f => ({ ...f, token: e.target.value }))}
+                  placeholder={myConfig ? '••••••••••••' : 'Paste token from IBKR'}
+                />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={configForm.enabled}
+                onChange={e => setConfigForm(f => ({ ...f, enabled: e.target.checked }))}
+                className="rounded"
+              />
+              Enable automatic nightly sync
+            </label>
+            {configError && <p className="text-sm text-red-600">{configError}</p>}
+            <div className="flex gap-2">
+              <button
+                onClick={handleSaveConfig}
+                disabled={saveConfigMutation.isPending}
+                className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50">
+                {saveConfigMutation.isPending ? 'Saving…' : 'Save'}
+              </button>
+              <button
+                onClick={() => { setShowConfigForm(false); setConfigError(null) }}
+                className="border border-gray-300 rounded-lg px-4 py-2 text-sm hover:bg-gray-50">
+                Cancel
+              </button>
+            </div>
+
+            <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 space-y-1">
+              <p className="font-semibold">How to find your Query ID and Token:</p>
+              <ol className="list-decimal ml-4 space-y-0.5">
+                <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
+                <li>Create a query that includes <strong>Trades</strong>, <strong>Cash Transactions</strong>, <strong>Option EAE</strong>, and <strong>Corporate Actions</strong> with date range "Year to Date"</li>
+                <li>Note the <strong>Query ID</strong> shown next to the query name</li>
+                <li>Go to <strong>Settings → Account → Flex Web Service</strong> to create or copy your API token</li>
+              </ol>
+            </div>
           </div>
         )}
       </div>
 
+      {/* ── Sync card (only shown if config exists and not editing config) ── */}
+      {myConfig && !showConfigForm && (
+        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="space-y-1">
+              <h2 className="font-semibold text-gray-800">Sync Transactions</h2>
+              <p className="text-xs text-gray-500">
+                Pulls Year-to-Date trades, cash, option events and corporate actions from IBKR.
+                Duplicate transactions are automatically skipped.
+              </p>
+              {myConfig.last_sync_at && (
+                <p className="text-xs text-gray-400">
+                  Last sync: {new Date(myConfig.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}
+                  {' · '}
+                  {myConfig.last_sync_status === 'ok' && (
+                    <span className="text-emerald-600">{myConfig.last_sync_message}</span>
+                  )}
+                  {myConfig.last_sync_status === 'error' && (
+                    <span className="text-red-600">{myConfig.last_sync_message}</span>
+                  )}
+                  {myConfig.last_sync_status === 'running' && (
+                    <span className="text-blue-600 inline-flex items-center gap-1">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Running…
+                    </span>
+                  )}
+                </p>
+              )}
+            </div>
+
+            <div className="flex gap-2 flex-wrap">
+              <button
+                onClick={handleSync}
+                disabled={syncPending}
+                className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 disabled:opacity-50"
+              >
+                {syncPending
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Syncing…</>
+                  : <><RefreshCw className="h-4 w-4" /> Sync Now</>}
+              </button>
+              <button
+                onClick={() => xmlInputRef.current?.click()}
+                disabled={uploading}
+                className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded-lg px-4 py-2 hover:bg-green-700 disabled:opacity-50"
+                title="Upload a Flex Query XML file downloaded from IBKR — bypasses the API rate limit"
+              >
+                {uploading
+                  ? <><Loader2 className="h-4 w-4 animate-spin" /> Importing…</>
+                  : <><Database className="h-4 w-4" /> Upload XML</>}
+              </button>
+              <input ref={xmlInputRef} type="file" accept=".xml" className="hidden" onChange={handleUploadXml} />
+            </div>
+          </div>
+
+          {syncError && (
+            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              {syncError.includes('429') || syncError.includes('10 minute')
+                ? "IBKR limits Flex API requests to once per ~10 minutes. Use Upload XML to bypass this — download the XML directly from the IBKR Flex Query page and upload it here."
+                : syncError}
+            </div>
+          )}
+          {uploadMessage && (
+            <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-lg p-3 text-sm text-emerald-700">
+              ✓ {uploadMessage}
+            </div>
+          )}
+          {uploadError && (
+            <div className="mt-3 bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700">
+              Upload failed: {uploadError}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Import log ── */}
+      {myConfig && !showConfigForm && (logDetails !== null || myConfig.last_sync_status === 'ok') && (
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <button
+            onClick={() => setLogOpen(o => !o)}
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+          >
+            <div className="flex items-center gap-2">
+              {logOpen
+                ? <ChevronDown className="h-4 w-4 text-gray-400" />
+                : <ChevronRight className="h-4 w-4 text-gray-400" />}
+              <h2 className="font-semibold text-gray-800">Import Log</h2>
+              <span className="text-xs text-gray-400">
+                {logDetails && logDetails.length > 0
+                  ? `(${logDetails.length} transaction${logDetails.length !== 1 ? 's' : ''} imported)`
+                  : '(no new transactions)'}
+              </span>
+            </div>
+          </button>
+
+          {logOpen && (
+            <div className="border-t border-gray-100">
+              {logDetails && logDetails.length > 0 ? (
+                <div className="overflow-x-auto max-h-96 overflow-y-auto">
+                  <table className="min-w-full text-xs divide-y divide-gray-100">
+                    <thead className="sticky top-0 bg-gray-50 z-10">
+                      <tr className="text-gray-500 uppercase">
+                        <th className="px-4 py-2 text-left">Date</th>
+                        <th className="px-4 py-2 text-left">Account</th>
+                        <th className="px-4 py-2 text-left">Type</th>
+                        <th className="px-4 py-2 text-left">Ticker</th>
+                        <th className="px-4 py-2 text-right">Qty</th>
+                        <th className="px-4 py-2 text-right">Amount</th>
+                        <th className="px-4 py-2 text-left">Ccy</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-50">
+                      {logDetails.map((row, i) => (
+                        <tr key={i} className="hover:bg-gray-50">
+                          <td className="px-4 py-1.5 text-gray-600 whitespace-nowrap">{row.date}</td>
+                          <td className="px-4 py-1.5 text-gray-700 max-w-[10rem] truncate" title={row.account}>{row.account}</td>
+                          <td className="px-4 py-1.5">
+                            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
+                              {row.type}
+                            </span>
+                          </td>
+                          <td className="px-4 py-1.5 font-mono font-medium">{row.ticker || '—'}</td>
+                          <td className="px-4 py-1.5 text-right tabular-nums">{row.qty || '—'}</td>
+                          <td className="px-4 py-1.5 text-right tabular-nums">{row.amount || '—'}</td>
+                          <td className="px-4 py-1.5 text-gray-500">{row.currency}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <p className="px-6 py-4 text-sm text-gray-400">
+                  No new transactions were imported — all were duplicates or already up to date.
+                </p>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* How-to hint */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-1">
-        <p className="font-semibold">When "Sync Now" fails with a rate-limit error:</p>
-        <ol className="list-decimal ml-4 space-y-0.5">
-          <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
-          <li>Run your <strong>Portfolio Tracker – All</strong> query and download the XML file</li>
-          <li>Click <strong>Upload XML</strong> above and select that file</li>
-        </ol>
-      </div>
+      {myConfig && !showConfigForm && (
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-1">
+          <p className="font-semibold">When "Sync Now" fails with a rate-limit error:</p>
+          <ol className="list-decimal ml-4 space-y-0.5">
+            <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
+            <li>Run your <strong>Portfolio Tracker – All</strong> query and download the XML file</li>
+            <li>Click <strong>Upload XML</strong> above and select that file</li>
+          </ol>
+        </div>
+      )}
     </div>
   )
 }

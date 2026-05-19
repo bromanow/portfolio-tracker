@@ -26,6 +26,7 @@ class IBKRFlexConfig(Base):
     last_sync_status: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # ok | error | running
     last_sync_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     last_sync_imported: Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    last_sync_details: Mapped[Optional[str]] = mapped_column(Text, nullable=True)  # JSON list of imported rows
 
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 

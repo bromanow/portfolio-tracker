@@ -1,52 +1,63 @@
 """
 Build-time patch for IBeam's login handler.
 
-IBKR shows a "Select Second Factor Device" dropdown on the login page.
-The dropdown must be set to "Mobile Authenticator App" BEFORE clicking Login —
-if the form is submitted without a device selected, IBKR defaults to IB Key
-push notification and never shows the TOTP input field.
-
-This script injects a Selenium snippet immediately BEFORE submit_form_el.click()
-in step_login, so the device is selected as part of the pre-submission flow.
-After the snippet runs, IBeam clicks Login normally and IBKR reveals the TOTP
-input field, which IBeam's built-in pyotp handler fills in automatically.
+IBKR's login page shows username + password first. After submitting those
+credentials, IBKR presents a "Select Second Factor Device" dropdown. This
+patch injects a Selenium snippet AFTER submit_form_el.click() so it waits
+for that dropdown to appear and selects "Mobile Authenticator App" before
+IBeam's wait_and_identify_trigger looks for the TOTP input.
 """
 
 import sys
 
 FILEPATH = '/srv/ibeam/src/handlers/login_handler.py'
 
-# ── Code to inject BEFORE submit_form_el.click() ─────────────────────────────
+# ── Code to inject AFTER submit_form_el.click() ──────────────────────────────
 TWO_FA_SELECT_SNIPPET = """\
-# ── Pre-submit device-selection patch (injected by patch_login.py) ───────
-# Select 'Mobile Authenticator App' before clicking Login.
-# IBKR defaults to IB Key push if no device is selected at submission time.
+# ── Post-submit device-selection patch (injected by patch_login.py) ──────
+# After submitting credentials, IBKR shows a device-selection dropdown.
+# We wait for it, pick "Mobile Authenticator App", then let IBeam handle TOTP.
 try:
     import time as _t
     from selenium.webdriver.common.by import By as _By
-    from selenium.webdriver.support.ui import Select as _Sel
+    from selenium.webdriver.support.ui import Select as _Sel, WebDriverWait as _WDW
+    from selenium.webdriver.support import expected_conditions as _EC
     import logging as _logging
     _plog = _logging.getLogger('ibeam.patch')
     _TARGET = 'Mobile Authenticator App'
-    _selects = driver.find_elements(_By.TAG_NAME, 'select')
-    for _s in _selects:
-        _opts = _s.find_elements(_By.TAG_NAME, 'option')
-        _topt = next((o for o in _opts if _TARGET in o.text.strip()), None)
-        if _topt:
-            _val = _topt.get_attribute('value')
-            _Sel(_s).select_by_value(_val)
-            _t.sleep(0.5)
-            _plog.info('[patch] Pre-submit: selected %s (value=%s)', _TARGET, _val)
-            break
-    else:
-        _plog.info('[patch] Pre-submit: no device-select dropdown found — proceeding')
+    try:
+        _WDW(driver, 8).until(_EC.presence_of_element_located((_By.TAG_NAME, 'select')))
+        _selects = driver.find_elements(_By.TAG_NAME, 'select')
+        _found = False
+        for _s in _selects:
+            _opts = _s.find_elements(_By.TAG_NAME, 'option')
+            _topt = next((o for o in _opts if _TARGET in o.text.strip()), None)
+            if _topt:
+                _val = _topt.get_attribute('value')
+                try:
+                    _Sel(_s).select_by_value(_val)
+                except Exception:
+                    driver.execute_script(
+                        "arguments[0].value = arguments[1];"
+                        "arguments[0].dispatchEvent(new Event('change', {bubbles:true}));"
+                        "arguments[0].dispatchEvent(new Event('input', {bubbles:true}));",
+                        _s, _val
+                    )
+                _t.sleep(1)
+                _plog.info('[patch] Post-submit: selected %s (value=%s)', _TARGET, _val)
+                _found = True
+                break
+        if not _found:
+            _plog.info('[patch] Post-submit: <select> appeared but no "%s" option', _TARGET)
+    except Exception as _we:
+        _plog.info('[patch] Post-submit: no device-select within 8s — proceeding (%s)', _we)
 except Exception as _pe:
     import logging as _logging
-    _logging.getLogger('ibeam.patch').warning('[patch] Pre-submit selection failed: %s', _pe)
-# ── end pre-submit device-selection patch ─────────────────────────────────
+    _logging.getLogger('ibeam.patch').warning('[patch] Post-submit selection failed: %s', _pe)
+# ── end post-submit device-selection patch ────────────────────────────────
 """
 
-# ── Anchor — the submit click line itself; we inject the snippet just before it
+# ── Anchor — the submit click; we inject the snippet just AFTER it ────────────
 ANCHOR = 'submit_form_el.click()'
 
 # ── Apply ─────────────────────────────────────────────────────────────────────
@@ -62,7 +73,7 @@ if ANCHOR not in content:
     print('IBeam version may have changed — skipping patch (container will still start).')
     sys.exit(0)
 
-if '[patch] Pre-submit: selected' in content:
+if '[patch] Post-submit: selected' in content:
     print('Patch already applied — skipping.')
     sys.exit(0)
 
@@ -73,10 +84,11 @@ for i, line in enumerate(lines):
         indent = len(line) - len(line.lstrip())
         pad = ' ' * indent
         indented = '\n'.join(pad + l if l.strip() else '' for l in TWO_FA_SELECT_SNIPPET.splitlines())
-        lines.insert(i, indented + '\n')
+        # Insert AFTER the anchor line so we run post-submit
+        lines.insert(i + 1, indented + '\n')
         break
 
 with open(FILEPATH, 'w') as f:
     f.writelines(lines)
 
-print(f'✓ Pre-submit device-selection patch applied to {FILEPATH}')
+print(f'✓ Post-submit device-selection patch applied to {FILEPATH}')

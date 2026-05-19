@@ -369,7 +369,37 @@ def fetch_option_chain_price(db: Session, security: Security, usd_to_cad: Option
     fetch_ticker_used: Optional[str] = None
     option_source: str = "yahoo_chain"
 
+    # ── IBeam first: live IBKR bid/ask (production only; falls back locally) ──
+    try:
+        from app.services import ibkr_service as _ibkr
+        if _ibkr.is_ibeam_available():
+            _result = _ibkr.fetch_option_price_ibeam(
+                underlying=underlying,
+                expiry=expiry,
+                strike=float(strike),
+                option_type=option_type,
+                is_canadian=is_canadian if not ambiguous else False,
+            )
+            if _result:
+                price_val        = Decimal(str(round(_result["price"], 6)))
+                currency         = _result["currency"]
+                fetch_ticker_used = f"ibeam:{underlying}/{expiry_str}/{option_type}/{strike}"
+                option_source    = "ibeam"
+                if not security.currency:
+                    security.currency = currency
+                    db.flush()
+    except Exception as _exc:
+        logger.debug("IBeam option price attempt failed for %s: %s", security.ticker, _exc)
+
+    if price_val is not None:
+        # Skip Yahoo/TMX loop — IBeam succeeded
+        pass
+    else:
+        pass  # fall through to candidates loop below
+
     for source_type, sym, ccy in candidates:
+        if price_val is not None:
+            break
         try:
             if source_type == "mx":
                 # Montreal Exchange — native CAD option data for TSX underlyings

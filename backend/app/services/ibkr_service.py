@@ -132,6 +132,18 @@ _CP_TIMEOUT  = 30    # seconds per REST call
 _CP_RATE_DELAY = 0.12  # 120 ms between calls → stays under 10 req/s IBKR limit
 
 
+def _f(d: dict, key, default=None):
+    """Safely parse a numeric field from a Client Portal snapshot dict."""
+    v = d.get(str(key))
+    if v is None:
+        return default
+    try:
+        f = float(str(v).replace(",", ""))
+        return None if math.isnan(f) else f
+    except Exception:
+        return default
+
+
 def is_ibeam_available() -> bool:
     """True if IBEAM_BASE_URL is configured and IBeam reports authenticated."""
     if not _IBEAM_BASE:
@@ -285,16 +297,6 @@ def scan_ticker_ibeam(
     time.sleep(_CP_RATE_DELAY)
     under_data = snap.get(str(under_conid), {})
 
-    def _f(d: dict, key, default=None):
-        v = d.get(str(key))
-        if v is None:
-            return default
-        try:
-            f = float(str(v).replace(",", ""))
-            return None if math.isnan(f) else f
-        except Exception:
-            return default
-
     current_price = _f(under_data, 31) or _f(under_data, 84) or _f(under_data, 86)
     if not current_price or current_price <= 0:
         logger.debug("IBeam: no price for underlying %s (conid=%s)", ticker, under_conid)
@@ -432,6 +434,109 @@ def scan_ticker_ibeam(
 
     logger.info("IBeam: %s → %d option rows", ticker, len(all_results))
     return all_results
+
+
+def fetch_option_price_ibeam(
+    underlying: str,
+    expiry: "date",
+    strike: float,
+    option_type: str,
+    is_canadian: bool = False,
+) -> Optional[dict]:
+    """
+    Fetch live bid/ask/mid for a specific option position via IBeam.
+
+    Used by price_service to price portfolio option positions before falling
+    back to Yahoo Finance / Montreal Exchange.
+
+    Args:
+        underlying:   Root ticker, e.g. "AAPL" or "RY" (no .TO suffix)
+        expiry:       Option expiry date
+        strike:       Strike price as float
+        option_type:  "CALL" or "PUT"
+        is_canadian:  True → search for TSX listing and use MX exchange
+
+    Returns dict with keys (price, bid, ask, currency) or None if unavailable.
+    """
+    if not _IBEAM_BASE:
+        return None
+
+    clean = underlying.split(".")[0]
+    opt_exchange = "MX" if is_canadian else "SMART"
+    right = "C" if option_type.upper() == "CALL" else "P"
+    month = expiry.strftime("%b%y").upper()   # e.g. "JAN25"
+
+    try:
+        # Step 1: resolve underlying conId
+        search_results = _cp_get("/iserver/secdef/search", {"symbol": clean})
+        time.sleep(_CP_RATE_DELAY)
+
+        underlying_item = None
+        for item in (search_results if isinstance(search_results, list) else []):
+            has_options = any(s.get("secType") == "OPT" for s in item.get("sections", []))
+            if not has_options:
+                continue
+            desc = (item.get("description") or "").upper()
+            if is_canadian and ("TSX" in desc or "TORONTO" in desc):
+                underlying_item = item
+                break
+            if not is_canadian and underlying_item is None:
+                underlying_item = item
+
+        if underlying_item is None:
+            logger.debug("IBeam price: no optionable underlying for %s", underlying)
+            return None
+
+        under_conid = underlying_item["conid"]
+
+        # Step 2: get option conId for this exact strike/expiry/right
+        info_params: dict = {
+            "conid":   under_conid,
+            "secType": "OPT",
+            "month":   month,
+            "strike":  strike,
+            "right":   right,
+        }
+        if is_canadian:
+            info_params["exchange"] = opt_exchange
+
+        info_resp = _cp_get("/iserver/secdef/info", info_params)
+        time.sleep(_CP_RATE_DELAY)
+
+        opt_conids = [
+            int(opt["conid"])
+            for opt in (info_resp if isinstance(info_resp, list) else [])
+            if opt.get("conid")
+        ]
+        if not opt_conids:
+            logger.debug("IBeam price: no conId for %s %s %s %s", underlying, expiry, strike, right)
+            return None
+
+        # Step 3: snapshot for bid/ask/mark
+        snap = _cp_snapshot([opt_conids[0]])
+        item = snap.get(str(opt_conids[0]), {})
+
+        bid  = _f(item, 84, 0.0) or 0.0
+        ask  = _f(item, 86)
+        mark = _f(item, 7635)
+
+        if bid <= 0 and not mark:
+            logger.debug("IBeam price: no market data for conId %s (%s)", opt_conids[0], underlying)
+            return None
+
+        mid      = mark if mark else round((bid + (ask or bid)) / 2, 4)
+        currency = "CAD" if is_canadian else "USD"
+
+        logger.info(
+            "IBeam priced %s %s %s %s: bid=%.4f ask=%s mid=%.4f %s",
+            underlying, expiry, option_type, strike,
+            bid, f"{ask:.4f}" if ask else "N/A", mid, currency,
+        )
+        return {"price": mid, "bid": bid, "ask": ask, "currency": currency}
+
+    except Exception as exc:
+        logger.debug("IBeam option price failed for %s %s/%s/%s: %s", underlying, expiry, strike, option_type, exc)
+        return None
 
 
 # ── Scanner session ───────────────────────────────────────────────────────────

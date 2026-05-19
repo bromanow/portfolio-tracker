@@ -474,6 +474,13 @@ export default function Import() {
 
   const isPending = deleteMutation.isPending || rejectMutation.isPending || deleteAllMutation.isPending
 
+  // Filter import history to match the active brokerage / account selection
+  const visibleImports = (imports as ImportBatch[]).filter(b => {
+    if (selectedAccountId && b.account_id !== selectedAccountId) return false
+    if (selectedBrokerageId && !selectedAccountId && b.brokerage_id !== selectedBrokerageId) return false
+    return true
+  })
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -608,9 +615,10 @@ export default function Import() {
                   ? <ChevronDown className="h-4 w-4 text-gray-400" />
                   : <ChevronRight className="h-4 w-4 text-gray-400" />}
                 <h2 className="font-semibold text-gray-800">Import History</h2>
-                {!historyOpen && (imports as ImportBatch[]).length > 0 && (
+                {!historyOpen && visibleImports.length > 0 && (
                   <span className="text-xs text-gray-400">
-                    ({(imports as ImportBatch[]).length} batch{(imports as ImportBatch[]).length !== 1 ? 'es' : ''})
+                    ({visibleImports.length} batch{visibleImports.length !== 1 ? 'es' : ''}
+                    {(selectedBrokerageId || selectedAccountId) ? ', filtered' : ''})
                   </span>
                 )}
               </div>
@@ -620,8 +628,10 @@ export default function Import() {
               <div className="px-6 pb-5 border-t border-gray-100">
                 {isLoading ? (
                   <div className="text-gray-400 text-sm py-4">Loading...</div>
-                ) : (imports as ImportBatch[]).length === 0 ? (
-                  <p className="text-gray-400 text-sm py-4">No imports yet</p>
+                ) : visibleImports.length === 0 ? (
+                  <p className="text-gray-400 text-sm py-4">
+                    {(selectedBrokerageId || selectedAccountId) ? 'No imports match the current filter.' : 'No imports yet.'}
+                  </p>
                 ) : (
                   <div className="overflow-x-auto mt-4">
                     <table className="min-w-full text-sm divide-y divide-gray-100">
@@ -637,7 +647,7 @@ export default function Import() {
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-50">
-                        {(imports as ImportBatch[]).map(batch => (
+                        {visibleImports.map(batch => (
                           <tr key={batch.id} className="hover:bg-gray-50">
                             <td className="py-2 pr-4 font-medium text-gray-800">{batch.filename}</td>
                             <td className="py-2 pr-4 text-gray-500">{new Date(batch.import_date).toLocaleDateString()}</td>

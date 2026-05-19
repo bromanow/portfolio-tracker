@@ -192,6 +192,10 @@ async def startup():
     _create_admin_user()
     _migrate_clients(engine)  # must run after admin user exists
 
+    # Create mv_snapshot_monthly (materialized view on PG, regular view on SQLite)
+    from app.services.snapshot_view_service import create_snapshot_views
+    create_snapshot_views(engine)
+
     # Start nightly IBKR Flex Query scheduler
     from app.scheduler import start_scheduler
     start_scheduler()

@@ -1028,6 +1028,54 @@ def get_portfolio_history(
 
 # ─── Snapshot-based performance helpers ──────────────────────────────────────
 
+def _query_snapshot_rows(db: Session, parsed_ids: "Optional[set[int]]"):
+    """
+    Return snapshot rows for the given account IDs.
+
+    Tries mv_snapshot_monthly first (one row per account per month —
+    ~30× fewer rows than the raw daily table).  Falls back to
+    portfolio_snapshots if the view is unavailable or empty.
+
+    Returned rows expose: .account_id  .snapshot_date  .market_value_cad
+                          .income_cad  .invested_cad
+    (compatible with both SQLAlchemy ORM rows and Core result rows)
+    """
+    from sqlalchemy import text as _text
+
+    # ── Try the materialized / regular view ───────────────────────────────────
+    try:
+        id_clause = ""
+        if parsed_ids:
+            id_list = ",".join(str(i) for i in parsed_ids)
+            id_clause = f"WHERE account_id IN ({id_list})"
+
+        rows = db.execute(_text(
+            f"SELECT account_id, actual_snapshot_date AS snapshot_date, "
+            f"market_value_cad, income_cad, invested_cad "
+            f"FROM mv_snapshot_monthly {id_clause} "
+            f"ORDER BY actual_snapshot_date"
+        )).fetchall()
+
+        if rows:                          # view exists and has data → use it
+            return rows, "view"
+    except Exception:
+        pass                              # view missing — fall through
+
+    # ── Fall back to raw portfolio_snapshots ──────────────────────────────────
+    from app.models.master import PortfolioSnapshot
+    q = db.query(
+        PortfolioSnapshot.account_id,
+        PortfolioSnapshot.snapshot_date,
+        PortfolioSnapshot.market_value_cad,
+        PortfolioSnapshot.income_cad,
+        PortfolioSnapshot.invested_cad,
+    )
+    if parsed_ids:
+        q = q.filter(PortfolioSnapshot.account_id.in_(parsed_ids))
+    rows = q.order_by(PortfolioSnapshot.snapshot_date).all()
+    return rows, "table"
+
+
 def _snap_at_date(date_map: dict, target) -> "tuple | None":
     """Return the snapshot tuple (mv, inc, inv) at the closest date ≤ target."""
     best = None
@@ -1187,6 +1235,47 @@ def purge_snapshots(
     deleted = q.delete(synchronize_session=False)
     db.commit()
     return {"deleted": deleted, "account_ids": parsed_ids, "from_date": str(from_date) if from_date else None}
+
+
+@router.post("/refresh-snapshot-views")
+def refresh_snapshot_views_endpoint(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Refresh mv_snapshot_monthly (PostgreSQL MATERIALIZED VIEW).
+    On SQLite (dev) this is a no-op — the view is always live.
+    Call this after compute-snapshots finishes to make monthly-returns
+    and returns-detail reflect the new data immediately.
+    """
+    from app.services.snapshot_view_service import refresh_snapshot_views, view_row_count
+    result = refresh_snapshot_views(db)
+    result["total_rows"] = view_row_count(db)
+    return result
+
+
+@router.get("/snapshot-views/status")
+def snapshot_views_status(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Return row count and last-refresh info for mv_snapshot_monthly."""
+    from app.services.snapshot_view_service import view_row_count
+    from sqlalchemy import text as _text
+
+    rows = view_row_count(db)
+    last_refresh = None
+    try:
+        # PostgreSQL only: pull last refresh time from pg_stat_user_tables
+        r = db.execute(_text(
+            "SELECT last_analyze FROM pg_stat_user_tables "
+            "WHERE relname = 'mv_snapshot_monthly'"
+        )).fetchone()
+        if r and r[0]:
+            last_refresh = str(r[0])
+    except Exception:
+        pass
+    return {"rows": rows, "last_refresh": last_refresh, "view_name": "mv_snapshot_monthly"}
 
 
 @router.get("/performance/timeline")
@@ -1545,7 +1634,7 @@ def get_returns_detail(
       period_income, capital_returned,
       total_gain, start_value (denominator), return_pct
     """
-    from app.models.master import PortfolioSnapshot, Account, Brokerage
+    from app.models.master import Account, Brokerage
     from decimal import Decimal as D
     from collections import defaultdict
 
@@ -1558,7 +1647,7 @@ def get_returns_detail(
     accounts   = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
 
-    # ── Logical group helpers (same as /performance/returns) ──────────────────
+    # ── Logical group helpers ─────────────────────────────────────────────────
     def _logical_name(a: Account) -> str:
         return a.name.replace(" (USD)", "").strip()
 
@@ -1581,27 +1670,28 @@ def get_returns_detail(
             }
         group_meta[key]["account_ids"].append(acct.id)
 
-    # ── Load snapshots ────────────────────────────────────────────────────────
-    q = db.query(PortfolioSnapshot)
-    if parsed_ids:
-        q = q.filter(PortfolioSnapshot.account_id.in_(parsed_ids))
-    rows = q.order_by(PortfolioSnapshot.snapshot_date).all()
+    # ── Load snapshots (view when available, raw table as fallback) ───────────
+    snap_rows, _src = _query_snapshot_rows(db, parsed_ids)
 
     # by_group[key][snap_date] = (mv, inc, inv)
     by_group: dict[tuple, dict[date, tuple[D, D, D]]] = defaultdict(
         lambda: defaultdict(lambda: (D(0), D(0), D(0)))
     )
-    for row in rows:
+    for row in snap_rows:
         key = acct_to_group.get(row.account_id)
         if key is None:
             continue
+        snap_date = row.snapshot_date
+        if isinstance(snap_date, str):
+            from datetime import datetime as _dt
+            snap_date = _dt.strptime(snap_date, "%Y-%m-%d").date()
         mv  = D(str(row.market_value_cad or 0))
         inc = D(str(row.income_cad or 0))
         inv = D(str(row.invested_cad or 0))
-        ex  = by_group[key][row.snapshot_date]
-        by_group[key][row.snapshot_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
+        ex  = by_group[key][snap_date]
+        by_group[key][snap_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
 
-    # ── Last transaction date per group (used to skip dormant/closed accounts) ──
+    # ── Last transaction date per group (skip dormant/closed accounts) ────────
     from app.models.transactions import Transaction
     from sqlalchemy import func as sqlfunc
     _last_txn_q = (
@@ -1692,7 +1782,7 @@ def get_monthly_returns(
               monthly: {"2023-01": pct|null, ...},
               annual:  {"2023": pct|null, ...}}]
     """
-    from app.models.master import PortfolioSnapshot, Account, Brokerage
+    from app.models.master import Account, Brokerage
     from decimal import Decimal as D
     from collections import defaultdict
     import calendar
@@ -1725,10 +1815,8 @@ def get_monthly_returns(
             }
         group_meta[key]["account_ids"].append(acct.id)
 
-    q = db.query(PortfolioSnapshot)
-    if parsed_ids:
-        q = q.filter(PortfolioSnapshot.account_id.in_(parsed_ids))
-    snap_rows = q.order_by(PortfolioSnapshot.snapshot_date).all()
+    # ── Load snapshots (view when available, raw table as fallback) ───────────
+    snap_rows, _src = _query_snapshot_rows(db, parsed_ids)
 
     by_group: dict[tuple, dict[date, tuple[D, D, D]]] = defaultdict(
         lambda: defaultdict(lambda: (D(0), D(0), D(0)))
@@ -1737,13 +1825,17 @@ def get_monthly_returns(
         key = acct_to_group.get(row.account_id)
         if key is None:
             continue
+        snap_date = row.snapshot_date
+        if isinstance(snap_date, str):
+            from datetime import datetime as _dt
+            snap_date = _dt.strptime(snap_date, "%Y-%m-%d").date()
         mv  = D(str(row.market_value_cad or 0))
         inc = D(str(row.income_cad or 0))
         inv = D(str(row.invested_cad or 0))
-        ex  = by_group[key][row.snapshot_date]
-        by_group[key][row.snapshot_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
+        ex  = by_group[key][snap_date]
+        by_group[key][snap_date] = (ex[0]+mv, ex[1]+inc, ex[2]+inv)
 
-    # ── Last transaction date per group (to skip dormant/closed accounts) ────
+    # ── Last transaction date per group (skip dormant/closed accounts) ────────
     from app.models.transactions import Transaction
     from sqlalchemy import func as sqlfunc
     _ltq = (

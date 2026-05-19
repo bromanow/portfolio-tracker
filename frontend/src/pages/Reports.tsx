@@ -13,7 +13,7 @@ import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
   getPortfolioHistory, getPortfolioContinuity,
   getMonthlyReturns, getReturnsDetail, getFxRates,
-  computeSnapshots, purgeSnapshots,
+  computeSnapshots, purgeSnapshots, refreshSnapshotViews, getSnapshotViewStatus,
 } from '../api/client'
 import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
@@ -1682,6 +1682,8 @@ function MonthlyReturnsReport() {
   const [nameFilter,      setNameFilter]      = useState('')
   const [groupBy, setGroupBy] = useState<'none' | 'brokerage' | 'account_type'>('brokerage')
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const [viewRefreshStatus, setViewRefreshStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
+  const queryClient = useQueryClient()
 
   const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
   const allAccts = accountsData as Account[]
@@ -1690,11 +1692,31 @@ function MonthlyReturnsReport() {
     [allAccts],
   )
 
-  const { data, isLoading } = useQuery({
+  const { data: viewStatus } = useQuery({
+    queryKey: ['snapshot-view-status'],
+    queryFn:  getSnapshotViewStatus,
+    staleTime: 30_000,
+  })
+
+  const { data, isLoading, refetch } = useQuery({
     queryKey: ['monthly-returns', yearFrom, yearTo, defaultAccountIds],
     queryFn:  () => getMonthlyReturns({ year_from: yearFrom, year_to: yearTo, account_ids: defaultAccountIds }),
     enabled:  defaultAccountIds !== undefined,
   })
+
+  const handleRefreshViews = useCallback(async () => {
+    setViewRefreshStatus('running')
+    try {
+      await refreshSnapshotViews()
+      await queryClient.invalidateQueries({ queryKey: ['snapshot-view-status'] })
+      await refetch()
+      setViewRefreshStatus('done')
+      setTimeout(() => setViewRefreshStatus('idle'), 3000)
+    } catch {
+      setViewRefreshStatus('error')
+      setTimeout(() => setViewRefreshStatus('idle'), 4000)
+    }
+  }, [queryClient, refetch])
 
   const months  = data?.months ?? []
   const years   = data?.years  ?? []
@@ -1790,6 +1812,33 @@ function MonthlyReturnsReport() {
             <button onClick={() => setCollapsed(new Set(groups.map(g => g.key)))} className="px-2 py-1.5 text-xs rounded border border-gray-200 hover:bg-gray-50 text-gray-500">Collapse all</button>
           </div>
         )}
+        {/* View refresh — pushed to the right */}
+        <div className="ml-auto flex flex-col items-end gap-1">
+          <button
+            onClick={handleRefreshViews}
+            disabled={viewRefreshStatus === 'running'}
+            title="Refresh the monthly snapshot materialized view so this report reflects the latest data."
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border transition-colors
+              ${viewRefreshStatus === 'running' ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
+              : viewRefreshStatus === 'done'    ? 'bg-green-50 text-green-700 border-green-300'
+              : viewRefreshStatus === 'error'   ? 'bg-red-50 text-red-700 border-red-300'
+              : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+          >
+            {viewRefreshStatus === 'running'
+              ? <><RefreshCw className="w-3 h-3 animate-spin" /> Refreshing…</>
+              : viewRefreshStatus === 'done'
+              ? <><Database className="w-3 h-3" /> Refreshed!</>
+              : viewRefreshStatus === 'error'
+              ? <><Database className="w-3 h-3" /> Failed</>
+              : <><Database className="w-3 h-3" /> Refresh View</>}
+          </button>
+          {viewStatus && (
+            <span className="text-xs text-gray-400">
+              {viewStatus.rows.toLocaleString()} rows
+              {viewStatus.last_refresh ? ` · last refreshed ${new Date(viewStatus.last_refresh).toLocaleDateString()}` : ' · not yet refreshed'}
+            </span>
+          )}
+        </div>
       </div>
 
       {/* Legend */}

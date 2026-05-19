@@ -1018,6 +1018,12 @@ export const purgeSnapshots = (params?: {
   from_date?:   string
 }) => api.delete<{ deleted: number; account_ids: number[] | null; from_date: string | null }>('/portfolio/purge-snapshots', { params }).then(r => r.data)
 
+export const refreshSnapshotViews = () =>
+  api.post<{ status: string; rows?: number; reason?: string; detail?: string }>('/portfolio/refresh-snapshot-views').then(r => r.data)
+
+export const getSnapshotViewStatus = () =>
+  api.get<{ rows: number; last_refresh: string | null; view_name: string }>('/portfolio/snapshot-views/status').then(r => r.data)
+
 export const setManualPrice = (securityId: number, price: number, currency: string) =>
   api.put(`/prices/${securityId}/manual`, { price, currency }).then(r => r.data)
 

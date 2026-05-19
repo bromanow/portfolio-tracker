@@ -40,6 +40,21 @@ def _run_nightly_ibkr_sync():
         db.close()
 
 
+def _run_nightly_snapshot_refresh():
+    """Refresh mv_snapshot_monthly after the IBKR sync populates new transactions."""
+    from app.database import SessionLocal
+    from app.services.snapshot_view_service import refresh_snapshot_views
+
+    db = SessionLocal()
+    try:
+        result = refresh_snapshot_views(db)
+        logger.info("Nightly snapshot view refresh: %s", result)
+    except Exception:
+        logger.exception("Nightly snapshot view refresh crashed")
+    finally:
+        db.close()
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -54,11 +69,24 @@ def start_scheduler():
         id="ibkr_nightly_sync",
         name="Nightly IBKR Flex Query sync",
         replace_existing=True,
-        misfire_grace_time=3600,   # if server was down, run within 1 h of scheduled time
+        misfire_grace_time=3600,
+    )
+
+    # Refresh the materialized view 30 min after the IBKR sync finishes
+    # so report queries always see current data.
+    _scheduler.add_job(
+        _run_nightly_snapshot_refresh,
+        CronTrigger(hour=5, minute=45, timezone="UTC"),
+        id="snapshot_view_refresh",
+        name="Nightly mv_snapshot_monthly refresh",
+        replace_existing=True,
+        misfire_grace_time=3600,
     )
 
     _scheduler.start()
-    logger.info("Scheduler started — nightly IBKR sync at 00:15 ET (05:15 UTC)")
+    logger.info(
+        "Scheduler started — IBKR sync at 00:15 ET, snapshot view refresh at 00:45 ET"
+    )
 
 
 def stop_scheduler():

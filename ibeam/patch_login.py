@@ -16,6 +16,14 @@ It inserts a small Selenium snippet into login_handler.py that:
 
 import sys
 
+# Patch disabled — IBeam's native TWO_FA_SELECT_EL_ID/TWO_FA_SELECT_TARGET
+# env vars handle device selection correctly when set to:
+#   IBEAM_TWO_FA_SELECT_EL_ID=TAG_NAME@@select
+#   IBEAM_TWO_FA_SELECT_TARGET=Mobile Authenticator App
+# The custom Selenium patch below conflicts with IBeam's built-in flow.
+print('Custom login patch disabled — relying on IBeam native TWO_FA_SELECT_EL_ID.')
+sys.exit(0)
+
 FILEPATH = '/srv/ibeam/src/handlers/login_handler.py'
 
 # ── Code to inject ────────────────────────────────────────────────────────────

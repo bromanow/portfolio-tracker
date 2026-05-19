@@ -61,6 +61,12 @@ services:
         value: pyotp          # automated TOTP — no human interaction needed
       - key: IBEAM_PYOTP_SECRET
         sync: false           # set in Render dashboard: base32 secret from IBKR TOTP setup
+      # Device-selection dropdown — IBKR shows this before the TOTP input.
+      # The select element has no id; match by tag. Target must match visible option text.
+      - key: IBEAM_TWO_FA_SELECT_EL_ID
+        value: TAG_NAME@@select
+      - key: IBEAM_TWO_FA_SELECT_TARGET
+        value: Mobile Authenticator App
       - key: IBEAM_LOG_LEVEL
         value: INFO
       - key: IBEAM_MAX_FAILED_AUTH

@@ -36,7 +36,7 @@ services:
       # IBeam Client Portal Gateway — internal URL for live option data.
       # Leave empty to disable IBeam and fall back to yfinance.
       - key: IBEAM_BASE_URL
-        value: https://ibeam-lmhj:5000
+        value: https://ibeam-7qd1.onrender.com
 
   # ── IBeam — IBKR Client Portal Gateway (headless, containerised) ─────────────
   # Authenticates against IBKR and proxies the Client Portal REST API so the
@@ -56,6 +56,8 @@ services:
     image:
       url: ghcr.io/bromanow/portfolio-tracker-ibeam:latest
     plan: standard            # 2 GB RAM / 1 CPU — required for IB Gateway + Chrome
+    port: 5000                # IBeam's internal HTTP port
+    healthCheckPath: /v1/api/iserver/auth/status
     envVars:
       - key: IBEAM_ACCOUNT
         sync: false           # set in Render dashboard: your IBKR API sub-username

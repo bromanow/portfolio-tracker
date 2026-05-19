@@ -40,37 +40,51 @@ try:
     # Wait briefly for IBKR page to render after credential submission
     _t.sleep(3)
 
-    # Strategy 1: native <select> element
-    _selects = driver.find_elements(_By.TAG_NAME, 'select')
-    for _s in _selects:
-        _opts = [_o.text.strip() for _o in _s.find_elements(_By.TAG_NAME, 'option')]
-        if _TARGET in _opts:
-            _plog.info('[patch] Selecting %s (native <select>)', _TARGET)
-            _Sel(_s).select_by_visible_text(_TARGET)
-            _t.sleep(1)
-            _found = True
-            break
+    # Strategy 1: native <select> via JavaScript — avoids "element not interactable"
+    # when IBKR hides the native select and shows a custom styled dropdown on top.
+    try:
+        _selects = driver.find_elements(_By.TAG_NAME, 'select')
+        for _s in _selects:
+            _opts = _s.find_elements(_By.TAG_NAME, 'option')
+            _target_opt = next((o for o in _opts if _TARGET in o.text.strip()), None)
+            if _target_opt:
+                _val = _target_opt.get_attribute('value')
+                _plog.info('[patch] Setting select value=%s via JS', _val)
+                driver.execute_script(
+                    "arguments[0].value=arguments[1];"
+                    "arguments[0].dispatchEvent(new Event('change',{bubbles:true}));"
+                    "arguments[0].dispatchEvent(new Event('input',{bubbles:true}));",
+                    _s, _val
+                )
+                _t.sleep(1)
+                _found = True
+                break
+    except Exception as _e1:
+        _plog.debug('[patch] Native select/JS approach failed: %s', _e1)
 
-    # Strategy 2: custom dropdown — find any element whose text matches exactly
+    # Strategy 2: visible custom dropdown element — find any VISIBLE element
+    # whose text matches; skips hidden <option> tags inside the select.
     if not _found:
         for _xpath in (
             f"//*[normalize-space(text())='{_TARGET}']",
             f"//*[contains(text(),'{_TARGET}')]",
             f"//*[@value='{_TARGET}']",
         ):
-            _els = driver.find_elements(_By.XPATH, _xpath)
-            if _els:
-                _plog.info('[patch] Clicking %s (XPath: %s)', _TARGET, _xpath)
-                _els[0].click()
+            _candidates = driver.find_elements(_By.XPATH, _xpath)
+            _visible = [e for e in _candidates if e.is_displayed()]
+            if _visible:
+                _plog.info('[patch] Clicking visible %s element (XPath)', _TARGET)
+                _visible[0].click()
                 _t.sleep(1)
                 _found = True
                 break
 
     if _found:
-        # Click Continue / Submit — try common selectors, last button wins
+        # Click Continue / Submit — visible buttons only, last match wins
         for _css in ("button[type='submit']", "input[type='submit']",
                      ".btn-primary", "button.ibkr-btn", "button"):
-            _btns = driver.find_elements(_By.CSS_SELECTOR, _css)
+            _btns = [b for b in driver.find_elements(_By.CSS_SELECTOR, _css)
+                     if b.is_displayed()]
             if _btns:
                 _btns[-1].click()
                 _t.sleep(2)

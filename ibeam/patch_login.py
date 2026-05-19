@@ -40,8 +40,21 @@ try:
     # Wait briefly for IBKR page to render after credential submission
     _t.sleep(3)
 
-    # Strategy 1: native <select> via JavaScript — avoids "element not interactable"
-    # when IBKR hides the native select and shows a custom styled dropdown on top.
+    # --- Page inspection (helps debug IBKR's dropdown structure) ---
+    try:
+        _body_text = driver.find_element(_By.TAG_NAME, 'body').text
+        _plog.info('[patch] Page body (first 600 chars): %s', _body_text[:600])
+        _selects = driver.find_elements(_By.TAG_NAME, 'select')
+        _plog.info('[patch] Found %d <select> element(s)', len(_selects))
+        for _i, _s in enumerate(_selects):
+            _plog.info('[patch] select[%d] id=%s visible=%s value=%s',
+                       _i, _s.get_attribute('id'), _s.is_displayed(), _s.get_attribute('value'))
+            for _o in _s.find_elements(_By.TAG_NAME, 'option'):
+                _plog.info('[patch]   option text=%r value=%r', _o.text.strip(), _o.get_attribute('value'))
+    except Exception as _dbg_e:
+        _plog.info('[patch] Page inspection failed: %s', _dbg_e)
+
+    # Strategy 1: set hidden <select> value via JS AND fire React/Angular-friendly events
     try:
         _selects = driver.find_elements(_By.TAG_NAME, 'select')
         for _s in _selects:
@@ -49,43 +62,64 @@ try:
             _target_opt = next((o for o in _opts if _TARGET in o.text.strip()), None)
             if _target_opt:
                 _val = _target_opt.get_attribute('value')
-                _plog.info('[patch] Setting select value=%s via JS', _val)
+                _plog.info('[patch] S1: setting select value=%s via JS', _val)
                 driver.execute_script(
-                    "arguments[0].value=arguments[1];"
-                    "arguments[0].dispatchEvent(new Event('change',{bubbles:true}));"
-                    "arguments[0].dispatchEvent(new Event('input',{bubbles:true}));",
+                    "var s=arguments[0], v=arguments[1];"
+                    "var nativeSet=Object.getOwnPropertyDescriptor(window.HTMLSelectElement.prototype,'value').set;"
+                    "nativeSet.call(s,v);"
+                    "s.dispatchEvent(new Event('input',{bubbles:true}));"
+                    "s.dispatchEvent(new Event('change',{bubbles:true}));",
                     _s, _val
                 )
                 _t.sleep(1)
                 _found = True
                 break
     except Exception as _e1:
-        _plog.debug('[patch] Native select/JS approach failed: %s', _e1)
+        _plog.info('[patch] S1 JS approach failed: %s', _e1)
 
-    # Strategy 2: visible custom dropdown element — find any VISIBLE element
-    # whose text matches; skips hidden <option> tags inside the select.
-    if not _found:
+    # Strategy 2: open the visible custom dropdown then click the option.
+    # IBKR uses a styled overlay; the native select is hidden.
+    # Step A: try to click any visible trigger near the hidden select
+    # Step B: then look for visible "Mobile Authenticator App" option
+    try:
+        # Step A — open the dropdown by clicking element with id=xyz-field-bronze-response
+        # (IBeam's TWO_FA_SELECT_EL_ID points here as the trigger)
+        _trigger_ids = ['xyz-field-bronze-response', 'two-factor-select', 'deviceSelect']
+        for _tid in _trigger_ids:
+            _trigger_els = driver.find_elements(_By.ID, _tid)
+            _visible_triggers = [e for e in _trigger_els if e.is_displayed()]
+            if _visible_triggers:
+                _plog.info('[patch] S2: clicking dropdown trigger id=%s', _tid)
+                _visible_triggers[0].click()
+                _t.sleep(1)
+                break
+
+        # Step B — click the visible option
         for _xpath in (
             f"//*[normalize-space(text())='{_TARGET}']",
             f"//*[contains(text(),'{_TARGET}')]",
-            f"//*[@value='{_TARGET}']",
+            f"//*[@data-value='{_TARGET}']",
+            f"//*[@title='{_TARGET}']",
         ):
             _candidates = driver.find_elements(_By.XPATH, _xpath)
             _visible = [e for e in _candidates if e.is_displayed()]
             if _visible:
-                _plog.info('[patch] Clicking visible %s element (XPath)', _TARGET)
+                _plog.info('[patch] S2: clicking visible %s (xpath=%s)', _TARGET, _xpath)
                 _visible[0].click()
                 _t.sleep(1)
                 _found = True
                 break
+    except Exception as _e2:
+        _plog.info('[patch] S2 visible-click approach failed: %s', _e2)
 
     if _found:
-        # Click Continue / Submit — visible buttons only, last match wins
+        # Click Continue / Submit — visible buttons only
         for _css in ("button[type='submit']", "input[type='submit']",
                      ".btn-primary", "button.ibkr-btn", "button"):
             _btns = [b for b in driver.find_elements(_By.CSS_SELECTOR, _css)
                      if b.is_displayed()]
             if _btns:
+                _plog.info('[patch] Clicking Continue button (%s)', _css)
                 _btns[-1].click()
                 _t.sleep(2)
                 break

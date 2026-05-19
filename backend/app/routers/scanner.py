@@ -116,30 +116,14 @@ def get_scan_meta(db: Session = Depends(get_db)):
         LIMIT  1
     """)).fetchone()
 
-    ibkr_available  = False
-    ibkr_connected  = False
-    gateway_running = False
     ibeam_available = False
     try:
         from app.services import ibkr_service
         ibeam_available = ibkr_service.is_ibeam_available()
-        ibkr_available  = ibkr_service.is_available()
-        status          = ibkr_service.get_status()
-        gateway_running = bool(status.get("gateway_running"))
-        ibkr_connected  = bool(
-            ibkr_available
-            and gateway_running
-            and status.get("last_connected_at")
-        )
     except Exception:
         pass
 
-    base = {
-        "ibeam_available": ibeam_available,
-        "ibkr_available":  ibkr_available,
-        "ibkr_connected":  ibkr_connected,
-        "gateway_running": gateway_running,
-    }
+    base = {"ibeam_available": ibeam_available}
 
     if row is None:
         return {"available": False, **base}

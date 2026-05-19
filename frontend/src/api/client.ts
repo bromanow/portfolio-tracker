@@ -1033,36 +1033,6 @@ export const clearManualPrice = (securityId: number) =>
 export const recordOptionHistory = () =>
   api.post('/prices/record-option-history').then(r => r.data)
 
-// ─── IBKR ────────────────────────────────────────────────────────────────────
-export interface IBKRStatus {
-  available: boolean
-  host: string
-  port: number
-  client_id: number
-  last_connected_at: string | null
-  last_refresh_at: string | null
-  last_refresh_result: {
-    ok: number; failed: number; skipped: number; errors: string[]
-  } | null
-  gateway_running: boolean
-  gateway_app_path: string | null
-}
-
-export interface IBKRConnectRequest {
-  host: string
-  port: number
-  client_id: number
-}
-
-export const getIBKRStatus = () =>
-  api.get<IBKRStatus>('/ibkr/status').then(r => r.data)
-
-export const connectIBKR = (req: IBKRConnectRequest) =>
-  api.post<{ connected: boolean; tws_version: string; message: string }>('/ibkr/connect', req).then(r => r.data)
-
-export const refreshPricesIBKR = () =>
-  api.post<{ job_id: string; status: string; already_running: boolean }>('/ibkr/refresh-prices').then(r => r.data)
-
 // ─── IBKR Flex Query ──────────────────────────────────────────────────────────
 export interface IBKRFlexConfig {
   id: number
@@ -1102,14 +1072,6 @@ export const getAllFlexConfigs = () =>
 export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
 
-export const launchIBKRGateway = () =>
-  api.post<{ ok: boolean; app_path: string }>('/ibkr/launch').then(r => r.data)
-
-export const getIBKRManagedAccounts = () =>
-  api.get<{ ok: boolean; accounts: string[]; error?: string }>('/ibkr/managed-accounts').then(r => r.data)
-
-export const syncIBKRTransactions = () =>
-  api.post<{ job_id: string; status: string; already_running: boolean }>('/ibkr/sync-transactions').then(r => r.data)
 
 // ─── Covered-call Scanner ────────────────────────────────────────────────────
 
@@ -1119,9 +1081,7 @@ export interface ScannerMeta {
   scanned_at?: string
   total_rows?: number
   tickers?: number
-  ibkr_available?: boolean
-  ibkr_connected?: boolean
-  gateway_running?: boolean
+  ibeam_available?: boolean
 }
 
 export interface ScannerResult {

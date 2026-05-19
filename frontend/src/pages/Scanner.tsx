@@ -903,7 +903,7 @@ export default function Scanner() {
     ? new Date(meta.scanned_at + 'Z').toLocaleString()
     : null
 
-  const liveDataActive = meta?.ibkr_connected === true
+  const liveDataActive = meta?.ibeam_available === true
 
   return (
     <div className="space-y-5">
@@ -919,39 +919,27 @@ export default function Scanner() {
         </div>
 
         <div className="flex items-center gap-3 ml-auto">
-          {/* Gateway status */}
-          {meta?.ibkr_available && (
-            <div
-              className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border ${
-                meta.ibkr_connected
-                  ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                  : meta.gateway_running
-                  ? 'bg-amber-50 border-amber-200 text-amber-700'
-                  : 'bg-gray-50 border-gray-200 text-gray-400'
-              }`}
-              title={
-                meta.ibkr_connected
-                  ? 'IB Gateway connected — scanner uses live Greeks'
-                  : meta.gateway_running
-                  ? 'IB Gateway running but not connected'
-                  : 'IB Gateway not running — scanner uses yfinance (delayed ~15 min)'
-              }
-            >
-              {meta.ibkr_connected || meta.gateway_running
-                ? <Wifi className="h-3.5 w-3.5" />
-                : <WifiOff className="h-3.5 w-3.5" />}
-              <span className="font-medium">
-                {meta.ibkr_connected
-                  ? 'Live Greeks'
-                  : meta.gateway_running
-                  ? 'IB Gateway running'
-                  : 'IB Gateway offline'}
-              </span>
-              {!meta.ibkr_connected && (
-                <span className="text-gray-400">· delayed data</span>
-              )}
-            </div>
-          )}
+          {/* IBeam status */}
+          <div
+            className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border ${
+              meta?.ibeam_available
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                : 'bg-gray-50 border-gray-200 text-gray-400'
+            }`}
+            title={meta?.ibeam_available
+              ? 'IBeam connected — scanner uses live Greeks'
+              : 'IBeam not available — scanner uses yfinance (delayed ~15 min)'}
+          >
+            {meta?.ibeam_available
+              ? <Wifi className="h-3.5 w-3.5" />
+              : <WifiOff className="h-3.5 w-3.5" />}
+            <span className="font-medium">
+              {meta?.ibeam_available ? 'Live Greeks' : 'IBeam offline'}
+            </span>
+            {!meta?.ibeam_available && (
+              <span className="text-gray-400">· delayed data</span>
+            )}
+          </div>
 
           <button
             onClick={() => scanMut.mutate(scanParams)}
@@ -971,7 +959,7 @@ export default function Scanner() {
         <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-700">
           <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />
           {liveDataActive
-            ? 'Fetching live Greeks from IB Gateway across all tickers — this takes 3–8 minutes…'
+            ? 'Fetching live Greeks from IBeam across all tickers — this takes 3–8 minutes…'
             : 'Scanning option chains across all tickers — this takes 2–5 minutes…'}
         </div>
       )}
@@ -1012,8 +1000,8 @@ export default function Scanner() {
             <ul className="space-y-1.5 text-xs text-gray-500 list-disc list-inside">
               <li>Scans your <strong>portfolio holdings</strong> plus your <strong>watchlist</strong> for covered-call opportunities.</li>
               {liveDataActive
-                ? <li>Connected to <strong>IB Gateway</strong> — fetches real-time option chains with actual <strong>Greeks (Δ, Γ, Θ, V)</strong> and live bid/ask prices.</li>
-                : <li>Fetches option chains from <strong>Yahoo Finance</strong> (~15 min delayed). Connect IB Gateway for live Greeks.</li>
+                ? <li>Connected to <strong>IBeam</strong> — fetches real-time option chains with actual <strong>Greeks (Δ, Γ, Θ, V)</strong> and live bid/ask prices.</li>
+                : <li>Fetches option chains from <strong>Yahoo Finance</strong> (~15 min delayed). IBeam unavailable.</li>
               }
               <li>Your filter settings are used as <strong>pre-scan thresholds</strong> — the scanner only fetches options matching your DTE, OTM, OI, volume and dividend yield minimums.</li>
               <li><strong>Score</strong> (higher = better): CC yield × delta quality × IV richness × DTE sweet-spot × liquidity × spread quality. Hover the <Info className="h-3 w-3 inline" /> on the Score column for the full breakdown.</li>

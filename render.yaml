@@ -46,7 +46,11 @@ services:
   #
   # Built from a custom Dockerfile (ibeam/Dockerfile) that extends the stock
   # voyz/ibeam image with a login patch for IBKR's 2FA device-selection dropdown.
-  - type: pserv               # private service — not exposed to the internet
+  #
+  # Public web service so the local dev backend can also reach IBeam directly.
+  # IBKR's own session auth means the exposed API is only useful with an active
+  # authenticated session — no additional auth layer needed.
+  - type: web
     name: ibeam
     runtime: image
     image:
@@ -58,7 +62,7 @@ services:
       - key: IBEAM_PASSWORD
         sync: false           # set in Render dashboard: that user's password
       - key: IBEAM_TWO_FA_HANDLER
-        value: pyotp          # automated TOTP — no human interaction needed
+        value: PYOTP          # automated TOTP — must be uppercase (case-sensitive)
       - key: IBEAM_PYOTP_SECRET
         sync: false           # set in Render dashboard: base32 secret from IBKR TOTP setup
       # TOTP input field — ID discovered from live page inspection.

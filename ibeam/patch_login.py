@@ -31,6 +31,9 @@ try:
     from selenium.webdriver.common.by import By as _By
     from selenium.webdriver.support.ui import Select as _Sel
 
+    import logging as _logging
+    _plog = _logging.getLogger('ibeam.patch')
+
     _TARGET = 'Mobile Authenticator App'
     _found = False
 
@@ -42,7 +45,7 @@ try:
     for _s in _selects:
         _opts = [_o.text.strip() for _o in _s.find_elements(_By.TAG_NAME, 'option')]
         if _TARGET in _opts:
-            logger.info('[patch] Selecting %s (native <select>)', _TARGET)
+            _plog.info('[patch] Selecting %s (native <select>)', _TARGET)
             _Sel(_s).select_by_visible_text(_TARGET)
             _t.sleep(1)
             _found = True
@@ -57,7 +60,7 @@ try:
         ):
             _els = driver.find_elements(_By.XPATH, _xpath)
             if _els:
-                logger.info('[patch] Clicking %s (XPath: %s)', _TARGET, _xpath)
+                _plog.info('[patch] Clicking %s (XPath: %s)', _TARGET, _xpath)
                 _els[0].click()
                 _t.sleep(1)
                 _found = True
@@ -72,12 +75,13 @@ try:
                 _btns[-1].click()
                 _t.sleep(2)
                 break
-        logger.info('[patch] Device selection complete — proceeding with TOTP')
+        _plog.info('[patch] Device selection complete — proceeding with TOTP')
     else:
-        logger.info('[patch] No device-selection dropdown found — proceeding normally')
+        _plog.info('[patch] No device-selection dropdown found — proceeding normally')
 
 except Exception as _e:
-    logger.warning('[patch] 2FA device-select error (non-fatal): %s', _e)
+    import logging as _logging
+    _logging.getLogger('ibeam.patch').warning('[patch] 2FA device-select error (non-fatal): %s', _e)
 # ── end 2FA device-selection patch ────────────────────────────────────────
 """
 

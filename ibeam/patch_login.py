@@ -56,17 +56,34 @@ try:
             break
 
     if _found:
-        # Click Continue / Submit — take the first visible submit button
+        # Log all visible buttons so we know what's on the page
+        _all_btns = [b for b in driver.find_elements(_By.TAG_NAME, 'button') if b.is_displayed()]
+        for _bi, _b in enumerate(_all_btns):
+            _plog.info('[patch] Button[%d] type=%s text=%r', _bi, _b.get_attribute('type'), _b.text.strip())
+
+        # Click Continue — try submit buttons first, then any visible button
+        _clicked = False
         for _css in ("button[type='submit']", "input[type='submit']",
-                     ".btn-primary", "button.ibkr-btn", "button"):
+                     "button[type='button']", "button"):
             _btns = [b for b in driver.find_elements(_By.CSS_SELECTOR, _css)
                      if b.is_displayed()]
             if _btns:
-                _plog.info('[patch] Clicking Continue (%s)', _css)
-                _btns[0].click()
-                _t.sleep(2)
+                _btn = _btns[0]
+                _plog.info('[patch] Clicking (%s) text=%r via JS click', _css, _btn.text.strip())
+                # Use JS click — more reliable for IBKR's SPA event handlers
+                driver.execute_script("arguments[0].click();", _btn)
+                _clicked = True
+                _t.sleep(3)
                 break
-        _plog.info('[patch] Device selection complete — proceeding with TOTP')
+
+        # Log what page looks like after clicking Continue
+        try:
+            _after = driver.find_element(_By.TAG_NAME, 'body').text
+            _plog.info('[patch] After Continue body: %s', _after[:500])
+        except Exception as _pe:
+            _plog.info('[patch] Could not read post-Continue page: %s', _pe)
+
+        _plog.info('[patch] Device selection complete (clicked=%s)', _clicked)
     else:
         _plog.info('[patch] No device-selection dropdown found — proceeding normally')
 

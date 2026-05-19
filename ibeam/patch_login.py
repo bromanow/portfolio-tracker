@@ -31,7 +31,10 @@ try:
         _found = False
         for _s in _selects:
             _opts = _s.find_elements(_By.TAG_NAME, 'option')
-            _topt = next((o for o in _opts if _TARGET in o.text.strip()), None)
+            _opt_texts = [o.text.strip() for o in _opts]
+            _plog.info('[patch] Post-submit: select options = %s', _opt_texts)
+            # Case-insensitive partial match
+            _topt = next((o for o in _opts if _TARGET.lower() in o.text.strip().lower()), None)
             if _topt:
                 _val = _topt.get_attribute('value')
                 try:
@@ -44,11 +47,11 @@ try:
                         _s, _val
                     )
                 _t.sleep(1)
-                _plog.info('[patch] Post-submit: selected %s (value=%s)', _TARGET, _val)
+                _plog.info('[patch] Post-submit: selected %s (value=%s)', _topt.text.strip(), _val)
                 _found = True
                 break
         if not _found:
-            _plog.info('[patch] Post-submit: <select> appeared but no "%s" option', _TARGET)
+            _plog.info('[patch] Post-submit: <select> appeared but no matching option for "%s"', _TARGET)
     except Exception as _we:
         _plog.info('[patch] Post-submit: no device-select within 8s — proceeding (%s)', _we)
 except Exception as _pe:

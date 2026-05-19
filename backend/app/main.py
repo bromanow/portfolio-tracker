@@ -251,28 +251,36 @@ def health():
 @app.get("/api/ibeam-debug")
 def ibeam_debug():
     """Public debug endpoint — shows IBeam connectivity details."""
-    import os, httpx
+    import os, httpx, time as _time
+
+    def _parse(r):
+        """Return JSON body if possible, otherwise raw text — never crashes."""
+        try:
+            return r.json()
+        except Exception:
+            return r.text[:500] or "(empty response)"
+
     base = os.environ.get("IBEAM_BASE_URL", "")
     if not base:
         return {"error": "IBEAM_BASE_URL not set", "base": ""}
     results = {"base": base}
     try:
         # 1. Check auth status
-        r = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=10)
-        results["auth_status"] = {"status_code": r.status_code, "body": r.json()}
+        r = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=15)
+        results["auth_status"] = {"status_code": r.status_code, "body": _parse(r)}
 
-        # 2. Try SSO validate
-        r2 = httpx.get(f"{base}/v1/api/sso/validate", verify=False, timeout=10)
-        results["sso_validate"] = {"status_code": r2.status_code, "body": r2.text[:500]}
+        # 2. SSO validate
+        r2 = httpx.get(f"{base}/v1/api/sso/validate", verify=False, timeout=15)
+        results["sso_validate"] = {"status_code": r2.status_code, "body": _parse(r2)}
 
-        # 3. Try reauthenticate
-        r3 = httpx.post(f"{base}/v1/api/iserver/reauthenticate", verify=False, timeout=10)
-        results["reauthenticate"] = {"status_code": r3.status_code, "body": r3.text[:500]}
+        # 3. Reauthenticate
+        r3 = httpx.post(f"{base}/v1/api/iserver/reauthenticate", verify=False, timeout=15)
+        results["reauthenticate"] = {"status_code": r3.status_code, "body": _parse(r3)}
 
-        # 4. Check auth status again after reauth
-        import time; time.sleep(2)
-        r4 = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=10)
-        results["auth_status_after_reauth"] = {"status_code": r4.status_code, "body": r4.json()}
+        # 4. Auth status after reauth
+        _time.sleep(3)
+        r4 = httpx.get(f"{base}/v1/api/iserver/auth/status", verify=False, timeout=15)
+        results["auth_status_after_reauth"] = {"status_code": r4.status_code, "body": _parse(r4)}
 
     except Exception as exc:
         results["error"] = str(exc)

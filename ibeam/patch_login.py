@@ -24,28 +24,60 @@ TWO_FA_SELECT_SNIPPET = """\
 # ── 2FA device-selection patch (injected by patch_login.py) ──────────────
 # When IBKR shows "Select Second Factor Device", pick Mobile Authenticator App
 # so the normal TOTP prompt appears and pyotp can fill it in automatically.
+# Uses two strategies: native <select> first, then XPath text search for
+# custom div/button dropdowns (IBKR uses obfuscated CSS, not native selects).
 try:
     import time as _t
     from selenium.webdriver.common.by import By as _By
     from selenium.webdriver.support.ui import Select as _Sel
+
+    _TARGET = 'Mobile Authenticator App'
+    _found = False
+
+    # Wait briefly for IBKR page to render after credential submission
+    _t.sleep(3)
+
+    # Strategy 1: native <select> element
     _selects = driver.find_elements(_By.TAG_NAME, 'select')
     for _s in _selects:
         _opts = [_o.text.strip() for _o in _s.find_elements(_By.TAG_NAME, 'option')]
-        if 'Mobile Authenticator App' in _opts:
-            logger.info('[patch] Selecting Mobile Authenticator App from 2FA dropdown')
-            _Sel(_s).select_by_visible_text('Mobile Authenticator App')
+        if _TARGET in _opts:
+            logger.info('[patch] Selecting %s (native <select>)', _TARGET)
+            _Sel(_s).select_by_visible_text(_TARGET)
             _t.sleep(1)
-            # Click the Continue / Submit button — try several common selectors
-            for _css in ("button[type='submit']", "input[type='submit']",
-                         ".btn-primary", "button.ibkr-btn", "button"):
-                _btns = driver.find_elements(_By.CSS_SELECTOR, _css)
-                if _btns:
-                    _btns[-1].click()
-                    _t.sleep(2)
-                    break
+            _found = True
             break
+
+    # Strategy 2: custom dropdown — find any element whose text matches exactly
+    if not _found:
+        for _xpath in (
+            f"//*[normalize-space(text())='{_TARGET}']",
+            f"//*[contains(text(),'{_TARGET}')]",
+            f"//*[@value='{_TARGET}']",
+        ):
+            _els = driver.find_elements(_By.XPATH, _xpath)
+            if _els:
+                logger.info('[patch] Clicking %s (XPath: %s)', _TARGET, _xpath)
+                _els[0].click()
+                _t.sleep(1)
+                _found = True
+                break
+
+    if _found:
+        # Click Continue / Submit — try common selectors, last button wins
+        for _css in ("button[type='submit']", "input[type='submit']",
+                     ".btn-primary", "button.ibkr-btn", "button"):
+            _btns = driver.find_elements(_By.CSS_SELECTOR, _css)
+            if _btns:
+                _btns[-1].click()
+                _t.sleep(2)
+                break
+        logger.info('[patch] Device selection complete — proceeding with TOTP')
+    else:
+        logger.info('[patch] No device-selection dropdown found — proceeding normally')
+
 except Exception as _e:
-    logger.debug('[patch] 2FA device-select (non-fatal): %s', _e)
+    logger.warning('[patch] 2FA device-select error (non-fatal): %s', _e)
 # ── end 2FA device-selection patch ────────────────────────────────────────
 """
 

@@ -1,6 +1,6 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getTransactions, getAccounts, getSecurities, createTransaction, createTransferPair, deleteTransaction, updateTransaction, deleteAllTransactions, getFxRateLookup, bulkUpdateTransactions } from '../api/client'
+import { getTransactions, getAccounts, getSecurities, createTransaction, createTransferPair, deleteTransaction, updateTransaction, deleteAllTransactions, getFxRateLookup, bulkUpdateTransactions, bulkDeleteTransactions } from '../api/client'
 import type { Transaction, Security, Account, TransferPairCreate } from '../api/client'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Download, RefreshCw } from 'lucide-react'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
@@ -516,6 +516,7 @@ export default function Transactions() {
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set())
   const [bulkType, setBulkType] = useState<string>('DRIP')
   const [bulkConfirm, setBulkConfirm] = useState(false)
+  const [bulkDeleteConfirm, setBulkDeleteConfirm] = useState(false)
   const [selectAllLoading, setSelectAllLoading] = useState(false)
   // When true, selection covers ALL rows matching current filter (not just this page)
   const [selectAllMatching, setSelectAllMatching] = useState(false)
@@ -613,6 +614,21 @@ export default function Transactions() {
       alert(`✓ Updated ${res.updated} transaction${res.updated !== 1 ? 's' : ''} to ${bulkType}.`)
     },
     onError: (err: unknown) => alert('Bulk update failed: ' + fmtApiError(err)),
+  })
+
+  const bulkDeleteMutation = useMutation({
+    mutationFn: (ids: number[]) => bulkDeleteTransactions(ids),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['consolidated-positions'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-summary'] })
+      setSelectedIds(new Set())
+      setSelectAllMatching(false)
+      setBulkDeleteConfirm(false)
+      alert(`✓ Deleted ${res.deleted} transaction${res.deleted !== 1 ? 's' : ''}.`)
+    },
+    onError: (err: unknown) => { setBulkDeleteConfirm(false); alert('Bulk delete failed: ' + fmtApiError(err)) },
   })
 
   // Clear selection when filter/page changes
@@ -890,6 +906,15 @@ export default function Transactions() {
               Clear selection
             </button>
             <div className="flex items-center gap-2 ml-auto">
+              <button
+                onClick={() => setBulkDeleteConfirm(true)}
+                disabled={bulkDeleteMutation.isPending}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                Delete Selected
+              </button>
+              <span className="text-gray-300">|</span>
               <span className="text-xs text-blue-700 font-medium">Change type to:</span>
               <select
                 className="border border-blue-300 rounded px-2 py-1 text-sm bg-white"
@@ -1292,6 +1317,39 @@ export default function Transactions() {
                 className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
               >
                 {bulkUpdateMutation.isPending ? 'Updating…' : `Change ${selectedIds.size.toLocaleString()} transactions`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Bulk Delete Confirm Modal ── */}
+      {bulkDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="h-6 w-6 text-red-500 mt-0.5 shrink-0" />
+              <div>
+                <h3 className="font-semibold text-gray-900">Delete Selected Transactions</h3>
+                <p className="text-sm text-gray-600 mt-1">
+                  Permanently delete <strong>{selectedIds.size.toLocaleString()}</strong> selected transaction{selectedIds.size !== 1 ? 's' : ''}?
+                </p>
+                <p className="text-xs text-red-600 mt-2 font-medium">⚠️ This action cannot be undone.</p>
+              </div>
+            </div>
+            <div className="flex justify-end gap-3 pt-2">
+              <button
+                onClick={() => setBulkDeleteConfirm(false)}
+                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => bulkDeleteMutation.mutate(Array.from(selectedIds))}
+                disabled={bulkDeleteMutation.isPending}
+                className="px-4 py-2 text-sm bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50"
+              >
+                {bulkDeleteMutation.isPending ? 'Deleting…' : `Delete ${selectedIds.size.toLocaleString()} transactions`}
               </button>
             </div>
           </div>

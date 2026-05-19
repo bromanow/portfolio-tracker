@@ -204,6 +204,8 @@ export const deleteTransaction = (id: number) =>
   api.delete(`/transactions/${id}`).then(r => r.data)
 export const bulkUpdateTransactions = (ids: number[], transaction_type: string) =>
   api.post<{ updated: number }>('/transactions/bulk-update', { ids, transaction_type }).then(r => r.data)
+export const bulkDeleteTransactions = (ids: number[]) =>
+  api.post<{ deleted: number }>('/transactions/bulk-delete', { ids }).then(r => r.data)
 
 // ─── Market Prices ────────────────────────────────────────────────────────────
 export interface MarketPrice {

@@ -273,6 +273,57 @@ class BulkUpdateRequest(BaseModel):
     transaction_type: str
 
 
+class BulkDeleteRequest(BaseModel):
+    ids: list[int]
+
+
+@router.post("/bulk-delete")
+def bulk_delete_transactions(
+    data: BulkDeleteRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """Delete a batch of transactions by ID."""
+    if not data.ids:
+        raise HTTPException(status_code=400, detail="No IDs provided")
+    if len(data.ids) > 5000:
+        raise HTTPException(status_code=400, detail="Too many IDs (max 5000 per request)")
+    allowed = get_user_account_ids(current_user, db)
+    if allowed is not None:
+        allowed_set = set(allowed)
+        bad = (
+            db.query(Transaction.id)
+            .filter(Transaction.id.in_(data.ids), Transaction.account_id.notin_(allowed_set))
+            .first()
+        )
+        if bad:
+            raise HTTPException(status_code=403, detail="Access denied to one or more transactions")
+
+    id_list = data.ids
+
+    # 1. Null out raw_import_id to break the circular FK before deleting
+    db.query(Transaction).filter(Transaction.id.in_(id_list)).update(
+        {"raw_import_id": None}, synchronize_session=False
+    )
+    db.commit()
+
+    # 2. Delete linked raw_transactions rows
+    from app.models.imports import RawTransaction
+    db.query(RawTransaction).filter(RawTransaction.transaction_id.in_(id_list)).delete(
+        synchronize_session=False
+    )
+    db.commit()
+
+    # 3. Delete the transactions themselves
+    count = (
+        db.query(Transaction)
+        .filter(Transaction.id.in_(id_list))
+        .delete(synchronize_session=False)
+    )
+    db.commit()
+    return {"deleted": count}
+
+
 @router.post("/bulk-update")
 def bulk_update_transactions(data: BulkUpdateRequest, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Change the transaction_type for a batch of transactions by ID."""

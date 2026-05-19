@@ -24,6 +24,7 @@ from app.routers import auth as auth_router
 from app.routers import imports, transactions, accounts, securities, portfolio, admin
 from app.routers import prices as prices_router
 from app.routers import system as system_router
+from app.routers import ibkr as ibkr_router
 from app.routers import clients as clients_router
 from app.routers import scanner as scanner_router
 
@@ -240,6 +241,7 @@ app.include_router(portfolio.router,      dependencies=_auth)
 app.include_router(admin.router,          dependencies=_auth)
 app.include_router(prices_router.router,  dependencies=_auth)
 app.include_router(system_router.router,  dependencies=_auth)
+app.include_router(ibkr_router.router,    dependencies=_auth)
 app.include_router(clients_router.router, dependencies=_auth)
 app.include_router(scanner_router.router, dependencies=_auth)
 

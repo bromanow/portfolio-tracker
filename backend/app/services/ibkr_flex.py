@@ -262,7 +262,7 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
     """
     Parse a Flex Query XML response.
     Returns a list of per-account dicts:
-      { ibkr_account_id, trades: [...], cash: [...] }
+      { ibkr_account_id, trades, cash, option_events, corporate_actions }
     One entry per FlexStatement (= one per IBKR account in the query).
     """
     root = ET.fromstring(xml_str)
@@ -313,10 +313,51 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
                 "desc":     el.get("description", ""),
             })
 
+        # ── Option exercises, assignments, expirations ────────────────────────
+        # OptionEAE elements record the option side of the event.
+        # IBKR also generates stock Trade elements for exercises/assignments, so
+        # we only record the option position closure here.
+        option_events = []
+        for el in stmt.findall(".//OptionEAE"):
+            txn_type = el.get("transactionType", "").strip()
+            if txn_type not in ("Expiry", "Exercise", "Assignment"):
+                continue
+            option_events.append({
+                "event_type":  txn_type,            # "Expiry" | "Exercise" | "Assignment"
+                "symbol":      el.get("symbol", ""),
+                "description": el.get("description", ""),
+                "date":        el.get("date", ""),
+                "quantity":    el.get("quantity", ""),
+                "price":       el.get("tradePrice", ""),  # 0 for expiry
+                "proceeds":    el.get("proceeds", ""),
+                "currency":    el.get("currency", ""),
+            })
+
+        # ── Corporate actions (stock splits) ─────────────────────────────────
+        # type="FS" = forward split, "RS" = reverse split.
+        # Each split generates two CorporateAction rows: one positive (new shares)
+        # and one negative (old shares removed) — both are passed through so the
+        # importer can reconcile them.
+        corporate_actions = []
+        for el in stmt.findall(".//CorporateAction"):
+            ca_type = el.get("type", "").strip()
+            if ca_type not in ("FS", "RS"):
+                continue
+            corporate_actions.append({
+                "ca_type":     ca_type,             # "FS" | "RS"
+                "symbol":      el.get("symbol", ""),
+                "description": el.get("description", ""),
+                "date":        el.get("dateTime", el.get("reportDate", "")),
+                "quantity":    el.get("quantity", ""),
+                "currency":    el.get("currency", ""),
+            })
+
         results.append({
-            "ibkr_account_id": ibkr_account_id,
-            "trades":          trades,
-            "cash":            cash,
+            "ibkr_account_id":   ibkr_account_id,
+            "trades":            trades,
+            "cash":              cash,
+            "option_events":     option_events,
+            "corporate_actions": corporate_actions,
         })
 
     return results
@@ -500,6 +541,156 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
     return imported
 
 
+def _ext_ref_option_event(symbol: str, dt: str, event_type: str) -> str:
+    h = hashlib.md5(f"{symbol}|{dt}|{event_type}".encode()).hexdigest()[:12]
+    return f"ibkr-optevent-{h}"
+
+
+def _ext_ref_split(symbol: str, dt: str, qty: str) -> str:
+    h = hashlib.md5(f"{symbol}|{dt}|{qty}".encode()).hexdigest()[:12]
+    return f"ibkr-split-{h}"
+
+
+def import_option_events(db: Session, account_id: int, events: list[dict]) -> int:
+    """
+    Import option exercise / assignment / expiration events.
+
+    Each event closes an option position:
+      Expiry     → OPTION_EXPIRY   (option expired worthless, qty = contracts)
+      Exercise   → OPTION_EXERCISE (holder exercised; stock delivery via Trade)
+      Assignment → OPTION_ASSIGNMENT (writer assigned; stock delivery via Trade)
+
+    The corresponding stock-side transaction (share delivery) is already
+    captured by import_trades() from the Trade elements IBKR also generates.
+    """
+    from app.models.transactions import Transaction
+    from app.services.normalizer import get_or_create_security
+    from app.services.fx_service import get_rate
+
+    EVENT_TYPE_MAP = {
+        "Expiry":     "OPTION_EXPIRY",
+        "Exercise":   "OPTION_EXERCISE",
+        "Assignment": "OPTION_ASSIGNMENT",
+    }
+
+    imported = 0
+    for ev in events:
+        our_type = EVENT_TYPE_MAP.get(ev["event_type"])
+        if not our_type:
+            continue
+
+        ticker = ev["symbol"].upper().strip()
+        if not ticker:
+            continue
+
+        dt_str   = ev["date"][:8] if ev["date"] else ""   # YYYYMMDD
+        ext_ref  = _ext_ref_option_event(ticker, dt_str, ev["event_type"])
+        if _already_imported(db, ext_ref):
+            continue
+
+        event_date = _parse_ibkr_date(dt_str)
+        if not event_date:
+            logger.warning("Skipping option event %s %s — bad date", ticker, ev["event_type"])
+            continue
+
+        sec = get_or_create_security(db, ticker=ticker, currency=ev["currency"], is_option=True, exchange=None)
+        qty = _d(ev["quantity"])
+        if qty is not None:
+            qty = abs(qty)
+
+        price    = _d(ev["price"])     # 0.0 for expiry; exercise/assignment price otherwise
+        proceeds = _d(ev["proceeds"])
+        amount   = abs(proceeds) if proceeds is not None else (
+            (qty * price) if (qty and price) else None
+        )
+
+        currency   = ev["currency"] or "USD"
+        fx_to_cad  = get_rate(db, event_date, currency, "CAD") if currency != "CAD" else None
+        cad_amount = (amount * fx_to_cad).quantize(Decimal("0.01")) if (fx_to_cad and amount) else (
+            amount if currency == "CAD" else None
+        )
+
+        db.add(Transaction(
+            account_id=account_id,
+            security_id=sec.id,
+            transaction_date=event_date,
+            transaction_type=our_type,
+            quantity=qty,
+            price=price,
+            transaction_currency=currency,
+            transaction_amount=amount or Decimal("0"),
+            fx_rate_to_cad=fx_to_cad,
+            cad_amount=cad_amount,
+            raw_description=(ev["description"] or "")[:500] or None,
+            external_ref=ext_ref,
+        ))
+        imported += 1
+        logger.info("Option event: %s %s %s qty=%s", our_type, ticker, event_date, qty)
+
+    db.commit()
+    return imported
+
+
+def import_corporate_actions(db: Session, account_id: int, actions: list[dict]) -> int:
+    """
+    Import stock split / reverse split corporate actions.
+
+    IBKR reports each split as two CorporateAction rows:
+      - Negative quantity: old shares removed  → SPLIT (qty < 0)
+      - Positive quantity: new shares added    → SPLIT (qty > 0)
+
+    The ACB service handles SPLIT by adjusting the cost pool proportionally.
+    """
+    from app.models.transactions import Transaction
+    from app.services.normalizer import get_or_create_security
+    from app.services.fx_service import get_rate
+
+    imported = 0
+    for ca in actions:
+        ticker = ca["symbol"].upper().strip()
+        if not ticker:
+            continue
+
+        dt_str  = ca["date"][:8] if ca["date"] else ""
+        qty_str = ca["quantity"]
+        ext_ref = _ext_ref_split(ticker, dt_str, qty_str)
+        if _already_imported(db, ext_ref):
+            continue
+
+        ca_date = _parse_ibkr_date(dt_str)
+        if not ca_date:
+            logger.warning("Skipping corporate action %s — bad date", ticker)
+            continue
+
+        qty = _d(qty_str)
+        if qty is None:
+            continue
+
+        # Map to our transaction types — both legs use SPLIT; ACB service
+        # handles positive (new shares) and negative (old shares removed)
+        txn_type = "SPLIT"
+        currency = ca["currency"] or "CAD"
+        sec = get_or_create_security(db, ticker=ticker, currency=currency, exchange=None)
+
+        db.add(Transaction(
+            account_id=account_id,
+            security_id=sec.id,
+            transaction_date=ca_date,
+            transaction_type=txn_type,
+            quantity=abs(qty),
+            price=Decimal("0"),
+            transaction_currency=currency,
+            transaction_amount=Decimal("0"),
+            raw_description=(ca["description"] or "")[:500] or None,
+            external_ref=ext_ref,
+        ))
+        imported += 1
+        logger.info("Corporate action: %s %s %s qty=%s", txn_type, ticker, ca_date, qty)
+
+    db.commit()
+    return imported
+
+
 # ── High-level sync ───────────────────────────────────────────────────────────
 
 def sync_config(db: Session, config) -> dict:
@@ -517,9 +708,11 @@ def sync_config(db: Session, config) -> dict:
         xml_str = fetch_flex_report(config.token, config.query_id)
         statements = parse_flex_xml(xml_str)
 
-        total_trades = 0
-        total_cash   = 0
-        unmatched    = []
+        total_trades            = 0
+        total_cash              = 0
+        total_option_events     = 0
+        total_corporate_actions = 0
+        unmatched               = []
 
         for stmt in statements:
             ibkr_id = stmt["ibkr_account_id"]
@@ -530,14 +723,23 @@ def sync_config(db: Session, config) -> dict:
                 unmatched.append(ibkr_id)
                 continue
 
-            t = import_trades(db, account.id, stmt["trades"])
-            c = import_cash(db, account.id, stmt["cash"], ibkr_id)
-            logger.info("  %s (%s): %d trades + %d cash", ibkr_id, account.name, t, c)
+            t  = import_trades(db, account.id, stmt["trades"])
+            c  = import_cash(db, account.id, stmt["cash"], ibkr_id)
+            oe = import_option_events(db, account.id, stmt.get("option_events", []))
+            ca = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
+            logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions",
+                        ibkr_id, account.name, t, c, oe, ca)
             total_trades += t
             total_cash   += c
+            total_option_events     += oe
+            total_corporate_actions += ca
 
-        total = total_trades + total_cash
+        total = total_trades + total_cash + total_option_events + total_corporate_actions
         parts = [f"{total_trades} trade(s)", f"{total_cash} cash transaction(s)"]
+        if total_option_events:
+            parts.append(f"{total_option_events} option event(s)")
+        if total_corporate_actions:
+            parts.append(f"{total_corporate_actions} corporate action(s)")
         msg   = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
         if unmatched:
             msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"

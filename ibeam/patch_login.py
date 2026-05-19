@@ -26,8 +26,14 @@ try:
     _plog = _logging.getLogger('ibeam.patch')
     _TARGET = 'Mobile Authenticator App'
     try:
-        _WDW(driver, 8).until(_EC.presence_of_element_located((_By.TAG_NAME, 'select')))
-        _selects = driver.find_elements(_By.TAG_NAME, 'select')
+        # Wait until a <select> has at least one non-empty option (options load async)
+        def _select_has_options(d):
+            for _sel in d.find_elements(_By.TAG_NAME, 'select'):
+                if any(o.text.strip() for o in _sel.find_elements(_By.TAG_NAME, 'option')):
+                    return _sel
+            return False
+        _s = _WDW(driver, 10).until(_select_has_options)
+        _selects = [_s]
         _found = False
         for _s in _selects:
             _opts = _s.find_elements(_By.TAG_NAME, 'option')
@@ -76,7 +82,7 @@ if ANCHOR not in content:
     print('IBeam version may have changed — skipping patch (container will still start).')
     sys.exit(0)
 
-if '[patch] Post-submit: selected' in content:
+if '_select_has_options' in content:
     print('Patch already applied — skipping.')
     sys.exit(0)
 

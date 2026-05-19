@@ -36,7 +36,7 @@ services:
       # IBeam Client Portal Gateway — internal URL for live option data.
       # Leave empty to disable IBeam and fall back to yfinance.
       - key: IBEAM_BASE_URL
-        value: https://ibeam-7qd1.onrender.com
+        value: https://ibeam-lmhj:5000
 
   # ── IBeam — IBKR Client Portal Gateway (headless, containerised) ─────────────
   # Authenticates against IBKR and proxies the Client Portal REST API so the
@@ -47,17 +47,15 @@ services:
   # Built from a custom Dockerfile (ibeam/Dockerfile) that extends the stock
   # voyz/ibeam image with a login patch for IBKR's 2FA device-selection dropdown.
   #
-  # Public web service so the local dev backend can also reach IBeam directly.
-  # IBKR's own session auth means the exposed API is only useful with an active
-  # authenticated session — no additional auth layer needed.
-  - type: web
+  # Private service — only reachable within Render's internal network.
+  # IB Gateway serves HTTPS on port 5000 with a self-signed cert; the backend
+  # connects with verify=False via the private hostname ibeam-lmhj:5000.
+  - type: pserv
     name: ibeam
     runtime: image
     image:
       url: ghcr.io/bromanow/portfolio-tracker-ibeam:latest
     plan: standard            # 2 GB RAM / 1 CPU — required for IB Gateway + Chrome
-    port: 5000                # IBeam's internal HTTP port
-    healthCheckPath: /v1/api/iserver/auth/status
     envVars:
       - key: IBEAM_ACCOUNT
         sync: false           # set in Render dashboard: your IBKR API sub-username

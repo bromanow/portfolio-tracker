@@ -1,0 +1,44 @@
+name: Build & push custom IBeam image
+
+# Rebuilds the patched IBeam image whenever ibeam/ changes and pushes it to
+# GitHub Container Registry (GHCR).  Render's ibeam service pulls from GHCR
+# so a manual redeploy picks up the latest patched image automatically.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'ibeam/**'
+  workflow_dispatch:   # allow manual trigger from GitHub Actions UI
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE:    ghcr.io/bromanow/portfolio-tracker-ibeam
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write   # needed to push to GHCR
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v5
+        with:
+          context:    ./ibeam
+          file:       ./ibeam/Dockerfile
+          push:       true
+          tags: |
+            ${{ env.IMAGE }}:latest
+            ${{ env.IMAGE }}:${{ github.sha }}

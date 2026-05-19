@@ -196,16 +196,18 @@ def fetch_flex_report(token: str, query_id: str) -> str:
     """
     with httpx.Client(timeout=60, follow_redirects=True) as client:
 
-        # Step 1 — submit request (retry up to 3× for transient errors)
+        # Step 1 — submit request
+        # IBKR rate-limits Flex API to roughly one request per 10 minutes per token.
+        # Retry up to 5× with increasing back-off (30 s, 60 s, 90 s, 120 s).
         ref_code: Optional[str] = None
         url: str = FLEX_GET_URL
         last_err: str = ""
+        _submit_waits = [0, 30, 60, 90, 120]  # seconds before each attempt
 
-        for submit_attempt in range(3):
-            if submit_attempt:
-                wait = 15 * submit_attempt
+        for submit_attempt, wait in enumerate(_submit_waits):
+            if wait:
                 logger.info("Flex Query submit retry %d/%d in %ds — %s",
-                            submit_attempt, 3, wait, last_err)
+                            submit_attempt, len(_submit_waits) - 1, wait, last_err)
                 time.sleep(wait)
 
             resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
@@ -230,7 +232,8 @@ def fetch_flex_report(token: str, query_id: str) -> str:
 
         if not ref_code:
             raise RuntimeError(
-                f"Flex Query submit failed after retries: {last_err}"
+                "IBKR Flex API is rate-limiting this request — please wait a few minutes "
+                f"and try again. (IBKR error: {last_err})"
                 if last_err else "No ReferenceCode in Flex API response"
             )
 

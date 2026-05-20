@@ -89,6 +89,38 @@ def restart():
     return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}
 
 
+@router.post("/fix-ibkr-commission-amounts")
+def fix_ibkr_commission_amounts(db: Session = Depends(get_db)):
+    """
+    One-time migration: Flex-imported trades stored commission separately but
+    transaction_amount only captured tradeMoney (gross, pre-commission).
+    This subtracts the stored commission so transaction_amount reflects the
+    true net cash flow, matching what the CSV 'Net Amount' column reports.
+    Safe to run multiple times — only affects rows where commission != 0.
+    """
+    amt_result = db.execute(text("""
+        UPDATE transactions
+        SET transaction_amount = transaction_amount - commission
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND commission IS NOT NULL AND commission != 0
+          AND transaction_amount IS NOT NULL
+    """))
+    cad_result = db.execute(text("""
+        UPDATE transactions
+        SET cad_amount = cad_amount - commission
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND commission IS NOT NULL AND commission != 0
+          AND cad_amount IS NOT NULL
+          AND transaction_currency = 'CAD'
+    """))
+    db.commit()
+    return {
+        "transaction_amount_rows_fixed": amt_result.rowcount,
+        "cad_amount_rows_fixed": cad_result.rowcount,
+        "message": "Commission subtracted from Flex trade amounts.",
+    }
+
+
 @router.post("/fix-ibkr-flex-duplicates")
 def fix_ibkr_flex_duplicates(db: Session = Depends(get_db)):
     """

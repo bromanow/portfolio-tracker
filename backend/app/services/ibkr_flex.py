@@ -331,6 +331,7 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
                 "quantity":       el.get("quantity", ""),
                 "price":          el.get("tradePrice", ""),
                 "trade_money":    el.get("tradeMoney", ""),
+                "net_cash":       el.get("netCash", ""),
                 "commission":     el.get("ibCommission", ""),
                 "comm_currency":  el.get("ibCommissionCurrency", ""),
                 "currency":       el.get("currency", ""),
@@ -465,13 +466,17 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> tuple[int
         price       = _d(t["price"])
         commission  = _d(t["commission"])
         trade_money = _d(t["trade_money"])
+        net_cash    = _d(t["net_cash"])
 
         if qty is not None:
             qty = abs(qty)
         if commission is not None:
             commission = abs(commission)   # IBKR reports negative; store positive
-        # Keep IBKR's sign: negative for BUY (cash outflow), positive for SELL (cash inflow)
-        txn_amount = trade_money if trade_money is not None else None
+
+        # Use netCash (tradeMoney + ibCommission) as the cash amount so commissions
+        # are captured in the cash flow, matching what IBKR's CSV "Net Amount" column
+        # reports.  Fall back to tradeMoney if netCash is absent (older Flex templates).
+        txn_amount = net_cash if net_cash is not None else trade_money
 
         # Check for existing CSV-imported trade (no external_ref) — stamp and skip
         if _stamp_existing_trade(db, account_id, trade_date, txn_type, sec.id, qty, ext_ref):

@@ -327,25 +327,28 @@ export default function CashStatement() {
           </button>
         )}
 
-        {statement && statement.rows.length > 0 && (
-          <div className="flex items-center gap-2 ml-auto">
-            <button
-              onClick={() => exportCsv(statement)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Download className="h-4 w-4" />
-              CSV
-            </button>
-            <button
-              onClick={() => exportPdf(statement)}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <FileText className="h-4 w-4" />
-              PDF
-            </button>
-          </div>
-        )}
       </div>
+
+      {/* Export buttons — separate row so they're always visible */}
+      {statement && statement.rows.length > 0 && (
+        <div className="flex items-center justify-end gap-2">
+          <span className="text-xs text-gray-400 mr-1">Export:</span>
+          <button
+            onClick={() => exportCsv(statement)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            CSV
+          </button>
+          <button
+            onClick={() => exportPdf(statement)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+          >
+            <FileText className="h-4 w-4" />
+            PDF
+          </button>
+        </div>
+      )}
 
       {/* Summary cards */}
       {statement && (

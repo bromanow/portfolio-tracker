@@ -8,6 +8,7 @@ import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
   TrendingUp, DollarSign, Landmark, RefreshCw, X, PanelLeftClose, PanelLeftOpen,
   Activity, Calculator, CalendarRange, FileSearch, Globe, Play, Trash2, Database,
+  Download, FileText,
 } from 'lucide-react'
 import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
@@ -1328,6 +1329,104 @@ function PortfolioContinuityReport() {
 }
 
 // ── Cash Statement ────────────────────────────────────────────────────────────
+
+function cashExportCsv(rows: CashStatementRow[], accountName: string, currency: string, closingBalance: string) {
+  const headers = ['Date', 'Settlement Date', 'Account', 'Type', 'Ticker', 'Description', 'Debit', 'Credit', 'Balance']
+  const esc = (v: string | null | undefined) => {
+    const s = String(v ?? '')
+    return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+  }
+  const body = rows.map(r => {
+    const n = parseFloat(r.impact)
+    return [
+      r.date, r.settlement_date ?? '', r.account_name ?? accountName,
+      CASH_TYPE_LABELS[r.transaction_type] ?? r.transaction_type,
+      r.ticker ?? '', r.description ?? '',
+      n < 0 ? Math.abs(n).toFixed(2) : '',
+      n > 0 ? n.toFixed(2) : '',
+      r.balance != null ? parseFloat(r.balance).toFixed(2) : '',
+    ].map(esc).join(',')
+  })
+  const csv = [headers.join(','), ...body].join('\n')
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = `cash_statement_${accountName.replace(/[^a-z0-9]/gi, '_')}_${new Date().toISOString().slice(0, 10)}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function cashExportPdf(rows: CashStatementRow[], accountName: string, currency: string, closingBalance: string) {
+  const fmtN = (n: number) => Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  const totalCredits = rows.filter(r => parseFloat(r.impact) > 0).reduce((s, r) => s + parseFloat(r.impact), 0)
+  const totalDebits  = rows.filter(r => parseFloat(r.impact) < 0).reduce((s, r) => s + parseFloat(r.impact), 0)
+  const bodyRows = rows.map(r => {
+    const n = parseFloat(r.impact)
+    const label = CASH_TYPE_LABELS[r.transaction_type] ?? r.transaction_type
+    const desc = [r.ticker, r.description].filter(Boolean).join(' · ')
+    return `<tr>
+      <td>${r.date}</td>
+      <td>${r.account_name ?? ''}</td>
+      <td>${label}</td>
+      <td class="desc">${desc}</td>
+      <td class="num red">${n < 0 ? fmtN(n) : ''}</td>
+      <td class="num grn">${n > 0 ? fmtN(n) : ''}</td>
+      <td class="num bold">${r.balance != null ? fmtN(parseFloat(r.balance)) : '—'}</td>
+    </tr>`
+  }).join('')
+  const html = `<!DOCTYPE html><html><head><meta charset="utf-8"/>
+  <title>Cash Statement — ${accountName}</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:11px;color:#111;padding:24px 32px}
+    h1{font-size:18px;font-weight:700;margin-bottom:2px}
+    .meta{font-size:11px;color:#666;margin-bottom:16px}
+    .summary{display:flex;gap:32px;margin-bottom:16px;padding:10px 16px;background:#f8f9fa;border-radius:6px}
+    .summary div{display:flex;flex-direction:column;gap:2px}
+    .summary .lbl{font-size:10px;color:#888;text-transform:uppercase;letter-spacing:.05em}
+    .summary .val{font-size:14px;font-weight:700;font-family:monospace}
+    .red{color:#dc2626}.grn{color:#059669}
+    table{width:100%;border-collapse:collapse}
+    thead th{background:#f1f5f9;border-bottom:2px solid #cbd5e1;padding:5px 7px;text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:#475569}
+    th.num{text-align:right}
+    tbody tr:nth-child(even){background:#f8fafc}
+    td{padding:4px 7px;border-bottom:1px solid #e2e8f0;vertical-align:top}
+    td.num{text-align:right;font-family:monospace;white-space:nowrap}
+    td.bold{font-weight:600}
+    td.desc{max-width:200px;word-break:break-word}
+    tfoot td{padding:6px 7px;border-top:2px solid #94a3b8;font-weight:700;background:#f1f5f9}
+    tfoot td.num{text-align:right;font-family:monospace}
+    @media print{body{padding:10px 14px}@page{margin:14mm 10mm;size:A4 landscape}}
+  </style></head><body>
+  <h1>Cash Statement</h1>
+  <div class="meta">${accountName} &nbsp;·&nbsp; ${currency} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-CA')}</div>
+  <div class="summary">
+    <div><span class="lbl">Closing Balance</span><span class="val">${fmtN(parseFloat(closingBalance))}</span></div>
+    <div><span class="lbl">Total Credits</span><span class="val grn">${fmtN(totalCredits)}</span></div>
+    <div><span class="lbl">Total Debits</span><span class="val red">${fmtN(Math.abs(totalDebits))}</span></div>
+  </div>
+  <table>
+    <thead><tr>
+      <th>Date</th><th>Account</th><th>Type</th><th>Description</th>
+      <th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th>
+    </tr></thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot><tr>
+      <td colspan="4">Closing Balance</td>
+      <td class="num red">${totalDebits !== 0 ? fmtN(Math.abs(totalDebits)) : '—'}</td>
+      <td class="num grn">${totalCredits !== 0 ? fmtN(totalCredits) : '—'}</td>
+      <td class="num">${fmtN(parseFloat(closingBalance))}</td>
+    </tr></tfoot>
+  </table>
+  <script>window.onload=()=>window.print()<\/script>
+  </body></html>`
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+}
+
 const CASH_TYPE_LABELS: Record<string, string> = {
   CASH_OPENING: 'Opening Balance', BUY: 'Buy', SELL: 'Sell',
   DIVIDEND: 'Dividend', DRIP: 'DRIP', RETURN_OF_CAPITAL: 'Return of Capital',
@@ -1632,6 +1731,23 @@ function CashStatementReport() {
                   page={page} totalPages={totalPages} pageSize={pageSize}
                   totalRows={allRows.length} setPage={setPage} setPageSize={n => { setPageSize(n); setPage(1) }}
                 />
+
+                {/* Export buttons */}
+                <div className="flex items-center justify-end gap-2 pt-1">
+                  <span className="text-xs text-gray-400">Export:</span>
+                  <button
+                    onClick={() => cashExportCsv(allRows, statement.account_name, statement.currency, statement.closing_balance)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <Download className="h-4 w-4" /> CSV
+                  </button>
+                  <button
+                    onClick={() => cashExportPdf(allRows, statement.account_name, statement.currency, statement.closing_balance)}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+                  >
+                    <FileText className="h-4 w-4" /> PDF
+                  </button>
+                </div>
               </div>
             )}
         </>

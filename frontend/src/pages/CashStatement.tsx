@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw, TrendingUp, TrendingDown, Download, X } from 'lucide-react'
+import { RefreshCw, TrendingUp, TrendingDown, Download, FileText, X } from 'lucide-react'
 import { getAccounts, getCashStatement } from '../api/client'
 import type { Account, CashStatementRow } from '../api/client'
 
@@ -124,6 +124,95 @@ function exportCsv(statement: { account_name: string; currency: string; closing_
   URL.revokeObjectURL(url)
 }
 
+function exportPdf(statement: { account_name: string; currency: string; closing_balance: string; rows: CashStatementRow[] }) {
+  const totalDebits  = statement.rows.filter(r => parseFloat(r.impact) < 0).reduce((s, r) => s + parseFloat(r.impact), 0)
+  const totalCredits = statement.rows.filter(r => parseFloat(r.impact) > 0).reduce((s, r) => s + parseFloat(r.impact), 0)
+  const fmtNum = (n: number) => Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+
+  const bodyRows = statement.rows.map(r => {
+    const n = parseFloat(r.impact)
+    const debit  = n < 0 ? fmtNum(n) : ''
+    const credit = n > 0 ? fmtNum(n) : ''
+    const balance = r.balance != null ? fmtNum(parseFloat(r.balance)) : '—'
+    const label = TYPE_LABELS[r.transaction_type] ?? r.transaction_type
+    const desc = [r.ticker, r.description].filter(Boolean).join(' · ')
+    return `<tr>
+      <td>${r.date}</td>
+      <td>${label}</td>
+      <td class="desc">${desc}</td>
+      <td class="num red">${debit}</td>
+      <td class="num grn">${credit}</td>
+      <td class="num bold">${balance}</td>
+    </tr>`
+  }).join('')
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8"/>
+  <title>Cash Statement — ${statement.account_name}</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; font-size: 11px; color: #111; padding: 24px 32px; }
+    h1 { font-size: 18px; font-weight: 700; margin-bottom: 2px; }
+    .meta { font-size: 11px; color: #666; margin-bottom: 20px; }
+    .summary { display: flex; gap: 32px; margin-bottom: 20px; padding: 12px 16px; background: #f8f9fa; border-radius: 6px; }
+    .summary div { display: flex; flex-direction: column; gap: 2px; }
+    .summary .label { font-size: 10px; color: #888; text-transform: uppercase; letter-spacing: 0.05em; }
+    .summary .value { font-size: 14px; font-weight: 700; font-family: monospace; }
+    .red { color: #dc2626; }
+    .grn { color: #059669; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th { background: #f1f5f9; border-bottom: 2px solid #cbd5e1; padding: 6px 8px; text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: #475569; }
+    thead th.num { text-align: right; }
+    tbody tr:nth-child(even) { background: #f8fafc; }
+    tbody td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
+    td.num { text-align: right; font-family: monospace; white-space: nowrap; }
+    td.bold { font-weight: 600; }
+    td.desc { max-width: 220px; word-break: break-word; }
+    tfoot td { padding: 7px 8px; border-top: 2px solid #94a3b8; font-weight: 700; background: #f1f5f9; }
+    tfoot td.num { text-align: right; font-family: monospace; }
+    @media print {
+      body { padding: 12px 16px; }
+      @page { margin: 16mm 12mm; size: A4 portrait; }
+    }
+  </style>
+</head>
+<body>
+  <h1>Cash Statement</h1>
+  <div class="meta">${statement.account_name} &nbsp;·&nbsp; ${statement.currency} &nbsp;·&nbsp; Generated ${new Date().toLocaleDateString('en-CA')}</div>
+  <div class="summary">
+    <div><span class="label">Closing Balance</span><span class="value">${fmtNum(parseFloat(statement.closing_balance))}</span></div>
+    <div><span class="label">Total Credits</span><span class="value grn">${fmtNum(totalCredits)}</span></div>
+    <div><span class="label">Total Debits</span><span class="value red">${fmtNum(Math.abs(totalDebits))}</span></div>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Date</th><th>Type</th><th>Description</th>
+        <th class="num">Debit</th><th class="num">Credit</th><th class="num">Balance</th>
+      </tr>
+    </thead>
+    <tbody>${bodyRows}</tbody>
+    <tfoot>
+      <tr>
+        <td colspan="3">Closing Balance</td>
+        <td class="num red">${totalDebits !== 0 ? fmtNum(totalDebits) : '—'}</td>
+        <td class="num grn">${totalCredits !== 0 ? fmtNum(totalCredits) : '—'}</td>
+        <td class="num">${fmtNum(parseFloat(statement.closing_balance))}</td>
+      </tr>
+    </tfoot>
+  </table>
+  <script>window.onload = () => { window.print(); }<\/script>
+</body>
+</html>`
+
+  const win = window.open('', '_blank')
+  if (!win) return
+  win.document.write(html)
+  win.document.close()
+}
+
 export default function CashStatement() {
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [accountId, setAccountId] = useState<number | null>(null)
@@ -239,13 +328,22 @@ export default function CashStatement() {
         )}
 
         {statement && statement.rows.length > 0 && (
-          <button
-            onClick={() => exportCsv(statement)}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors ml-auto"
-          >
-            <Download className="h-4 w-4" />
-            Export CSV
-          </button>
+          <div className="flex items-center gap-2 ml-auto">
+            <button
+              onClick={() => exportCsv(statement)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <Download className="h-4 w-4" />
+              CSV
+            </button>
+            <button
+              onClick={() => exportPdf(statement)}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-lg border border-gray-300 text-sm text-gray-600 hover:bg-gray-50 transition-colors"
+            >
+              <FileText className="h-4 w-4" />
+              PDF
+            </button>
+          </div>
         )}
       </div>
 

@@ -444,8 +444,14 @@ def _sub_account_impact(txn, ccy: str, base_ccy: str):
         if txn.transaction_amount is not None:
             return txn.transaction_amount
         return txn.account_currency_amount if txn.account_currency_amount is not None else Decimal("0")
-    # Cross-currency — account_currency_amount is FX-converted to account base currency
-    return txn.account_currency_amount if txn.account_currency_amount is not None else Decimal("0")
+    # Cross-currency — account_currency_amount is FX-converted to account base currency.
+    # IBKR Flex imports never set account_currency_amount; fall back to cad_amount which
+    # is already converted to CAD at import time.
+    if txn.account_currency_amount is not None:
+        return txn.account_currency_amount
+    if txn.cad_amount is not None:
+        return txn.cad_amount
+    return Decimal("0")
 
 
 @router.get("/cash-statement")

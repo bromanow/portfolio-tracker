@@ -426,4 +426,39 @@ def check_duplicate(db: Session, txn_dict: dict) -> bool:
         )
         if q_null.first():
             return True
+
+    # Check for an existing IBKR Flex record for the same trade.
+    # Flex imports use BUY/SELL even for options; CSV imports use OPTION_BUY/OPTION_SELL.
+    # Amounts differ slightly (Flex uses tradeMoney; CSV uses IBKR's pre-converted Net Amount).
+    # SELL quantities may be negative in CSV but positive in Flex, so compare ABS values.
+    # Security records may differ between CSV and Flex for the same ticker (two different
+    # security rows with the same ticker), so join through the securities table on ticker.
+    from sqlalchemy import text as sqtext
+    txn_type = txn_dict.get("transaction_type", "")
+    base_type = txn_type.replace("OPTION_", "")  # OPTION_BUY → BUY, OPTION_SELL → SELL
+    if base_type in ("BUY", "SELL") and security_id and qty is not None:
+        abs_qty = float(abs(qty))
+        # Get the ticker for the incoming security
+        from app.models.master import Security
+        sec = db.get(Security, security_id)
+        if sec:
+            row = db.execute(sqtext("""
+                SELECT t.id FROM transactions t
+                JOIN securities s ON s.id = t.security_id
+                WHERE t.account_id = :acct
+                  AND t.transaction_date = :dt
+                  AND s.ticker = :ticker
+                  AND ABS(COALESCE(t.quantity, 0)) BETWEEN :qty_lo AND :qty_hi
+                  AND t.external_ref LIKE 'ibkr-trade-%'
+                LIMIT 1
+            """), {
+                "acct": txn_dict["account_id"],
+                "dt": txn_dict["transaction_date"],
+                "ticker": sec.ticker,
+                "qty_lo": abs_qty - 0.01,
+                "qty_hi": abs_qty + 0.01,
+            }).fetchone()
+            if row:
+                return True
+
     return False

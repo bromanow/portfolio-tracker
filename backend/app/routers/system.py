@@ -89,6 +89,41 @@ def restart():
     return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}
 
 
+@router.post("/fix-ibkr-flex-duplicates")
+def fix_ibkr_flex_duplicates(db: Session = Depends(get_db)):
+    """
+    Remove Flex-imported trade records that duplicate an earlier CSV import of the same trade.
+
+    Matches on: account + date + security ticker + abs(quantity).
+    The same trade can appear in both CSV and Flex because:
+      1. CSV uses OPTION_BUY/OPTION_SELL; Flex uses BUY/SELL
+      2. Security records may differ (different security_id rows for the same ticker)
+      3. check_duplicate() couldn't catch them before this fix
+
+    Safe to run multiple times — only deletes Flex records (external_ref LIKE 'ibkr-trade-%')
+    that have a CSV counterpart (external_ref IS NULL) for the same account/date/ticker/qty.
+    """
+    result = db.execute(text("""
+        DELETE FROM transactions
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND id IN (
+            SELECT flex.id
+            FROM transactions flex
+            JOIN securities sf ON sf.id = flex.security_id
+            JOIN transactions csv ON csv.account_id = flex.account_id
+                AND csv.transaction_date = flex.transaction_date
+                AND csv.external_ref IS NULL
+            JOIN securities sc ON sc.id = csv.security_id AND sc.ticker = sf.ticker
+            WHERE ABS(ABS(COALESCE(csv.quantity, 0)) - ABS(COALESCE(flex.quantity, 0))) < 0.01
+          )
+    """))
+    db.commit()
+    return {
+        "flex_duplicates_deleted": result.rowcount,
+        "message": "Flex duplicate trade records removed.",
+    }
+
+
 @router.post("/fix-ibkr-buy-signs")
 def fix_ibkr_buy_signs(db: Session = Depends(get_db)):
     """

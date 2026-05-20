@@ -434,14 +434,19 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> tuple[int
 
         asset_category = t.get("asset_category", "STK")
 
-        # Skip FX conversion trades — IBKR reports currency conversions as CASH trades
-        # with symbols like "USD.CAD".  These are not securities to hold.
-        if asset_category == "CASH":
-            logger.debug("Skipping FX trade %s (assetCategory=CASH)", t["trade_id"])
-            continue
-
         ticker = t["symbol"].upper().strip()
         if not ticker:
+            continue
+
+        # Skip FX conversion trades — IBKR reports currency conversions as CASH trades
+        # (assetCategory="CASH") or occasionally with other categories but a currency-pair
+        # symbol like "USD.CAD", "EUR.USD".  These are purely FX settlements; the cash
+        # impact is already captured in the net CAD amount of the underlying trade.
+        import re as _re
+        _fx_pair = _re.compile(r'^[A-Z]{3}\.[A-Z]{3}$')
+        if asset_category == "CASH" or _fx_pair.match(ticker):
+            logger.debug("Skipping FX trade %s (assetCategory=%s, symbol=%s)",
+                         t["trade_id"], asset_category, ticker)
             continue
 
         # Options: IBKR uses assetCategory="OPT".  We must:

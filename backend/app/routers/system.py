@@ -89,6 +89,30 @@ def restart():
     return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}
 
 
+@router.post("/fix-ibkr-fx-trades")
+def fix_ibkr_fx_trades(db: Session = Depends(get_db)):
+    """
+    Remove Flex-imported FX conversion trade records (e.g. USD.CAD) that were
+    incorrectly stored as cash transactions.  These represent IBKR's internal
+    currency settlement and are already captured in the net CAD amount of the
+    underlying trade.  Idempotent.
+    """
+    result = db.execute(text("""
+        DELETE FROM transactions
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND id IN (
+            SELECT t.id FROM transactions t
+            JOIN securities s ON s.id = t.security_id
+            WHERE s.ticker ~ '^[A-Z]{3}\\.[A-Z]{3}$'
+          )
+    """))
+    db.commit()
+    return {
+        "fx_trades_deleted": result.rowcount,
+        "message": "FX conversion trade records removed.",
+    }
+
+
 @router.post("/fix-ibkr-commission-amounts")
 def fix_ibkr_commission_amounts(db: Session = Depends(get_db)):
     """

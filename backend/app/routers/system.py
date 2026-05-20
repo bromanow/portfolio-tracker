@@ -120,14 +120,19 @@ def fix_ibkr_commission_amounts(db: Session = Depends(get_db)):
     transaction_amount only captured tradeMoney (gross, pre-commission).
     This subtracts the stored commission so transaction_amount reflects the
     true net cash flow, matching what the CSV 'Net Amount' column reports.
-    Safe to run multiple times — only affects rows where commission != 0.
+
+    Idempotent: uses commission_applied flag to prevent double-application.
+    Records without the flag that have commission != 0 will be updated and
+    flagged; already-flagged records are skipped.
     """
     amt_result = db.execute(text("""
         UPDATE transactions
-        SET transaction_amount = transaction_amount - commission
+        SET transaction_amount = transaction_amount - commission,
+            notes = COALESCE(notes || ' ', '') || '[commission_applied]'
         WHERE external_ref LIKE 'ibkr-trade-%'
           AND commission IS NOT NULL AND commission != 0
           AND transaction_amount IS NOT NULL
+          AND (notes IS NULL OR notes NOT LIKE '%[commission_applied]%')
     """))
     cad_result = db.execute(text("""
         UPDATE transactions
@@ -136,12 +141,52 @@ def fix_ibkr_commission_amounts(db: Session = Depends(get_db)):
           AND commission IS NOT NULL AND commission != 0
           AND cad_amount IS NOT NULL
           AND transaction_currency = 'CAD'
+          AND (notes IS NULL OR notes NOT LIKE '%[commission_applied]%')
     """))
     db.commit()
     return {
         "transaction_amount_rows_fixed": amt_result.rowcount,
         "cad_amount_rows_fixed": cad_result.rowcount,
-        "message": "Commission subtracted from Flex trade amounts.",
+        "message": "Commission subtracted from Flex trade amounts (idempotent via notes flag).",
+    }
+
+
+@router.post("/undo-ibkr-commission-double")
+def undo_ibkr_commission_double(db: Session = Depends(get_db)):
+    """
+    Emergency fix: if fix-ibkr-commission-amounts was run twice (before the
+    idempotency flag was introduced), this adds back one commission to undo
+    the extra subtraction, then marks all Flex records as [commission_applied]
+    so the fix endpoint won't subtract again.
+
+    Use when: balance dropped unexpectedly after running commission fix twice.
+
+    Assumes all Flex records with commission != 0 had the commission subtracted
+    exactly 2 times (once in each of two separate fix-ibkr-commission-amounts calls).
+    Adding back 1× commission returns them to correct netCash.
+    Do NOT run fix-ibkr-commission-amounts after this.
+    """
+    amt_result = db.execute(text("""
+        UPDATE transactions
+        SET transaction_amount = transaction_amount + commission,
+            notes = TRIM(COALESCE(notes, '') || ' [commission_applied]')
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND commission IS NOT NULL AND commission != 0
+          AND transaction_amount IS NOT NULL
+    """))
+    cad_result = db.execute(text("""
+        UPDATE transactions
+        SET cad_amount = cad_amount + commission
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND commission IS NOT NULL AND commission != 0
+          AND cad_amount IS NOT NULL
+          AND transaction_currency = 'CAD'
+    """))
+    db.commit()
+    return {
+        "transaction_amount_rows_reverted": amt_result.rowcount,
+        "cad_amount_rows_reverted": cad_result.rowcount,
+        "message": "One commission subtraction reversed and records flagged. Do NOT run fix-ibkr-commission-amounts again.",
     }
 
 

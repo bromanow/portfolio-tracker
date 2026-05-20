@@ -470,7 +470,8 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> tuple[int
             qty = abs(qty)
         if commission is not None:
             commission = abs(commission)   # IBKR reports negative; store positive
-        txn_amount = abs(trade_money) if trade_money is not None else None
+        # Keep IBKR's sign: negative for BUY (cash outflow), positive for SELL (cash inflow)
+        txn_amount = trade_money if trade_money is not None else None
 
         # Check for existing CSV-imported trade (no external_ref) — stamp and skip
         if _stamp_existing_trade(db, account_id, trade_date, txn_type, sec.id, qty, ext_ref):

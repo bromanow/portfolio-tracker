@@ -87,3 +87,33 @@ def db_optimize(db: Session = Depends(get_db)):
 def restart():
     """No-op on cloud deployments — use the Render dashboard 'Manual Deploy' instead."""
     return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}
+
+
+@router.post("/fix-ibkr-buy-signs")
+def fix_ibkr_buy_signs(db: Session = Depends(get_db)):
+    """
+    One-time migration: IBKR-imported BUY/OPTION_BUY transactions were stored with
+    positive transaction_amount and cad_amount due to abs() being applied.  This endpoint
+    negates those values so cash outflows are correctly represented as negative amounts.
+    Safe to run multiple times — only affects rows where the amount is still positive.
+    """
+    amt_result = db.execute(text("""
+        UPDATE transactions
+        SET transaction_amount = -transaction_amount
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND transaction_type IN ('BUY', 'OPTION_BUY')
+          AND transaction_amount > 0
+    """))
+    cad_result = db.execute(text("""
+        UPDATE transactions
+        SET cad_amount = -cad_amount
+        WHERE external_ref LIKE 'ibkr-trade-%'
+          AND transaction_type IN ('BUY', 'OPTION_BUY')
+          AND cad_amount > 0
+    """))
+    db.commit()
+    return {
+        "transaction_amount_rows_fixed": amt_result.rowcount,
+        "cad_amount_rows_fixed": cad_result.rowcount,
+        "message": "IBKR BUY/OPTION_BUY sign fix applied.",
+    }

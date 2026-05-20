@@ -100,14 +100,13 @@ def parse_ibkr_history_csv(content: str) -> list[dict]:
 
     for line in lines:
         if line.startswith("Transaction History,Header,"):
-            # Extract columns after the prefix
-            parts = line.split(",")
+            # Use csv.reader so quoted fields with commas are handled correctly
+            parts = next(csv.reader(io.StringIO(line)))
             # Skip "Transaction History" and "Header"
-            header_cols = parts[2:]
-            header_cols = [h.strip() for h in header_cols]
+            header_cols = [h.strip() for h in parts[2:]]
         elif line.startswith("Transaction History,Data,"):
-            parts = line.split(",", 2 + len(header_cols) - 1) if header_cols else line.split(",")
-            # Remove first two prefix fields
+            parts = next(csv.reader(io.StringIO(line)))
+            # Remove first two prefix fields ("Transaction History", "Data")
             if len(parts) > 2:
                 data_rows_raw.append(parts[2:])
 

@@ -253,3 +253,38 @@ def fix_ibkr_buy_signs(db: Session = Depends(get_db)):
         "cad_amount_rows_fixed": cad_result.rowcount,
         "message": "IBKR BUY/OPTION_BUY sign fix applied.",
     }
+
+
+@router.post("/fix-ibkr-csv-forex-rows")
+def fix_ibkr_csv_forex_rows(db: Session = Depends(get_db)):
+    """
+    Remove transactions that were incorrectly imported from IBKR Transaction History
+    CSV files due to a CSV parsing bug: when a 'Forex Trade Component' row had a
+    thousands-separator comma in the description (e.g. "Net Amount in Base from
+    Forex Trade: 8,372.65 USD.CAD"), the naive split(",") broke the field boundaries,
+    shifting all columns. The row was imported as type OTHER with the ticker set to
+    'FOREX TRADE COMPONENT' (or 'USD.CAD') instead of being skipped.
+
+    Idempotent — only deletes CSV-imported rows (external_ref IS NULL) whose
+    security ticker matches the broken pattern. The parser is now fixed so
+    re-importing the CSV will correctly skip these rows.
+    """
+    result = db.execute(text("""
+        DELETE FROM transactions
+        WHERE external_ref IS NULL
+          AND transaction_type = 'OTHER'
+          AND id IN (
+            SELECT t.id FROM transactions t
+            JOIN securities s ON s.id = t.security_id
+            WHERE UPPER(s.ticker) IN ('FOREX TRADE COMPONENT', 'USD.CAD', 'CAD.USD')
+               OR UPPER(s.ticker) LIKE '%FOREX%TRADE%'
+          )
+    """))
+    db.commit()
+    return {
+        "bad_forex_rows_deleted": result.rowcount,
+        "message": (
+            "Incorrectly-parsed Forex Trade Component rows removed. "
+            "Re-import the IBKR Transaction History CSV to get correct data."
+        ),
+    }

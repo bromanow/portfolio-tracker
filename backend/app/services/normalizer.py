@@ -356,6 +356,18 @@ def normalize_ibkr_row(db: Session, row: dict, account: Account) -> Optional[dic
             "fx_rate_to_account": fx,
             "fx_rate_to_cad": Decimal("1"),
         }
+        # If AutoFX Forex Trade Components are attached, prefer their summed net_amount
+        # as the CAD settlement — it reflects the actual AutoFX execution rate rather
+        # than IBKR's internal daily closing rate used in the CSV Net Amount field.
+        forex_components = row.get("forex_components", [])
+        if forex_components and account_currency == "CAD":
+            fx_cad_total = sum(
+                fc["net_amount"] for fc in forex_components
+                if fc.get("net_amount") is not None
+            )
+            if fx_cad_total:
+                amounts["account_currency_amount"] = fx_cad_total
+                amounts["cad_amount"] = fx_cad_total
     else:
         amounts = compute_currency_amounts(
             db,

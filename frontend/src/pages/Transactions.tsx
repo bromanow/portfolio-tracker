@@ -1261,15 +1261,8 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                     return
                   }
 
-                  // Single transaction path
+                  // Single transaction path — let backend infer cad_amount / account_currency_amount
                   const payload = { ...newTxn }
-                  const txCcy = (payload.transaction_currency as string | undefined) || 'CAD'
-                  if (txCcy === 'CAD' && payload.transaction_amount) {
-                    payload.cad_amount = payload.transaction_amount
-                    payload.account_currency_amount = payload.transaction_amount
-                  } else if (!payload.account_currency_amount) {
-                    payload.account_currency_amount = payload.cad_amount
-                  }
                   createMutation.mutate(payload)
                 }}
                 disabled={createMutation.isPending || createPairMutation.isPending || !newTxn.account_id || !newTxn.transaction_date || !newTxn.transaction_type}
@@ -1391,15 +1384,11 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
               <button
                 onClick={() => {
                   const f = cleanNumericFields(editing.fields)
-                  const txCcy = (f.transaction_currency as string | undefined) || 'CAD'
-                  // For CAD transactions cad_amount always equals transaction_amount —
-                  // always sync so editing the amount in the form propagates to cad_amount
-                  if (txCcy === 'CAD' && f.transaction_amount) {
-                    f.cad_amount = f.transaction_amount
-                    f.account_currency_amount = f.transaction_amount
-                  } else if (!f.account_currency_amount) {
-                    f.account_currency_amount = f.cad_amount
-                  }
+                  // Strip cad_amount so the backend infers it from transaction_amount.
+                  // The backend always recalculates cad_amount for CAD transactions when
+                  // cad_amount is absent from the payload (line 422 of transactions.py).
+                  delete f.cad_amount
+                  delete f.account_currency_amount
                   updateMutation.mutate({ id: editing.tx.id, fields: f })
                 }}
                 disabled={updateMutation.isPending}

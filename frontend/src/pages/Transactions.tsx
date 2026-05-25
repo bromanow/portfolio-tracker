@@ -482,7 +482,7 @@ async function exportTransactionsCsv(params: {
   setTimeout(() => URL.revokeObjectURL(url), 100)
 }
 
-export default function Transactions() {
+export default function Transactions({ showHeader = true }: { showHeader?: boolean }) {
   const qc = useQueryClient()
   const [txTypes, setTxTypes] = useState<string[]>([])
   const [ticker, setTicker] = useState<string>('')
@@ -754,7 +754,7 @@ export default function Transactions() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+        {showHeader && <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>}
         <div className="flex items-center gap-2">
           <button
             onClick={async () => {

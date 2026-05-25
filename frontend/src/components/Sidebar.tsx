@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { NavLink, useSearchParams } from 'react-router-dom'
 import {
   LayoutDashboard,
-  Upload,
   List,
   Settings,
   BarChart2,
@@ -23,9 +22,8 @@ const nav = [
   { to: '/performance',  label: 'Performance',  icon: TrendingUp },
   { to: '/scanner',      label: 'Scanner',      icon: ScanSearch },
   { to: '/options',      label: 'Options',      icon: Layers },
-  { to: '/transactions', label: 'Transactions', icon: List },
   { to: '/prices',       label: 'Prices',       icon: DollarSign },
-  { to: '/import',       label: 'Import',       icon: Upload },
+  { to: '/import',       label: 'Transactions', icon: List },
   { to: '/reports',      label: 'Reports',      icon: BarChart2 },
   { to: '/admin',        label: 'Admin',        icon: Settings },
 ]

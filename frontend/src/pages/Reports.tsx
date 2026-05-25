@@ -8,7 +8,7 @@ import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
   TrendingUp, DollarSign, Landmark, RefreshCw, X, PanelLeftClose, PanelLeftOpen,
   Activity, Calculator, CalendarRange, FileSearch, Globe, Play, Trash2, Database,
-  Download, FileText,
+  Download, FileText, List,
 } from 'lucide-react'
 import {
   getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
@@ -17,6 +17,7 @@ import {
   computeSnapshots, purgeSnapshots, refreshSnapshotViews, getSnapshotViewStatus,
 } from '../api/client'
 import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
+import Transactions from './Transactions'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
@@ -2605,7 +2606,11 @@ function FxRatesReport() {
   )
 }
 
-type ReportId = 'realized-gains' | 'income' | 'cash-statement' | 'portfolio-value' | 'continuity' | 'monthly-returns' | 'return-detail' | 'fx-rates'
+function LedgerReport() {
+  return <Transactions showHeader={false} />
+}
+
+type ReportId = 'realized-gains' | 'income' | 'cash-statement' | 'portfolio-value' | 'continuity' | 'monthly-returns' | 'return-detail' | 'fx-rates' | 'ledger'
 
 const REPORT_DEFS: {
   id: ReportId
@@ -2669,6 +2674,13 @@ const REPORT_DEFS: {
     description: 'USD/CAD exchange rates used for portfolio calculations',
     icon: Globe,
     component: FxRatesReport,
+  },
+  {
+    id: 'ledger',
+    label: 'Transaction Ledger',
+    description: 'Browse, filter, create, edit, and export all transactions',
+    icon: List,
+    component: LedgerReport,
   },
 ]
 

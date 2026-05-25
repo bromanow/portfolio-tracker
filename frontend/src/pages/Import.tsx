@@ -6,12 +6,13 @@ import {
   commitImport, rejectImport, deleteImport, deleteAllImports, updateRawRow, remapImportTypes,
   checkImportDuplicates,
   getMyFlexConfig, syncMyFlexAccounts, uploadFlexXml, saveMyFlexConfig, deleteMyFlexConfig,
+  createTransaction,
 } from '../api/client'
-import type { ImportBatch, Account, Security, IBKRFlexConfig, FlexConfigIn, ImportDetail } from '../api/client'
+import type { ImportBatch, Account, Security, IBKRFlexConfig, FlexConfigIn, ImportDetail, Transaction } from '../api/client'
 import {
   Upload, CheckCircle, XCircle, AlertCircle, Eye, Trash2,
   AlertTriangle, Edit2, X, SkipForward, RotateCcw, RefreshCw,
-  ChevronDown, ChevronRight, Database, Loader2,
+  ChevronDown, ChevronRight, Database, Loader2, Plus,
 } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -531,13 +532,233 @@ function IBKRFlexPanel() {
   )
 }
 
+// ── Manual Entry panel ────────────────────────────────────────────────────────
+
+const MANUAL_TX_TYPES = [
+  'FX_ADJUSTMENT', 'ADJUSTMENT', 'OPENING_BALANCE', 'CASH_OPENING',
+  'DEPOSIT', 'WITHDRAWAL', 'INTEREST', 'FEE', 'DIVIDEND',
+  'BUY', 'SELL', 'TRANSFER_IN', 'TRANSFER_OUT', 'JOURNAL',
+  'OPTION_BUY', 'OPTION_SELL', 'OPTION_EXPIRY', 'OPTION_ASSIGNMENT', 'OPTION_EXERCISE',
+  'OTHER',
+]
+
+function ManualEntryPanel() {
+  const qc = useQueryClient()
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: securities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities() })
+
+  const today = new Date().toISOString().slice(0, 10)
+  const [form, setForm] = useState<Partial<Transaction>>({
+    transaction_date: today,
+    transaction_type: 'FX_ADJUSTMENT',
+    transaction_currency: 'CAD',
+  })
+  const [tickerInput, setTickerInput] = useState('')
+  const [success, setSuccess] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  const createMutation = useMutation({
+    mutationFn: (data: Partial<Transaction>) => createTransaction(data),
+    onSuccess: (tx: Transaction) => {
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['portfolio-summary'] })
+      setSuccess(`Created transaction #${tx.id} (${tx.transaction_type} on ${tx.transaction_date})`)
+      setError(null)
+      setForm({ transaction_date: today, transaction_type: 'FX_ADJUSTMENT', transaction_currency: 'CAD' })
+      setTickerInput('')
+    },
+    onError: (err: { response?: { data?: { detail?: unknown } }; message?: string }) => {
+      const detail = err?.response?.data?.detail
+      setError(Array.isArray(detail)
+        ? detail.map((d: { msg?: string }) => d.msg ?? '').join('; ')
+        : typeof detail === 'string' ? detail : err?.message ?? 'Create failed')
+      setSuccess(null)
+    },
+  })
+
+  const currency = (form.transaction_currency as string) || 'CAD'
+  const isCAD = currency === 'CAD'
+
+  const handleSubmit = () => {
+    const payload = { ...form }
+    if (isCAD && payload.transaction_amount && !payload.cad_amount) {
+      payload.cad_amount = payload.transaction_amount
+    }
+    if (isCAD && !payload.account_currency_amount) {
+      payload.account_currency_amount = payload.transaction_amount
+    }
+    createMutation.mutate(payload)
+  }
+
+  return (
+    <div className="space-y-5">
+      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+        <p className="font-semibold mb-1">When to use Manual Entry</p>
+        <ul className="list-disc ml-4 space-y-0.5 text-xs">
+          <li>FX translation adjustments (e.g. year-end unrealized FX position not in Flex XML)</li>
+          <li>Opening balances when starting to track an existing account</li>
+          <li>One-off corrections or adjustments not captured by CSV or Flex import</li>
+        </ul>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+        <h2 className="font-semibold text-gray-800">Create Manual Transaction</h2>
+
+        <div className="grid grid-cols-2 gap-3 text-sm">
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Account <span className="text-red-400">*</span></label>
+            <select
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={form.account_id || ''}
+              onChange={e => setForm(f => ({ ...f, account_id: e.target.value ? Number(e.target.value) : undefined }))}
+            >
+              <option value="">Select account…</option>
+              {(accounts as Account[]).map(a => (
+                <option key={a.id} value={a.id}>{a.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-400">*</span></label>
+            <input
+              type="date"
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={(form.transaction_date as string) || ''}
+              onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Type <span className="text-red-400">*</span></label>
+            <select
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={(form.transaction_type as string) || ''}
+              onChange={e => setForm(f => ({ ...f, transaction_type: e.target.value }))}
+            >
+              {MANUAL_TX_TYPES.map(t => (
+                <option key={t} value={t}>{t.replace(/_/g, ' ')}</option>
+              ))}
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Ticker (optional)</label>
+            <input
+              list="manual-tickers"
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full uppercase"
+              value={tickerInput}
+              onChange={e => {
+                const v = e.target.value.toUpperCase()
+                setTickerInput(v)
+                const sec = (securities as Security[]).find(s => s.ticker.toUpperCase() === v)
+                setForm(f => ({ ...f, security_id: sec?.id ?? undefined }))
+              }}
+              placeholder="e.g. ENB"
+            />
+            <datalist id="manual-tickers">
+              {(securities as Security[]).map(s => (
+                <option key={s.id} value={s.ticker}>{s.name || s.ticker}</option>
+              ))}
+            </datalist>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Currency</label>
+            <select
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={currency}
+              onChange={e => setForm(f => ({ ...f, transaction_currency: e.target.value }))}
+            >
+              <option>CAD</option>
+              <option>USD</option>
+            </select>
+          </div>
+
+          <div>
+            <label className="block text-xs text-gray-500 mb-1">Amount ({currency}) <span className="text-red-400">*</span></label>
+            <input
+              type="number"
+              step="0.01"
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={(form.transaction_amount as string) || ''}
+              onChange={e => setForm(f => ({ ...f, transaction_amount: e.target.value || undefined }))}
+              placeholder="e.g. -5.17"
+            />
+            <p className="text-xs text-gray-400 mt-0.5">Use negative values for losses / outflows</p>
+          </div>
+
+          {!isCAD && (
+            <>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">FX Rate (USD → CAD)</label>
+                <input
+                  type="number"
+                  step="0.000001"
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                  value={(form.fx_rate_to_cad as string) || ''}
+                  onChange={e => setForm(f => ({ ...f, fx_rate_to_cad: e.target.value || undefined, fx_rate_to_account: e.target.value || undefined }))}
+                />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 mb-1">CAD Amount</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                  value={(form.cad_amount as string) || ''}
+                  onChange={e => setForm(f => ({ ...f, cad_amount: e.target.value || undefined }))}
+                />
+              </div>
+            </>
+          )}
+
+          <div className="col-span-2">
+            <label className="block text-xs text-gray-500 mb-1">Description</label>
+            <input
+              type="text"
+              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              value={(form.raw_description as string) || ''}
+              onChange={e => setForm(f => ({ ...f, raw_description: e.target.value || undefined }))}
+              placeholder="e.g. FX Translation Gain/Loss 2025-01-01 to 2025-12-31"
+            />
+          </div>
+        </div>
+
+        {error && (
+          <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700">
+            {error}
+          </div>
+        )}
+        {success && (
+          <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-700">
+            ✓ {success}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <button
+            onClick={handleSubmit}
+            disabled={createMutation.isPending || !form.account_id || !form.transaction_date || !form.transaction_type || !form.transaction_amount}
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {createMutation.isPending ? 'Creating…' : 'Create Transaction'}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Import page ──────────────────────────────────────────────────────────
 
 export default function Import() {
   const qc = useQueryClient()
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'csv' | 'flex'>('csv')
+  const [activeTab, setActiveTab] = useState<'csv' | 'flex' | 'manual'>('csv')
 
   // CSV tab state
   const [selectedBrokerageId, setSelectedBrokerageId] = useState<number | undefined>()
@@ -734,7 +955,7 @@ export default function Import() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Import Transactions</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
         {activeTab === 'csv' && (
           <button
             onClick={() => { setDialogError(null); setDialog({ type: 'delete-all' }) }}
@@ -747,7 +968,7 @@ export default function Import() {
 
       {/* ── Tabs ── */}
       <div className="flex border-b border-gray-200">
-        {(['csv', 'flex'] as const).map(tab => (
+        {(['csv', 'flex', 'manual'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -757,7 +978,7 @@ export default function Import() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'csv' ? 'CSV Upload' : 'IBKR Flex Query'}
+            {tab === 'csv' ? 'CSV Upload' : tab === 'flex' ? 'IBKR Flex Query' : 'Manual Entry'}
           </button>
         ))}
       </div>
@@ -1120,6 +1341,9 @@ export default function Import() {
 
       {/* ── IBKR Flex tab ── */}
       {activeTab === 'flex' && <IBKRFlexPanel />}
+
+      {/* ── Manual Entry tab ── */}
+      {activeTab === 'manual' && <ManualEntryPanel />}
 
       {/* ── Row Edit Modal ── */}
       {editRow && editFields && (

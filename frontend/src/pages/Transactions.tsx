@@ -482,7 +482,7 @@ async function exportTransactionsCsv(params: {
   setTimeout(() => URL.revokeObjectURL(url), 100)
 }
 
-export default function Transactions({ showHeader = true }: { showHeader?: boolean }) {
+export default function Transactions({ showHeader = true, accountIds: accountIdsOverride }: { showHeader?: boolean; accountIds?: string }) {
   const qc = useQueryClient()
   const [txTypes, setTxTypes] = useState<string[]>([])
   const [ticker, setTicker] = useState<string>('')
@@ -527,8 +527,8 @@ export default function Transactions({ showHeader = true }: { showHeader?: boole
 
   const { histAccountIds, hasFilter: hasAccountFilter, clearFilters, effectiveAccountIds } = usePortfolioFilters(accounts)
 
-  // Always scope to the user's accessible accounts
-  const accountIdsParam = histAccountIds
+  // When embedded in another page (e.g. Reports), the parent can override account scoping
+  const accountIdsParam = accountIdsOverride !== undefined ? accountIdsOverride : histAccountIds
 
   // Reset page when account filter changes
   useEffect(() => { setPage(1) }, [accountIdsParam])

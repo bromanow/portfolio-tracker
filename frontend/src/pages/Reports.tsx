@@ -2607,7 +2607,70 @@ function FxRatesReport() {
 }
 
 function LedgerReport() {
-  return <Transactions showHeader={false} />
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const accounts = rawAccounts as Account[]
+
+  const [brokerageFilter, setBrokerageFilter] = useState('')
+  const [accountId, setAccountId] = useState('')
+
+  const brokerages = useMemo(
+    () => [...new Set(accounts.map(a => a.brokerage_name).filter(Boolean))].sort(),
+    [accounts],
+  )
+
+  const filteredAccounts = useMemo(
+    () => brokerageFilter ? accounts.filter(a => a.brokerage_name === brokerageFilter) : accounts,
+    [accounts, brokerageFilter],
+  )
+
+  const accountIdsParam = useMemo(() => {
+    if (accountId) return accountId
+    if (brokerageFilter) return filteredAccounts.map(a => a.id).join(',')
+    return undefined
+  }, [accountId, brokerageFilter, filteredAccounts])
+
+  const handleBrokerageChange = (b: string) => {
+    setBrokerageFilter(b)
+    setAccountId('')
+  }
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 whitespace-nowrap">Brokerage:</label>
+          <select
+            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            value={brokerageFilter}
+            onChange={e => handleBrokerageChange(e.target.value)}
+          >
+            <option value="">All</option>
+            {brokerages.map(b => <option key={b} value={b}>{b}</option>)}
+          </select>
+        </div>
+        <div className="flex items-center gap-2">
+          <label className="text-sm text-gray-600 whitespace-nowrap">Account:</label>
+          <select
+            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            value={accountId}
+            onChange={e => setAccountId(e.target.value)}
+          >
+            <option value="">All{brokerageFilter ? ' (filtered)' : ''}</option>
+            {filteredAccounts.map(a => <option key={a.id} value={String(a.id)}>{a.name}</option>)}
+          </select>
+        </div>
+        {(brokerageFilter || accountId) && (
+          <button
+            onClick={() => { setBrokerageFilter(''); setAccountId('') }}
+            className="text-xs text-gray-400 hover:text-gray-600"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+      <Transactions showHeader={false} accountIds={accountIdsParam} />
+    </div>
+  )
 }
 
 type ReportId = 'realized-gains' | 'income' | 'cash-statement' | 'portfolio-value' | 'continuity' | 'monthly-returns' | 'return-detail' | 'fx-rates' | 'ledger'

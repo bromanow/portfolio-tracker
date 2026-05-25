@@ -1264,15 +1264,11 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   // Single transaction path
                   const payload = { ...newTxn }
                   const txCcy = (payload.transaction_currency as string | undefined) || 'CAD'
-                  if (!payload.account_currency_amount) {
-                    if (txCcy === 'CAD') {
-                      payload.account_currency_amount = payload.transaction_amount
-                    } else {
-                      payload.account_currency_amount = payload.cad_amount
-                    }
-                  }
-                  if (txCcy === 'CAD' && !payload.cad_amount && payload.transaction_amount) {
+                  if (txCcy === 'CAD' && payload.transaction_amount) {
                     payload.cad_amount = payload.transaction_amount
+                    payload.account_currency_amount = payload.transaction_amount
+                  } else if (!payload.account_currency_amount) {
+                    payload.account_currency_amount = payload.cad_amount
                   }
                   createMutation.mutate(payload)
                 }}
@@ -1396,17 +1392,13 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                 onClick={() => {
                   const f = cleanNumericFields(editing.fields)
                   const txCcy = (f.transaction_currency as string | undefined) || 'CAD'
-                  // Ensure account_currency_amount is set
-                  if (!f.account_currency_amount) {
-                    if (txCcy === 'CAD') {
-                      f.account_currency_amount = f.transaction_amount
-                    } else {
-                      f.account_currency_amount = f.cad_amount
-                    }
-                  }
-                  // For CAD transactions cad_amount = transaction_amount
-                  if (txCcy === 'CAD' && !f.cad_amount && f.transaction_amount) {
+                  // For CAD transactions cad_amount always equals transaction_amount —
+                  // always sync so editing the amount in the form propagates to cad_amount
+                  if (txCcy === 'CAD' && f.transaction_amount) {
                     f.cad_amount = f.transaction_amount
+                    f.account_currency_amount = f.transaction_amount
+                  } else if (!f.account_currency_amount) {
+                    f.account_currency_amount = f.cad_amount
                   }
                   updateMutation.mutate({ id: editing.tx.id, fields: f })
                 }}

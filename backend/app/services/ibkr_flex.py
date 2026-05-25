@@ -661,9 +661,9 @@ def reconcile_cash_position(
     # One reconcile entry per period date (not per account)
     ext_ref = f"ibkr-cash-reconcile-{ibkr_account_id}-{to_date}"
 
-    # System cash: all transactions except this period's reconcile entry.
-    # CAD trades have cad_amount=NULL (no FX lookup needed), so fall back to
-    # transaction_amount for CAD-denominated rows.
+    # System cash: sum of all transactions up to toDate, excluding this period's
+    # reconcile entry (which is about to be replaced).
+    # CAD trades have cad_amount=NULL, so fall back to transaction_amount for them.
     system_cash = db.execute(text("""
         SELECT COALESCE(SUM(
             CASE
@@ -674,8 +674,9 @@ def reconcile_cash_position(
         ), 0)
         FROM transactions
         WHERE account_id = :acct
+          AND transaction_date <= :to_date
           AND (external_ref IS NULL OR external_ref != :ref)
-    """), {"acct": account_id, "ref": ext_ref}).scalar()
+    """), {"acct": account_id, "ref": ext_ref, "to_date": to_date}).scalar()
 
     delta = ibkr_cash - Decimal(str(system_cash))
 

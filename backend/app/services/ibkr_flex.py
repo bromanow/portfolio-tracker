@@ -667,7 +667,12 @@ def reconcile_cash_position(
         db.query(Transaction)
         .filter(
             Transaction.account_id == account_id,
-            Transaction.transaction_date <= to_date,
+            # Use settlement_date when set (mirrors IBKR endingCash which only counts
+            # settled cash). Falls back to transaction_date when settlement_date is NULL.
+            or_(
+                sqland_(Transaction.settlement_date.isnot(None), Transaction.settlement_date <= to_date),
+                sqland_(Transaction.settlement_date.is_(None),   Transaction.transaction_date <= to_date),
+            ),
             or_(
                 Transaction.external_ref.is_(None),
                 Transaction.external_ref != ext_ref,

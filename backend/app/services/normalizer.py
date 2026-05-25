@@ -16,22 +16,36 @@ from app.services import fx_service
 logger = logging.getLogger(__name__)
 
 
+# Canadian Alternative Trading Systems — execution venues only, not listing exchanges.
+# Any trade reported on one of these should be attributed to TSX (the listing exchange).
+_CA_ATS_TO_TSX = {
+    "ALPHA", "LYNX", "CXA", "OMEGA", "PURE", "MATCH", "INST", "ICAP",
+}
+
+def _normalize_exchange(exchange: Optional[str], currency: Optional[str]) -> Optional[str]:
+    """Map Canadian ATS venues to TSX so every Canadian equity uses one canonical exchange."""
+    if not exchange:
+        return exchange
+    if exchange.upper() in _CA_ATS_TO_TSX:
+        return "TSX"
+    return exchange
+
+
 def get_or_create_security(db: Session, ticker: str, is_option: bool = False,
                              currency: Optional[str] = None, exchange: Optional[str] = None) -> Security:
-    """Find or create a security record."""
-    # Normalize ticker
+    """Find or create a security record.
+
+    Exchange is ignored during lookup — the same stock executes on multiple
+    venues (TSX, ALPHA, LYNX for Canadian equities) and must resolve to one
+    canonical record. Canadian ATS venues are normalised to TSX before storage.
+    """
     ticker = ticker.upper().strip() if ticker else "UNKNOWN"
+    exchange = _normalize_exchange(exchange, currency)
 
-    # Try to find by ticker (and exchange if provided)
-    query = db.query(Security).filter(Security.ticker == ticker)
-    if exchange:
-        query = query.filter(Security.exchange == exchange)
-    existing = query.first()
-
+    existing = db.query(Security).filter(Security.ticker == ticker).first()
     if existing:
         return existing
 
-    # Create new
     asset_class = "OPTION" if is_option else "EQUITY"
     sec = Security(
         ticker=ticker,

@@ -634,18 +634,14 @@ def reconcile_cash_position(
     Upsert one FX_ADJUSTMENT per XML period so the running system cash balance
     matches IBKR's reported ending cash (CashReport BaseCurrency endingCash).
 
-    One entry per toDate:  external_ref = ibkr-cash-reconcile-{accountId}-{toDate}
-    Re-importing the same XML replaces that date's entry and leaves all others.
-
-    System cash is computed as the sum of all transaction amounts, handling the
-    fact that CAD trades store transaction_amount but not cad_amount:
-      CASE WHEN cad_amount IS NOT NULL THEN cad_amount
-           WHEN transaction_currency = 'CAD' THEN transaction_amount
-           ELSE 0   -- non-CAD without an FX rate; shouldn't happen after a full import
-      END
+    System cash is computed using the same logic as the Cash Statement report:
+    skip non-cash transaction types, then apply _sub_account_impact routing
+    (same-currency → transaction_amount; cross-currency → account_currency_amount
+    or cad_amount fallback).
     """
     from app.models.transactions import Transaction
-    from sqlalchemy import text
+    from app.models.master import Account
+    from sqlalchemy import or_, and_ as sqland_, text
 
     if cash_position is None:
         return 0, []
@@ -661,24 +657,54 @@ def reconcile_cash_position(
     # One reconcile entry per period date (not per account)
     ext_ref = f"ibkr-cash-reconcile-{ibkr_account_id}-{to_date}"
 
-    # System cash: sum of all transactions up to toDate, excluding this period's
-    # reconcile entry (which is about to be replaced).
-    # CAD trades have cad_amount=NULL, so fall back to transaction_amount for them.
-    system_cash = db.execute(text("""
-        SELECT COALESCE(SUM(
-            CASE
-                WHEN cad_amount IS NOT NULL        THEN cad_amount
-                WHEN transaction_currency = 'CAD'  THEN transaction_amount
-                ELSE 0
-            END
-        ), 0)
-        FROM transactions
-        WHERE account_id = :acct
-          AND transaction_date <= :to_date
-          AND (external_ref IS NULL OR external_ref != :ref)
-    """), {"acct": account_id, "ref": ext_ref, "to_date": to_date}).scalar()
+    acct = db.get(Account, account_id)
+    base_ccy = (acct.base_currency or "CAD").upper() if acct else "CAD"
 
-    delta = ibkr_cash - Decimal(str(system_cash))
+    # Mirror Cash Statement skip logic exactly
+    SKIP_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL"}
+
+    txns = (
+        db.query(Transaction)
+        .filter(
+            Transaction.account_id == account_id,
+            Transaction.transaction_date <= to_date,
+            or_(
+                Transaction.external_ref.is_(None),
+                Transaction.external_ref != ext_ref,
+            ),
+            or_(
+                Transaction.transaction_type.notin_(SKIP_TYPES),
+                sqland_(
+                    Transaction.transaction_type == "DRIP",
+                    or_(
+                        Transaction.account_currency_amount < 0,
+                        sqland_(
+                            Transaction.account_currency_amount > 0,
+                            or_(Transaction.quantity == 0, Transaction.quantity.is_(None)),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        .all()
+    )
+
+    # Mirror _sub_account_impact routing from portfolio.py
+    system_cash = Decimal("0")
+    for txn in txns:
+        tx_ccy = (txn.transaction_currency or base_ccy).upper()
+        if tx_ccy == base_ccy:
+            if txn.transaction_amount is not None:
+                system_cash += txn.transaction_amount
+            elif txn.account_currency_amount is not None:
+                system_cash += txn.account_currency_amount
+        else:
+            if txn.account_currency_amount is not None:
+                system_cash += txn.account_currency_amount
+            elif txn.cad_amount is not None:
+                system_cash += txn.cad_amount
+
+    delta = ibkr_cash - system_cash
 
     # Replace this period's reconcile entry (idempotent re-import)
     db.execute(

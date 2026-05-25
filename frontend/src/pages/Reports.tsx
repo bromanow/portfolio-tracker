@@ -2609,9 +2609,17 @@ function FxRatesReport() {
 function LedgerReport() {
   const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
   const accounts = rawAccounts as Account[]
+  const queryClient = useQueryClient()
 
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [accountId, setAccountId] = useState('')
+  const [refreshing, setRefreshing] = useState(false)
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await queryClient.invalidateQueries({ queryKey: ['transactions'] })
+    setRefreshing(false)
+  }
 
   const brokerages = useMemo(
     () => [...new Set(accounts.map(a => a.brokerage_name).filter(Boolean))].sort(),
@@ -2667,6 +2675,14 @@ function LedgerReport() {
             Clear
           </button>
         )}
+        <button
+          onClick={handleRefresh}
+          disabled={refreshing}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-600 disabled:opacity-50"
+        >
+          <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
+          Refresh
+        </button>
       </div>
       <Transactions showHeader={false} accountIds={accountIdsParam} />
     </div>

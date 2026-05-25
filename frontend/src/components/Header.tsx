@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
-  getPriceStatus, refreshAllPrices, getPriceJob, getAccounts,
+  getPriceStatus, refreshAllPrices, getPriceJob, getAccounts, getScannerMeta,
 } from '../api/client'
 import type { Account } from '../api/client'
 import { RefreshCw, Clock, X } from 'lucide-react'
@@ -63,6 +63,15 @@ export default function Header() {
 
   const displayFrom = timeRange === 'CUSTOM' ? customFrom : (fromDate ?? '')
   const displayTo   = timeRange === 'CUSTOM' ? customTo   : toDate
+
+  // IBeam connection status
+  const { data: scannerMeta } = useQuery({
+    queryKey: ['scanner-meta'],
+    queryFn: getScannerMeta,
+    refetchInterval: 60_000,
+    staleTime: 30_000,
+  })
+  const ibeamConnected = scannerMeta?.ibeam_available === true
 
   // Price refresh
   const { data: status } = useQuery({
@@ -179,6 +188,19 @@ export default function Header() {
 
       {/* ── Right: price status + refresh button ── */}
       <div className="flex items-center gap-3 ml-auto shrink-0">
+
+        {/* IBeam status */}
+        <div
+          title={ibeamConnected ? 'IBeam connected — live data available' : 'IBeam not connected'}
+          className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${
+            ibeamConnected
+              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+              : 'bg-gray-50 text-gray-400 border-gray-200'
+          }`}
+        >
+          <span className={`h-1.5 w-1.5 rounded-full ${ibeamConnected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+          IBKR
+        </div>
 
         {/* Price age */}
         <div className={`flex items-center gap-1.5 text-xs ${colorClass}`}>

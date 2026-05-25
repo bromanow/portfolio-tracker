@@ -115,7 +115,6 @@ def parse_ibkr_history_csv(content: str) -> list[dict]:
         return []
 
     rows = []
-    pending_forex_components: list[dict] = []
 
     for i, raw_fields in enumerate(data_rows_raw):
         # Pad or trim to match header length
@@ -155,18 +154,33 @@ def parse_ibkr_history_csv(content: str) -> list[dict]:
         elif is_option and canonical_type == "SELL":
             canonical_type = "OPTION_SELL"
 
-        # Handle Forex Trade Component rows: link to parent, skip standalone
+        # Forex Trade Component rows represent the realized FX gain/loss from AutoFX
+        # settlement (e.g. +3.05 CAD when IBKR converts USD trade proceeds to CAD).
+        # Emit them as FX_ADJUSTMENT cash transactions when the net_amount is non-trivial.
+        # Rows with zero or negligible amounts (commission leg, fractional residual) are skipped.
         if trans_type == "Forex Trade Component":
-            # Store and link to previous row
-            fx_row = {
-                "account": account,
-                "date": trans_date,
-                "symbol": symbol,
-                "description": description,
+            if net_amount is None or abs(net_amount) < Decimal("0.01"):
+                continue
+            rows.append({
+                "row_number": i + 1,
+                "raw_description": description,
+                "raw_symbol": symbol,
+                "raw_activity": trans_type,
+                "transaction_date": trans_date,
+                "settlement_date": None,
+                "transaction_type": "FX_ADJUSTMENT",
+                "account_name": account,
+                "ticker": None,
+                "is_option": False,
+                "option_info": None,
+                "quantity": None,
+                "price": price,
+                "transaction_currency": price_currency,
+                "gross_amount": None,
+                "commission": None,
                 "net_amount": net_amount,
-                "price_currency": price_currency,
-            }
-            pending_forex_components.append(fx_row)
+                "brokerage": "IBKR",
+            })
             continue
 
         parsed = {
@@ -187,20 +201,8 @@ def parse_ibkr_history_csv(content: str) -> list[dict]:
             "gross_amount": gross_amount,
             "commission": commission,
             "net_amount": net_amount,
-            "forex_components": [],  # Will be populated below
             "brokerage": "IBKR",
         }
-
-        # Attach any pending forex components for same account+date
-        attached = []
-        remaining = []
-        for fx in pending_forex_components:
-            if fx["account"] == account and fx["date"] == trans_date:
-                attached.append(fx)
-            else:
-                remaining.append(fx)
-        parsed["forex_components"] = attached
-        pending_forex_components = remaining
 
         rows.append(parsed)
 

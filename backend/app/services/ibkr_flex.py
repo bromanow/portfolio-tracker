@@ -391,12 +391,33 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
                 "currency":    el.get("currency", ""),
             })
 
+        # ── FX Translation Gain/Loss from CashReport ─────────────────────────
+        # CashReportCurrency with levelOfDetail="BaseCurrency" gives the
+        # cumulative YTD FX translation gain/loss in the account's base currency.
+        # This captures realized FX gains from AutoFX conversions that are not
+        # otherwise visible in the Trade or CashTransaction elements.
+        fx_translation = []
+        for el in stmt.findall(".//CashReportCurrency"):
+            if el.get("levelOfDetail") != "BaseCurrency":
+                continue
+            amount_str = el.get("fxTranslationGainLoss", "0")
+            amount = _d(amount_str)
+            if not amount or amount == Decimal("0"):
+                continue
+            fx_translation.append({
+                "fxTranslationGainLoss": amount_str,
+                "fromDate": el.get("fromDate", ""),
+                "toDate":   el.get("toDate", ""),
+                "currency": el.get("currency", "CAD"),
+            })
+
         results.append({
             "ibkr_account_id":   ibkr_account_id,
             "trades":            trades,
             "cash":              cash,
             "option_events":     option_events,
             "corporate_actions": corporate_actions,
+            "fx_translation":    fx_translation,
         })
 
     return results
@@ -608,6 +629,66 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
     return imported, details
 
 
+def import_fx_translation(
+    db: Session, account_id: int, ibkr_account_id: str, fx_rows: list[dict]
+) -> tuple[int, list[dict]]:
+    """
+    Import FX translation gain/loss from CashReport as a single FX_ADJUSTMENT
+    per year per account. The CashReport value is cumulative (YTD), so each
+    import replaces the previous record for that year rather than appending.
+    """
+    from app.models.transactions import Transaction
+    from sqlalchemy import text
+
+    imported = 0
+    details: list[dict] = []
+
+    for row in fx_rows:
+        amount = _d(row.get("fxTranslationGainLoss"))
+        if not amount or amount == Decimal("0"):
+            continue
+
+        from_date = _parse_ibkr_date(row.get("fromDate", ""))
+        to_date   = _parse_ibkr_date(row.get("toDate", ""))
+        if not from_date or not to_date:
+            continue
+
+        year    = from_date.year
+        ext_ref = f"ibkr-fx-translation-{ibkr_account_id}-{year}"
+
+        # Replace on every import — value is cumulative YTD so always overwrite
+        db.execute(
+            text("DELETE FROM transactions WHERE external_ref = :ref AND account_id = :acct"),
+            {"ref": ext_ref, "acct": account_id},
+        )
+
+        db.add(Transaction(
+            account_id=account_id,
+            security_id=None,
+            transaction_date=to_date,
+            transaction_type="FX_ADJUSTMENT",
+            transaction_currency="CAD",
+            transaction_amount=amount,
+            cad_amount=amount,
+            raw_description=f"FX Translation Gain/Loss {from_date} to {to_date}",
+            external_ref=ext_ref,
+        ))
+        details.append({
+            "date":     to_date.isoformat(),
+            "type":     "FX_ADJUSTMENT",
+            "ticker":   "",
+            "qty":      "",
+            "amount":   str(amount),
+            "currency": "CAD",
+        })
+        imported += 1
+        logger.info("FX translation %s %s: %s CAD (%s to %s)",
+                    ibkr_account_id, year, amount, from_date, to_date)
+
+    db.commit()
+    return imported, details
+
+
 def _ext_ref_option_event(symbol: str, dt: str, event_type: str) -> str:
     h = hashlib.md5(f"{symbol}|{dt}|{event_type}".encode()).hexdigest()[:12]
     return f"ibkr-optevent-{h}"
@@ -809,11 +890,12 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
         c,  c_rows  = import_cash(db, account.id, stmt["cash"], ibkr_id)
         oe, oe_rows = import_option_events(db, account.id, stmt.get("option_events", []))
         ca, ca_rows = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
-        logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions",
-                    ibkr_id, account.name, t, c, oe, ca)
+        fx, fx_rows = import_fx_translation(db, account.id, ibkr_id, stmt.get("fx_translation", []))
+        logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions + %d fx translation",
+                    ibkr_id, account.name, t, c, oe, ca, fx)
 
         acct_name = account.name
-        for row in (t_rows + c_rows + oe_rows + ca_rows):
+        for row in (t_rows + c_rows + oe_rows + ca_rows + fx_rows):
             all_details.append({**row, "account": acct_name})
 
         total_trades            += t
@@ -830,6 +912,8 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
         parts.append(f"{total_option_events} option event(s)")
     if total_corporate_actions:
         parts.append(f"{total_corporate_actions} corporate action(s)")
+    if fx:
+        parts.append(f"{fx} FX translation adjustment(s)")
     msg = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
     if unmatched:
         msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"

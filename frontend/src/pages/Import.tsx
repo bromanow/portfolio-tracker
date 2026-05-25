@@ -386,7 +386,7 @@ function IBKRFlexPanel() {
               <h2 className="font-semibold text-gray-800">Sync Transactions</h2>
               <p className="text-xs text-gray-500">
                 Pulls Year-to-Date trades, cash, option events and corporate actions from IBKR.
-                Duplicate transactions are automatically skipped.
+                Use "Check Duplicates" in the preview to flag potential duplicates before committing.
               </p>
               {myConfig.last_sync_at && (
                 <p className="text-xs text-gray-400">

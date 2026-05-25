@@ -407,13 +407,6 @@ def commit_import(batch_id: int, db: Session = Depends(get_db)):
                 skipped += 1
                 continue
 
-            # Check for duplicates — skip unless force_import flag is set on the row
-            if check_duplicate(db, txn_dict) and not row.get("force_import"):
-                rt.status = "SKIPPED"
-                rt.error_message = "Duplicate transaction"
-                skipped += 1
-                continue
-
             # Create transaction
             txn = Transaction(**txn_dict, raw_import_id=rt.id)
             db.add(txn)

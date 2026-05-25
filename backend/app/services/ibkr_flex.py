@@ -391,25 +391,23 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
                 "currency":    el.get("currency", ""),
             })
 
-        # ── FX Translation Gain/Loss from CashReport ─────────────────────────
+        # ── Cash position from CashReport ────────────────────────────────────
         # CashReportCurrency with levelOfDetail="BaseCurrency" gives the
-        # cumulative YTD FX translation gain/loss in the account's base currency.
-        # This captures realized FX gains from AutoFX conversions that are not
-        # otherwise visible in the Trade or CashTransaction elements.
-        fx_translation = []
+        # total ending cash in the account's base currency (CAD), already
+        # accounting for all FX conversions, AutoFX, translation gains, etc.
+        # We use this to reconcile our system cash balance after import.
+        cash_position = None
         for el in stmt.findall(".//CashReportCurrency"):
             if el.get("levelOfDetail") != "BaseCurrency":
                 continue
-            amount_str = el.get("fxTranslationGainLoss", "0")
-            amount = _d(amount_str)
-            if not amount or amount == Decimal("0"):
-                continue
-            fx_translation.append({
-                "fxTranslationGainLoss": amount_str,
-                "fromDate": el.get("fromDate", ""),
-                "toDate":   el.get("toDate", ""),
-                "currency": el.get("currency", "CAD"),
-            })
+            ending_cash = _d(el.get("endingCash", ""))
+            to_date_str = el.get("toDate", "")
+            if ending_cash is not None and to_date_str:
+                cash_position = {
+                    "endingCash": str(ending_cash),
+                    "toDate":     to_date_str,
+                }
+            break  # only one BaseCurrency row per statement
 
         results.append({
             "ibkr_account_id":   ibkr_account_id,
@@ -417,7 +415,7 @@ def parse_flex_xml(xml_str: str) -> list[dict]:
             "cash":              cash,
             "option_events":     option_events,
             "corporate_actions": corporate_actions,
-            "fx_translation":    fx_translation,
+            "cash_position":     cash_position,
         })
 
     return results
@@ -629,90 +627,96 @@ def import_cash(db: Session, account_id: int, cash_rows: list[dict], ibkr_accoun
     return imported, details
 
 
-def import_fx_translation(
-    db: Session, account_id: int, ibkr_account_id: str, fx_rows: list[dict]
+def reconcile_cash_position(
+    db: Session, account_id: int, ibkr_account_id: str, cash_position: Optional[dict]
 ) -> tuple[int, list[dict]]:
     """
-    Import FX translation gain/loss from CashReport as incremental FX_ADJUSTMENT
-    transactions so that month-end cash balances remain correct across imports.
+    Upsert one FX_ADJUSTMENT per account so that the system cash balance
+    exactly matches the IBKR-reported ending cash (from CashReport BaseCurrency).
 
-    CashReport provides a cumulative YTD total, not a per-period amount.  We
-    derive the incremental delta by subtracting the sum of all previously
-    recorded FX translation adjustments for the same account+year.
+    Algorithm:
+      system_cash = SUM(cad_amount) for all non-reconcile transactions
+      delta       = ibkr_ending_cash - system_cash
+      → upsert a single FX_ADJUSTMENT(external_ref=ibkr-cash-reconcile-{id})
 
-    Each import is keyed by external_ref=ibkr-fx-translation-{accountId}-{toDate}
-    so re-running on the same date replaces that day's record while leaving
-    earlier records intact.  This gives a correct running total at every date.
+    If the existing reconcile entry is dated *after* this XML's toDate the
+    import is skipped — importing old monthly XMLs won't overwrite a more
+    recent reconcile produced by a newer XML.
     """
     from app.models.transactions import Transaction
     from sqlalchemy import text
 
-    imported = 0
-    details: list[dict] = []
+    if cash_position is None:
+        return 0, []
 
-    for row in fx_rows:
-        ytd_amount = _d(row.get("fxTranslationGainLoss"))
-        if ytd_amount is None:
-            continue
+    ibkr_cash = _d(cash_position.get("endingCash"))
+    if ibkr_cash is None:
+        return 0, []
 
-        from_date = _parse_ibkr_date(row.get("fromDate", ""))
-        to_date   = _parse_ibkr_date(row.get("toDate", ""))
-        if not from_date or not to_date:
-            continue
+    to_date = _parse_ibkr_date(cash_position.get("toDate", ""))
+    if not to_date:
+        return 0, []
 
-        year    = from_date.year
-        ext_ref = f"ibkr-fx-translation-{ibkr_account_id}-{to_date}"
+    ext_ref = f"ibkr-cash-reconcile-{ibkr_account_id}"
 
-        # Sum all previously recorded FX translation adjustments for this
-        # account + year, excluding any record for today's toDate (which we
-        # are about to replace).
-        prior_sum = db.execute(text("""
-            SELECT COALESCE(SUM(transaction_amount), 0)
-            FROM transactions
-            WHERE account_id   = :acct
-              AND external_ref LIKE :prefix
-              AND external_ref != :current
-        """), {
-            "acct":    account_id,
-            "prefix":  f"ibkr-fx-translation-{ibkr_account_id}-{year}%",
-            "current": ext_ref,
-        }).scalar()
+    # Don't overwrite a newer reconcile with an older XML
+    existing = db.execute(text("""
+        SELECT transaction_date FROM transactions
+        WHERE external_ref = :ref AND account_id = :acct
+    """), {"ref": ext_ref, "acct": account_id}).fetchone()
 
-        delta = ytd_amount - Decimal(str(prior_sum))
-
-        # Replace today's record; skip if delta is negligible
-        db.execute(
-            text("DELETE FROM transactions WHERE external_ref = :ref AND account_id = :acct"),
-            {"ref": ext_ref, "acct": account_id},
+    if existing and existing.transaction_date and existing.transaction_date > to_date:
+        logger.info(
+            "Cash reconcile %s: skipping — existing entry (%s) is newer than XML (%s)",
+            ibkr_account_id, existing.transaction_date, to_date,
         )
-        if abs(delta) < Decimal("0.01"):
-            continue
+        return 0, []
 
-        db.add(Transaction(
-            account_id=account_id,
-            security_id=None,
-            transaction_date=to_date,
-            transaction_type="FX_ADJUSTMENT",
-            transaction_currency="CAD",
-            transaction_amount=delta,
-            cad_amount=delta,
-            raw_description=f"FX Translation Gain/Loss {from_date} to {to_date}",
-            external_ref=ext_ref,
-        ))
-        details.append({
-            "date":     to_date.isoformat(),
-            "type":     "FX_ADJUSTMENT",
-            "ticker":   "",
-            "qty":      "",
-            "amount":   str(delta),
-            "currency": "CAD",
-        })
-        imported += 1
-        logger.info("FX translation %s %s: YTD=%s prior=%s delta=%s (to %s)",
-                    ibkr_account_id, year, ytd_amount, prior_sum, delta, to_date)
+    # System cash: sum of all cad_amount excluding the reconcile entry itself
+    system_cash = db.execute(text("""
+        SELECT COALESCE(SUM(cad_amount), 0)
+        FROM transactions
+        WHERE account_id = :acct
+          AND (external_ref IS NULL OR external_ref != :ref)
+    """), {"acct": account_id, "ref": ext_ref}).scalar()
 
+    delta = ibkr_cash - Decimal(str(system_cash))
+
+    # Replace any existing reconcile entry
+    db.execute(
+        text("DELETE FROM transactions WHERE external_ref = :ref AND account_id = :acct"),
+        {"ref": ext_ref, "acct": account_id},
+    )
+
+    if abs(delta) < Decimal("0.01"):
+        db.commit()
+        logger.info("Cash reconcile %s: no adjustment needed (IBKR=%s system=%s)",
+                    ibkr_account_id, ibkr_cash, system_cash)
+        return 0, []
+
+    db.add(Transaction(
+        account_id=account_id,
+        security_id=None,
+        transaction_date=to_date,
+        transaction_type="FX_ADJUSTMENT",
+        transaction_currency="CAD",
+        transaction_amount=delta,
+        cad_amount=delta,
+        raw_description=f"IBKR cash reconciliation as of {to_date} (IBKR {ibkr_cash:.2f}, system {system_cash:.2f})",
+        external_ref=ext_ref,
+    ))
     db.commit()
-    return imported, details
+
+    logger.info("Cash reconcile %s: IBKR=%s system=%s delta=%s (as of %s)",
+                ibkr_account_id, ibkr_cash, system_cash, delta, to_date)
+    return 1, [{
+        "date":     to_date.isoformat(),
+        "type":     "FX_ADJUSTMENT",
+        "ticker":   "",
+        "qty":      "",
+        "amount":   str(round(delta, 2)),
+        "currency": "CAD",
+    }]
 
 
 def _ext_ref_option_event(symbol: str, dt: str, event_type: str) -> str:
@@ -916,12 +920,12 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
         c,  c_rows  = import_cash(db, account.id, stmt["cash"], ibkr_id)
         oe, oe_rows = import_option_events(db, account.id, stmt.get("option_events", []))
         ca, ca_rows = import_corporate_actions(db, account.id, stmt.get("corporate_actions", []))
-        fx, fx_rows = import_fx_translation(db, account.id, ibkr_id, stmt.get("fx_translation", []))
-        logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions + %d fx translation",
-                    ibkr_id, account.name, t, c, oe, ca, fx)
+        rc, rc_rows = reconcile_cash_position(db, account.id, ibkr_id, stmt.get("cash_position"))
+        logger.info("  %s (%s): %d trades + %d cash + %d option events + %d corp actions + %d cash reconcile",
+                    ibkr_id, account.name, t, c, oe, ca, rc)
 
         acct_name = account.name
-        for row in (t_rows + c_rows + oe_rows + ca_rows + fx_rows):
+        for row in (t_rows + c_rows + oe_rows + ca_rows + rc_rows):
             all_details.append({**row, "account": acct_name})
 
         total_trades            += t
@@ -938,8 +942,6 @@ def import_from_xml_str(db: Session, xml_str: str) -> dict:
         parts.append(f"{total_option_events} option event(s)")
     if total_corporate_actions:
         parts.append(f"{total_corporate_actions} corporate action(s)")
-    if fx:
-        parts.append(f"{fx} FX translation adjustment(s)")
     msg = f"{' + '.join(parts)} imported across {len(statements) - len(unmatched)} account(s)"
     if unmatched:
         msg += f" — {len(unmatched)} IBKR account(s) not matched: {', '.join(unmatched)}"

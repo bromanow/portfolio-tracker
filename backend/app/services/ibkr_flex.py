@@ -631,17 +631,18 @@ def reconcile_cash_position(
     db: Session, account_id: int, ibkr_account_id: str, cash_position: Optional[dict]
 ) -> tuple[int, list[dict]]:
     """
-    Upsert one FX_ADJUSTMENT per account so that the system cash balance
-    exactly matches the IBKR-reported ending cash (from CashReport BaseCurrency).
+    Upsert one FX_ADJUSTMENT per XML period so the running system cash balance
+    matches IBKR's reported ending cash (CashReport BaseCurrency endingCash).
 
-    Algorithm:
-      system_cash = SUM(cad_amount) for all non-reconcile transactions
-      delta       = ibkr_ending_cash - system_cash
-      → upsert a single FX_ADJUSTMENT(external_ref=ibkr-cash-reconcile-{id})
+    One entry per toDate:  external_ref = ibkr-cash-reconcile-{accountId}-{toDate}
+    Re-importing the same XML replaces that date's entry and leaves all others.
 
-    If the existing reconcile entry is dated *after* this XML's toDate the
-    import is skipped — importing old monthly XMLs won't overwrite a more
-    recent reconcile produced by a newer XML.
+    System cash is computed as the sum of all transaction amounts, handling the
+    fact that CAD trades store transaction_amount but not cad_amount:
+      CASE WHEN cad_amount IS NOT NULL THEN cad_amount
+           WHEN transaction_currency = 'CAD' THEN transaction_amount
+           ELSE 0   -- non-CAD without an FX rate; shouldn't happen after a full import
+      END
     """
     from app.models.transactions import Transaction
     from sqlalchemy import text
@@ -657,24 +658,20 @@ def reconcile_cash_position(
     if not to_date:
         return 0, []
 
-    ext_ref = f"ibkr-cash-reconcile-{ibkr_account_id}"
+    # One reconcile entry per period date (not per account)
+    ext_ref = f"ibkr-cash-reconcile-{ibkr_account_id}-{to_date}"
 
-    # Don't overwrite a newer reconcile with an older XML
-    existing = db.execute(text("""
-        SELECT transaction_date FROM transactions
-        WHERE external_ref = :ref AND account_id = :acct
-    """), {"ref": ext_ref, "acct": account_id}).fetchone()
-
-    if existing and existing.transaction_date and existing.transaction_date > to_date:
-        logger.info(
-            "Cash reconcile %s: skipping — existing entry (%s) is newer than XML (%s)",
-            ibkr_account_id, existing.transaction_date, to_date,
-        )
-        return 0, []
-
-    # System cash: sum of all cad_amount excluding the reconcile entry itself
+    # System cash: all transactions except this period's reconcile entry.
+    # CAD trades have cad_amount=NULL (no FX lookup needed), so fall back to
+    # transaction_amount for CAD-denominated rows.
     system_cash = db.execute(text("""
-        SELECT COALESCE(SUM(cad_amount), 0)
+        SELECT COALESCE(SUM(
+            CASE
+                WHEN cad_amount IS NOT NULL        THEN cad_amount
+                WHEN transaction_currency = 'CAD'  THEN transaction_amount
+                ELSE 0
+            END
+        ), 0)
         FROM transactions
         WHERE account_id = :acct
           AND (external_ref IS NULL OR external_ref != :ref)
@@ -682,7 +679,7 @@ def reconcile_cash_position(
 
     delta = ibkr_cash - Decimal(str(system_cash))
 
-    # Replace any existing reconcile entry
+    # Replace this period's reconcile entry (idempotent re-import)
     db.execute(
         text("DELETE FROM transactions WHERE external_ref = :ref AND account_id = :acct"),
         {"ref": ext_ref, "acct": account_id},
@@ -690,8 +687,8 @@ def reconcile_cash_position(
 
     if abs(delta) < Decimal("0.01"):
         db.commit()
-        logger.info("Cash reconcile %s: no adjustment needed (IBKR=%s system=%s)",
-                    ibkr_account_id, ibkr_cash, system_cash)
+        logger.info("Cash reconcile %s %s: no adjustment needed (IBKR=%s system=%s)",
+                    ibkr_account_id, to_date, ibkr_cash, system_cash)
         return 0, []
 
     db.add(Transaction(
@@ -702,13 +699,16 @@ def reconcile_cash_position(
         transaction_currency="CAD",
         transaction_amount=delta,
         cad_amount=delta,
-        raw_description=f"IBKR cash reconciliation as of {to_date} (IBKR {ibkr_cash:.2f}, system {system_cash:.2f})",
+        raw_description=(
+            f"IBKR cash reconciliation as of {to_date} "
+            f"(IBKR {ibkr_cash:.2f}, system {system_cash:.2f})"
+        ),
         external_ref=ext_ref,
     ))
     db.commit()
 
-    logger.info("Cash reconcile %s: IBKR=%s system=%s delta=%s (as of %s)",
-                ibkr_account_id, ibkr_cash, system_cash, delta, to_date)
+    logger.info("Cash reconcile %s %s: IBKR=%s system=%s delta=%s",
+                ibkr_account_id, to_date, ibkr_cash, system_cash, delta)
     return 1, [{
         "date":     to_date.isoformat(),
         "type":     "FX_ADJUSTMENT",

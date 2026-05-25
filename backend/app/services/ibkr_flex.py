@@ -633,9 +633,16 @@ def import_fx_translation(
     db: Session, account_id: int, ibkr_account_id: str, fx_rows: list[dict]
 ) -> tuple[int, list[dict]]:
     """
-    Import FX translation gain/loss from CashReport as a single FX_ADJUSTMENT
-    per year per account. The CashReport value is cumulative (YTD), so each
-    import replaces the previous record for that year rather than appending.
+    Import FX translation gain/loss from CashReport as incremental FX_ADJUSTMENT
+    transactions so that month-end cash balances remain correct across imports.
+
+    CashReport provides a cumulative YTD total, not a per-period amount.  We
+    derive the incremental delta by subtracting the sum of all previously
+    recorded FX translation adjustments for the same account+year.
+
+    Each import is keyed by external_ref=ibkr-fx-translation-{accountId}-{toDate}
+    so re-running on the same date replaces that day's record while leaving
+    earlier records intact.  This gives a correct running total at every date.
     """
     from app.models.transactions import Transaction
     from sqlalchemy import text
@@ -644,8 +651,8 @@ def import_fx_translation(
     details: list[dict] = []
 
     for row in fx_rows:
-        amount = _d(row.get("fxTranslationGainLoss"))
-        if not amount or amount == Decimal("0"):
+        ytd_amount = _d(row.get("fxTranslationGainLoss"))
+        if ytd_amount is None:
             continue
 
         from_date = _parse_ibkr_date(row.get("fromDate", ""))
@@ -654,13 +661,32 @@ def import_fx_translation(
             continue
 
         year    = from_date.year
-        ext_ref = f"ibkr-fx-translation-{ibkr_account_id}-{year}"
+        ext_ref = f"ibkr-fx-translation-{ibkr_account_id}-{to_date}"
 
-        # Replace on every import — value is cumulative YTD so always overwrite
+        # Sum all previously recorded FX translation adjustments for this
+        # account + year, excluding any record for today's toDate (which we
+        # are about to replace).
+        prior_sum = db.execute(text("""
+            SELECT COALESCE(SUM(transaction_amount), 0)
+            FROM transactions
+            WHERE account_id   = :acct
+              AND external_ref LIKE :prefix
+              AND external_ref != :current
+        """), {
+            "acct":    account_id,
+            "prefix":  f"ibkr-fx-translation-{ibkr_account_id}-{year}%",
+            "current": ext_ref,
+        }).scalar()
+
+        delta = ytd_amount - Decimal(str(prior_sum))
+
+        # Replace today's record; skip if delta is negligible
         db.execute(
             text("DELETE FROM transactions WHERE external_ref = :ref AND account_id = :acct"),
             {"ref": ext_ref, "acct": account_id},
         )
+        if abs(delta) < Decimal("0.01"):
+            continue
 
         db.add(Transaction(
             account_id=account_id,
@@ -668,8 +694,8 @@ def import_fx_translation(
             transaction_date=to_date,
             transaction_type="FX_ADJUSTMENT",
             transaction_currency="CAD",
-            transaction_amount=amount,
-            cad_amount=amount,
+            transaction_amount=delta,
+            cad_amount=delta,
             raw_description=f"FX Translation Gain/Loss {from_date} to {to_date}",
             external_ref=ext_ref,
         ))
@@ -678,12 +704,12 @@ def import_fx_translation(
             "type":     "FX_ADJUSTMENT",
             "ticker":   "",
             "qty":      "",
-            "amount":   str(amount),
+            "amount":   str(delta),
             "currency": "CAD",
         })
         imported += 1
-        logger.info("FX translation %s %s: %s CAD (%s to %s)",
-                    ibkr_account_id, year, amount, from_date, to_date)
+        logger.info("FX translation %s %s: YTD=%s prior=%s delta=%s (to %s)",
+                    ibkr_account_id, year, ytd_amount, prior_sum, delta, to_date)
 
     db.commit()
     return imported, details

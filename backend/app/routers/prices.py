@@ -60,6 +60,75 @@ def get_market_indicators():
     return results
 
 
+# ── Historical index series (for the Performance chart comparison overlay) ──────
+_INDEX_HISTORY_CACHE: dict = {}
+_INDEX_HISTORY_TTL = 3600  # 1 hour — historical closes change at most once/day
+
+# Indices offered as comparison overlays on the Performance chart.
+# Subset of _INDICATOR_DEFS that make sense as a portfolio benchmark.
+_COMPARISON_INDICES = ["^GSPTSE", "^GSPC", "^DJI", "^IXIC", "^RUT"]
+
+
+@router.get("/index-history")
+def get_index_history(
+    symbols: str = Query(..., description="Comma-separated index symbols, e.g. ^GSPC,^DJI"),
+    from_date: date = Query(...),
+    to_date: Optional[date] = Query(None),
+):
+    """
+    Return daily closing values for one or more market indices over a date range.
+    Used by the Performance page to overlay benchmark indices on the portfolio
+    value chart. Only the whitelisted comparison indices are allowed.
+
+    Response: [{symbol, label, points: [{date, close}]}]
+    """
+    import pandas as pd
+    from datetime import timedelta
+    from app.services.price_service import _yf_download
+
+    label_by_sym = {d["symbol"]: d["label"] for d in _INDICATOR_DEFS}
+    requested = [
+        s.strip() for s in symbols.split(",")
+        if s.strip() in _COMPARISON_INDICES
+    ]
+    end = to_date or date.today()
+    out: list[dict] = []
+
+    for sym in requested:
+        cache_key = (sym, from_date.isoformat(), end.isoformat())
+        cached = _INDEX_HISTORY_CACHE.get(cache_key)
+        if cached and (_time.time() - cached["_ts"]) < _INDEX_HISTORY_TTL:
+            out.append(cached["data"])
+            continue
+
+        points: list[dict] = []
+        try:
+            df = _yf_download(
+                sym, start=from_date.isoformat(),
+                end=(end + timedelta(days=1)).isoformat(),
+                auto_adjust=False, progress=False,
+            )
+            if df is not None and not df.empty:
+                # Flatten multi-level columns (yfinance ≥ 0.2 returns (metric, ticker) tuples)
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = [col[0] for col in df.columns]
+                for ts, row in df.iterrows():
+                    close = row.get("Close")
+                    if close is None or pd.isna(close):
+                        continue
+                    d = ts.date() if hasattr(ts, "date") else ts
+                    points.append({"date": d.isoformat(), "close": float(close)})
+        except Exception as exc:
+            import logging
+            logging.getLogger(__name__).warning("index-history fetch failed for %s: %s", sym, exc)
+
+        data = {"symbol": sym, "label": label_by_sym.get(sym, sym), "points": points}
+        _INDEX_HISTORY_CACHE[cache_key] = {"data": data, "_ts": _time.time()}
+        out.append(data)
+
+    return out
+
+
 def _spawn_job(name: str, fn) -> dict:
     """Run fn(db) in a background thread. Returns {job_id, status, already_running}."""
     if background_jobs.is_running(name):

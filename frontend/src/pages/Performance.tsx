@@ -63,6 +63,22 @@ const PALETTE = [
   '#0891b2','#be185d','#65a30d','#9333ea','#0f766e',
   '#b45309','#0369a1','#15803d','#b91c1c','#6d28d9',
 ]
+// Benchmark indices offered as comparison overlays (must match backend whitelist).
+const COMPARISON_INDICES = [
+  { value: '^GSPTSE', label: 'S&P/TSX' },
+  { value: '^GSPC',   label: 'S&P 500' },
+  { value: '^DJI',    label: 'Dow Jones' },
+  { value: '^IXIC',   label: 'NASDAQ' },
+  { value: '^RUT',    label: 'Russell 2K' },
+]
+// Distinct (dashed) colours for benchmark lines so they read apart from portfolio series.
+const INDEX_PALETTE = ['#0ea5e9','#f59e0b','#ec4899','#14b8a6','#a855f7']
+
+interface IndexHistory {
+  symbol: string
+  label: string
+  points: { date: string; close: number }[]
+}
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -88,18 +104,25 @@ const pctClass = (n: number | null | undefined) =>
 
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label, dateToEvents }: {
+function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
   active?: boolean
   payload?: { name: string; value: number; color: string }[]
   label?: string
   dateToEvents?: Record<string, ChartEvent>
+  indexLabels?: Set<string>
 }) {
   if (!active || !payload?.length) return null
   const ev = label ? dateToEvents?.[label] : undefined
+  // Split payload into portfolio series, benchmark indices, and invested baselines.
+  const indexRows    = payload.filter(p => indexLabels?.has(p.name))
+  const portfolioRows = payload.filter(p => !indexLabels?.has(p.name))
+  // Total = sum of value lines only (exclude the dashed "(invested)" baselines).
+  const valueRows = portfolioRows.filter(p => !p.name.endsWith(' (invested)'))
+  const total = valueRows.reduce((s, p) => s + (p.value ?? 0), 0)
   return (
     <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs min-w-[180px]">
       <div className="text-gray-500 font-medium mb-1.5 border-b border-gray-100 pb-1">{label}</div>
-      {payload.map(p => (
+      {portfolioRows.map(p => (
         <div key={p.name} className="flex justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1">
             <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
@@ -108,6 +131,26 @@ function ChartTooltip({ active, payload, label, dateToEvents }: {
           <span className="font-semibold">{fmtCAD(p.value)}</span>
         </div>
       ))}
+      {valueRows.length > 1 && (
+        <div className="flex justify-between gap-4 py-0.5 mt-1 pt-1 border-t border-gray-100">
+          <span className="font-bold text-gray-700">Total</span>
+          <span className="font-bold text-gray-900">{fmtCAD(total)}</span>
+        </div>
+      )}
+      {indexRows.length > 0 && (
+        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+          <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Benchmarks (if invested at start)</div>
+          {indexRows.map(p => (
+            <div key={p.name} className="flex justify-between gap-4 py-0.5">
+              <span className="flex items-center gap-1">
+                <span className="inline-block w-2 h-0.5 rounded" style={{ background: p.color }} />
+                {p.name}
+              </span>
+              <span className="font-semibold">{fmtCAD(p.value)}</span>
+            </div>
+          ))}
+        </div>
+      )}
       {ev && ev.items.length > 0 && (
         <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
           <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
@@ -275,6 +318,7 @@ export default function Performance() {
   const [groupBy, setGroupBy]         = useState<GroupBy>('account_type')
   const [period, setPeriod]           = useState<Period>('ALL')
   const [showInvested, setShowInvested] = useState(false)
+  const [compareIndices, setCompareIndices] = useState<string[]>([])
 
   // Chart filters (which accounts to include) — string[] matches MultiSelectDropdown
   const [filterBrokerages, setFilterBrokerages] = useState<string[]>([])
@@ -408,6 +452,70 @@ export default function Performance() {
     }
     return row
   }), [points, labels, showInvested])
+
+  // ── Benchmark index comparison ────────────────────────────────────────────────
+  // Fetch raw index closes over the visible date range, then rebase each so it
+  // starts at the portfolio's total value on the first chart date — i.e. "what your
+  // starting balance would be worth had you invested it in this index instead."
+  const firstPointDate = points[0]?.date?.slice(0, 10)
+  const lastPointDate  = points[points.length - 1]?.date?.slice(0, 10)
+
+  const indexQ = useQuery({
+    queryKey: ['perf-index-history', compareIndices, firstPointDate, lastPointDate],
+    queryFn: () => api.get<IndexHistory[]>('/prices/index-history', {
+      params: {
+        symbols: compareIndices.join(','),
+        from_date: firstPointDate,
+        ...(lastPointDate ? { to_date: lastPointDate } : {}),
+      },
+    }).then(r => r.data),
+    enabled: compareIndices.length > 0 && !!firstPointDate,
+    staleTime: 30 * 60 * 1000,
+  })
+
+  const indexSeries = useMemo(() => {
+    const histories = indexQ.data ?? []
+    if (!histories.length || !points.length) return []
+    const portfolioStart = labels.reduce((s, l) => s + (points[0].values[l] ?? 0), 0)
+    if (portfolioStart <= 0) return []
+    const chartDates = chartData.map(r => r.date as string)
+    return histories
+      .map((h, i) => {
+        const sorted = [...h.points].sort((a, b) => a.date.localeCompare(b.date))
+        if (!sorted.length) return null
+        const baseClose = sorted[0].close
+        if (!baseClose) return null
+        // Forward-fill the most recent close onto each chart date, then rebase.
+        const valueByDate: Record<string, number> = {}
+        let j = 0, lastClose = baseClose
+        for (const d of chartDates) {
+          while (j < sorted.length && sorted[j].date <= d) { lastClose = sorted[j].close; j++ }
+          valueByDate[d] = portfolioStart * (lastClose / baseClose)
+        }
+        return {
+          key: `idx:${h.label}`,
+          label: h.label,
+          color: INDEX_PALETTE[i % INDEX_PALETTE.length],
+          valueByDate,
+        }
+      })
+      .filter((s): s is { key: string; label: string; color: string; valueByDate: Record<string, number> } => s !== null)
+  }, [indexQ.data, points, labels, chartData])
+
+  const indexLabels = useMemo(() => new Set(indexSeries.map(s => s.label)), [indexSeries])
+
+  // Merge rebased benchmark values into each chart row (keyed by index label).
+  const chartDataWithIndices = useMemo(() => {
+    if (!indexSeries.length) return chartData
+    return chartData.map(row => {
+      const next = { ...row }
+      for (const s of indexSeries) {
+        const v = s.valueByDate[row.date as string]
+        if (v != null) next[s.label] = v
+      }
+      return next
+    })
+  }, [chartData, indexSeries])
 
   // ── Table: filter + sort + group ────────────────────────────────────────────
   const uniqueBrokerages = useMemo(() => [...new Set(returns.map(r => r.brokerage))].sort(), [returns])
@@ -566,6 +674,17 @@ export default function Performance() {
               <X className="h-3.5 w-3.5" /> Clear
             </button>
           )}
+          {/* Benchmark index comparison */}
+          <div className="flex items-center gap-2 ml-auto">
+            <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Compare:</span>
+            <MultiSelectDropdown
+              placeholder="Add indices"
+              options={COMPARISON_INDICES}
+              selected={compareIndices}
+              onChange={setCompareIndices}
+            />
+            {indexQ.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+          </div>
         </div>
 
         {/* Chart */}
@@ -583,13 +702,13 @@ export default function Performance() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={chartData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <LineChart data={chartDataWithIndices} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="date"
                 tickFormatter={d => { const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' }) }}
                 tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={60} />
               <YAxis tickFormatter={v => '$' + fmtShort(v)} tick={{ fontSize: 10 }} width={72} />
-              <Tooltip content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} />} />
+              <Tooltip content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {labels.map((lbl, i) => {
                 const color = PALETTE[i % PALETTE.length]
@@ -621,6 +740,9 @@ export default function Performance() {
               })}
               {showInvested && labels.map((lbl, i) => (
                 <Line key={`${lbl}-inv`} type="monotone" dataKey={`${lbl} (invested)`} stroke={PALETTE[i % PALETTE.length]} strokeWidth={1} strokeDasharray="4 3" dot={false} name={`${lbl} (invested)`} />
+              ))}
+              {indexSeries.map(s => (
+                <Line key={s.key} type="monotone" dataKey={s.label} stroke={s.color} strokeWidth={1.5} strokeDasharray="5 3" dot={false} name={s.label} connectNulls />
               ))}
             </LineChart>
           </ResponsiveContainer>

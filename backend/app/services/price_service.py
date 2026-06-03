@@ -821,8 +821,57 @@ def fetch_price_for_security(
         logger.info("Fetched price for %s via %s: %s %s", security.ticker, yahoo_sym, data["price"], currency)
         return mp
 
+    # ── Fallback: IBKR/IBeam live quote when Yahoo can't price it ──
+    if _price_security_via_ibeam(db, security, usd_to_cad, date.today()):
+        db.flush()
+        return db.query(MarketPrice).filter(MarketPrice.security_id == security.id).first()
+
     logger.warning("Could not fetch price for %s (tried: %s)", security.ticker, candidates)
     return None
+
+
+def _price_security_via_ibeam(
+    db: Session, sec: Security, usd_to_cad: Optional[Decimal], today: "date"
+) -> bool:
+    """
+    Fallback pricing via IBKR/IBeam for a security yfinance couldn't price.
+    Stores into both market_prices and historical_prices (source='ibeam').
+    Manual prices are preserved by _upsert_price. Returns True if a price landed.
+    """
+    from app.services import ibkr_service as _ibkr
+    is_cad = (sec.currency or "").upper() == "CAD" or (sec.exchange or "").upper() in ("TSX", "TSX-V", "TSXV")
+    try:
+        res = _ibkr.fetch_equity_price_ibeam(sec.ticker, is_canadian=is_cad)
+    except Exception as exc:
+        logger.debug("IBeam fallback error for %s: %s", sec.ticker, exc)
+        return False
+    if not res:
+        return False
+
+    price = res["price"]
+    currency = _infer_currency(sec, res["fetch_ticker"])
+    if currency == "CAD":
+        price_cad = price
+    elif currency == "USD":
+        if usd_to_cad is None:
+            usd_to_cad = get_rate(db, date.today(), "USD", "CAD")
+        price_cad = (price * usd_to_cad).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP) if usd_to_cad else None
+    else:
+        price_cad = None
+
+    data = {
+        "price": price,
+        "currency": currency,
+        "price_cad": price_cad,
+        "fetch_ticker": res["fetch_ticker"],
+        "source": "ibeam",
+        "fetched_at": datetime.now(timezone.utc).replace(tzinfo=None),
+        "price_date": today,
+    }
+    _upsert_price(db, sec.id, data)
+    _upsert_historical_price(db, sec.id, today, price, currency, price_cad, res["fetch_ticker"], "intraday")
+    logger.info("Fetched price for %s via IBeam fallback: %s %s", sec.ticker, price, currency)
+    return True
 
 
 def refresh_all_prices(
@@ -894,11 +943,21 @@ def refresh_all_prices(
         from datetime import timedelta
         yesterday = today - timedelta(days=1)
 
+        # Check IBeam availability once — used to fall back for tickers Yahoo can't price.
+        from app.services import ibkr_service as _ibkr
+        try:
+            _ibeam_up = _ibkr.is_ibeam_available()
+        except Exception:
+            _ibeam_up = False
+
         for sym, secs in sym_to_secs.items():
             data = sym_results.get(sym)
             if data is None:
                 for sec in secs:
-                    failed += 1
+                    if _ibeam_up and _price_security_via_ibeam(db, sec, usd_to_cad, today):
+                        fetched += 1
+                    else:
+                        failed += 1
                 continue
             for sec in secs:
                 currency = data["currency"]

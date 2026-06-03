@@ -19,6 +19,47 @@ npm run dev
 ```
 Open http://localhost:5173
 
+## Deployment (Production — self-hosted on QNAP)
+Migrated off Render (June 2026) to a self-hosted stack. **No monthly hosting fee.**
+
+**Infrastructure chain:** QNAP TVS-72XT NAS → Virtualization Station → Ubuntu 24.04 VM
+(`apps-server`, 8 GB RAM, user `deploy`) → Docker → **Coolify** v4 PaaS → **Cloudflare Tunnel**.
+
+**Live URLs:**
+- Frontend: https://portfolio.danderud.ca
+- Backend API: https://portfolio-api.danderud.ca (`/docs` for Swagger)
+- Coolify dashboard: https://coolify.danderud.ca
+
+**Coolify project "Portfolio"** (all apps build from this repo via the connected
+GitHub App `coolify-github-bromanow`, Build Pack = Dockerfile, auto-deploy on push):
+| App | Base Dir | Dockerfile | Port | Watch Path | Domain |
+|-----|----------|-----------|------|-----------|--------|
+| `portfolio-frontend` | `/frontend` | `frontend/Dockerfile` (Vite build → nginx) | 80 | `frontend/**` | http://portfolio.danderud.ca |
+| backend (`portfolio-backend`) | `/backend` | `backend/Dockerfile` (uvicorn) | 8000 | `backend/**` | http://portfolio-api.danderud.ca |
+| `portfolio-ibeam` | `/ibeam` | `ibeam/Dockerfile` (voyz/ibeam + login patch) | 5000 | `ibeam/**` | *(none — internal only)* |
+| PostgreSQL 16 | — | `postgres:16-alpine` image | 5432 | — | *(internal)* |
+
+**Networking gotchas (important):**
+- **Cloudflare SSL/TLS mode = Full** (not Flexible — Flexible caused ERR_TOO_MANY_REDIRECTS).
+- Coolify app **Domains use `http://`** (not https) — the tunnel/Traefik terminate TLS; `https://`
+  in the domain forces a Traefik redirect that loops. Cloudflare still serves the public URL over HTTPS.
+- Tunnel `qnap-tunnel` routes: `coolify.danderud.ca`→`localhost:8000`; everything else
+  (`portfolio.danderud.ca`, `portfolio-api.danderud.ca`)→`localhost:80` (Coolify's Traefik routes by hostname).
+- All app containers share the Docker network **`coolify`** (auto-attached; no toggle needed).
+  Inter-app DNS by container name / **Network Alias**. IBeam has alias `ibeam` → backend reaches it
+  at `https://ibeam:5000`.
+- **VITE_API_BASE_URL** must be a **build-time** var in Coolify (Vite inlines it at `npm run build`).
+
+**Production env vars** (set in Coolify, not in this repo):
+- Backend: `DATABASE_URL=postgresql://postgres:<pw>@<pg-container>:5432/portfolio_tracker`,
+  `IBEAM_BASE_URL=https://ibeam:5000`, `ALLOWED_ORIGINS=https://portfolio.danderud.ca`, `SECRET_KEY`, admin vars.
+- Frontend: `VITE_API_BASE_URL=https://portfolio-api.danderud.ca` (build-time).
+- IBeam: `IBEAM_ACCOUNT`, `IBEAM_PASSWORD`, `IBEAM_PYOTP_SECRET`, `IBEAM_TWO_FA_HANDLER=PYOTP`, etc.
+
+**SSH to the VM:** `ssh deploy@<vm-ip>` (find IP in QNAP Virtualization Station). Use the
+**Coolify web UI** for deploys/logs/env; SSH only for `docker` inspection. DB container id and
+secrets are in the auto-memory note, not here.
+
 ## Tech Stack
 - **Frontend**: React + TypeScript + Vite + Tailwind CSS + Axios
 - **Backend**: Python FastAPI + SQLAlchemy (ORM) + Alembic
@@ -155,6 +196,14 @@ Key tables:
 Two modes (auto-selected):
 1. **Local dev**: `ib_insync` connecting to IB Gateway or TWS on localhost
 2. **Cloud/prod**: IBeam Docker service — set `IBEAM_BASE_URL` env var
+
+**Production IBeam** runs as the `portfolio-ibeam` Coolify app (image built from `ibeam/Dockerfile`
+= `voyz/ibeam` + `ibeam/patch_login.py`, which handles IBKR's "Select 2FA Device" dropdown).
+2FA is fully automated via `IBEAM_TWO_FA_HANDLER=PYOTP` + TOTP secret. Backend reaches it at
+`https://ibeam:5000` (Docker network alias `ibeam`).
+⚠️ **Only ONE IBeam session per IBKR user** — two instances (e.g. an old Render one) compete and
+neither stays authenticated. Suspend any other instance before relying on this one. (See auth-status
+check: `authenticated:true, established:true, competing:false`.)
 
 Flex Query scheduled imports configured via Admin page per user.
 

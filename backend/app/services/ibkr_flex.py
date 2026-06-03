@@ -218,7 +218,10 @@ def fetch_flex_report(token: str, query_id: str) -> str:
         ref_code: Optional[str] = None
         url: str = FLEX_GET_URL
         last_err: str = ""
-        _submit_waits = [0, 30, 60, 90, 120]  # seconds before each attempt
+        last_error_code: str = ""
+        # Gentle back-off: surface a clear error in ~90s rather than hammering IBKR
+        # for 5 min (aggressive retries only deepen IBKR's throttle on a token).
+        _submit_waits = [0, 15, 30, 45]  # seconds before each attempt
 
         for submit_attempt, wait in enumerate(_submit_waits):
             if wait:
@@ -226,13 +229,20 @@ def fetch_flex_report(token: str, query_id: str) -> str:
                             submit_attempt, len(_submit_waits) - 1, wait, last_err)
                 time.sleep(wait)
 
-            # ── Network / DNS errors are retried just like IBKR transient errors ──
+            # ── Network / DNS errors AND transient HTTP errors are retried just
+            #    like IBKR's "try again" responses (IBKR returns 404/5xx when overloaded) ──
             try:
                 resp = client.get(FLEX_SEND_URL, params={"t": token, "q": query_id, "v": "3"})
                 resp.raise_for_status()
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 last_err = f"Network error connecting to IBKR: {exc}"
                 logger.warning("Flex Query network error (attempt %d/%d): %s",
+                               submit_attempt + 1, len(_submit_waits), exc)
+                continue  # retry after back-off
+            except httpx.HTTPStatusError as exc:
+                # IBKR intermittently returns 404/500 when its Flex backend is busy.
+                last_err = f"IBKR returned HTTP {exc.response.status_code} (transient)"
+                logger.warning("Flex Query HTTP error (attempt %d/%d): %s",
                                submit_attempt + 1, len(_submit_waits), exc)
                 continue  # retry after back-off
 
@@ -248,24 +258,32 @@ def fetch_flex_report(token: str, query_id: str) -> str:
                 url = _normalize_ibkr_url(xml1.findtext("Url"), FLEX_GET_URL)
                 break
 
+            last_error_code = xml1.findtext("ErrorCode") or ""
             last_err = xml1.findtext("ErrorMessage") or resp.text[:300]
             if any(phrase.lower() in last_err.lower() for phrase in _TRANSIENT_SUBMIT_PHRASES):
                 continue   # retry
             # Non-transient error (bad token, invalid query ID, etc.) — fail fast
-            raise RuntimeError(f"Flex Query submit failed: {last_err}")
+            raise RuntimeError(f"IBKR Flex error {last_error_code or '?'}: {last_err}")
 
         if not ref_code:
-            # Distinguish network failures from IBKR rate-limiting
+            # Surface the REAL reason rather than guessing "rate-limiting".
             if "Network error" in last_err:
                 raise RuntimeError(
                     f"Could not reach IBKR servers after {len(_submit_waits)} attempts — "
-                    "please check your internet connection and try again. "
-                    f"({last_err})"
+                    f"please check your internet connection and try again. ({last_err})"
                 )
+            if not last_err:
+                raise RuntimeError("No ReferenceCode in Flex API response")
+            # ErrorCode 1001 / "could not be generated" = IBKR can't build the statement,
+            # almost always because the query is too large (long period × many accounts).
+            hint = ""
+            if last_error_code == "1001" or "could not be generated" in last_err.lower():
+                hint = (" This usually means the Flex query is too large — in the IBKR portal, "
+                        "set the query's Period to a shorter rolling window (e.g. Last 7–30 Days). "
+                        "You can also use Upload XML to import a manually-downloaded statement.")
             raise RuntimeError(
-                "IBKR Flex API is rate-limiting this request — please wait a few minutes "
-                f"and try again, or use Upload XML to bypass the limit. (IBKR error: {last_err})"
-                if last_err else "No ReferenceCode in Flex API response"
+                f"IBKR could not generate the statement after {len(_submit_waits)} attempts "
+                f"(ErrorCode {last_error_code or '?'}: {last_err}).{hint}"
             )
 
         logger.info("Flex Query submitted, reference=%s  poll_url=%s", ref_code, url)
@@ -279,6 +297,9 @@ def fetch_flex_report(token: str, query_id: str) -> str:
             except (httpx.ConnectError, httpx.TimeoutException) as exc:
                 logger.warning("Flex Query poll network error (attempt %d): %s", attempt + 1, exc)
                 continue  # try the next poll interval
+            except httpx.HTTPStatusError as exc:
+                logger.warning("Flex Query poll HTTP error (attempt %d): %s", attempt + 1, exc)
+                continue  # transient — try the next poll interval
 
             if (
                 "Statement generation" in resp2.text

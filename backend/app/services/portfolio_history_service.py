@@ -307,12 +307,26 @@ def compute_portfolio_snapshots(
     invested: dict[int, Decimal] = defaultdict(Decimal)
     # income[account_id] = cumulative income received in CAD (interest, dividends, option premiums)
     income: dict[int, Decimal] = defaultdict(Decimal)
-    # cash[account_id] = running cash balance in CAD (mirrors get_cash_balances logic)
-    cash: dict[int, Decimal] = defaultdict(Decimal)
-    # Running cash in the account's NATIVE currency — used only to detect a fully
-    # drained account so the FX-drift residual (from summing cad_amount at historical
-    # rates on a foreign account) can be zeroed out.
-    cash_native: dict[int, Decimal] = defaultdict(Decimal)
+    # Cash tracked in the account's BASE currency (mirrors get_cash_balances), then
+    # converted to CAD at the snapshot-date FX rate. Summing cad_amount directly is
+    # wrong for FX / Norbert's-Gambit flows — that field drifts from the true native
+    # balance — so we track the native base-currency total and convert at the as-of rate.
+    base_cash: dict[int, Decimal] = defaultdict(Decimal)
+    # Foreign-currency cash held inside an account (e.g. a USD opening balance in a CAD
+    # account): {acct_id: {ccy: native_amount}}.
+    foreign_cash: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+
+    # Cached FX lookup (ccy → CAD at a given date), forward-fills via fx_service.
+    from app.services.fx_service import get_rate as _get_rate
+    _fx_cache: dict[tuple, Decimal] = {}
+
+    def _fx_to_cad(ccy: str, d: date) -> Decimal:
+        if not ccy or ccy.upper() == "CAD":
+            return Decimal("1")
+        k = (ccy.upper(), d)
+        if k not in _fx_cache:
+            _fx_cache[k] = _get_rate(db, d, ccy.upper(), "CAD") or ZERO
+        return _fx_cache[k]
 
     txn_idx = 0
     n_txns = len(all_txns)
@@ -415,23 +429,37 @@ def compute_portfolio_snapshots(
             ct_acct = ct.account_id
             if ct_type in _CASH_NEUTRAL:
                 continue
-            raw_cad = _d(ct.cad_amount)  # signed: negative = outflow, positive = inflow
-            # Native amount in the account's base currency (account_currency_amount is
-            # stored in base ccy; IBKR rows leave it NULL and use transaction_amount).
-            raw_native = (
-                _d(ct.account_currency_amount) if ct.account_currency_amount is not None
-                else _d(ct.transaction_amount) if ct.transaction_amount is not None
-                else raw_cad
-            )
+
+            acct = accounts.get(ct_acct)
+            base_ccy = (acct.base_currency or "CAD").upper() if acct else "CAD"
+
+            # DRIP gating (mirrors get_cash_balances): include only iTrade-style DRIPs
+            # (account_currency_amount < 0, or > 0 with no shares issued). SW reinvestment
+            # DRIPs (amount > 0, qty > 0) and IBKR DRIPs (amount NULL) stay cash-neutral.
             if ct_type == "DRIP":
-                # iTrade DRIP purchase (outflow) or cash-dividend income (no shares issued)
-                ct_qty = _d(ct.quantity)
-                if raw_cad < ZERO or (raw_cad > ZERO and ct_qty == ZERO):
-                    cash[ct_acct] += raw_cad
-                    cash_native[ct_acct] += raw_native
-            elif raw_cad != ZERO:
-                cash[ct_acct] += raw_cad
-                cash_native[ct_acct] += raw_native
+                aca = ct.account_currency_amount
+                if not (aca is not None and (aca < 0 or (aca > 0 and (ct.quantity in (None, 0))))):
+                    continue
+
+            # CASH_OPENING uses the native transaction_currency/amount.
+            if ct_type == "CASH_OPENING":
+                ccy = (ct.transaction_currency or base_ccy).upper()
+                amount = _d(ct.transaction_amount)
+                if ccy == base_ccy:
+                    base_cash[ct_acct] += amount
+                else:
+                    foreign_cash[ct_acct][ccy] += amount
+                continue
+
+            # Currency routing (mirrors get_cash_balances):
+            #   same currency as account → transaction_amount is the reliable native figure
+            #   cross-currency           → account_currency_amount (base ccy), else cad_amount
+            tx_ccy = (ct.transaction_currency or base_ccy).upper()
+            if tx_ccy == base_ccy:
+                amount = ct.transaction_amount if ct.transaction_amount is not None else ct.account_currency_amount
+            else:
+                amount = ct.account_currency_amount if ct.account_currency_amount is not None else ct.cad_amount
+            base_cash[ct_acct] += _d(amount)
 
         # ── Compute market value per account ──────────────────────────────────
         for acct_id in accounts:
@@ -470,12 +498,15 @@ def compute_portfolio_snapshots(
                 db.add(snap)
                 existing_snaps[key] = snap
             snap.market_value_cad = total_val
-            cash_cad_val = cash.get(acct_id, ZERO)
-            # Fully drained account (no positions + ~zero native cash) ⇒ the CAD figure
-            # should be $0, not the FX-drift residual left by summing cad_amount.
-            if total_val == ZERO and abs(cash_native.get(acct_id, ZERO)) < Decimal("1"):
-                cash_cad_val = ZERO
-            snap.cash_balance_cad = cash_cad_val
+            # Convert base-currency cash to CAD at the snapshot-date rate (matches the
+            # dashboard), plus any foreign-currency cash held inside the account.
+            _acct = accounts.get(acct_id)
+            _base_ccy = (_acct.base_currency or "CAD").upper() if _acct else "CAD"
+            cash_cad_val = base_cash.get(acct_id, ZERO) * _fx_to_cad(_base_ccy, snap_date)
+            for _fccy, _famt in foreign_cash.get(acct_id, {}).items():
+                if _famt != ZERO:
+                    cash_cad_val += _famt * _fx_to_cad(_fccy, snap_date)
+            snap.cash_balance_cad = cash_cad_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             snap.invested_cad = invested.get(acct_id, ZERO)
             snap.income_cad = income.get(acct_id, ZERO)
             snap.priced_fraction = priced_frac

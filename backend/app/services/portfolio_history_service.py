@@ -350,12 +350,13 @@ def compute_portfolio_snapshots(
                 if qty > ZERO:
                     positions[acct_id][sec_id] += qty
             elif t_type in _QTY_SUB:
-                # Use abs(qty) like the ACB service: both normal SELLs (negative qty) and
-                # reversal/correction SELLs (positive qty) reduce the position.
-                # Clamp to zero rather than going negative — matches acb_service Lot.sell().
+                # Use abs(qty): both normal SELLs (negative qty) and reversal/correction
+                # SELLs (positive qty) reduce the position. Do NOT clamp to zero here — a
+                # disposal recorded before its matching acquisition (common with same-day
+                # or out-of-order trades) would otherwise "forget" the negative dip and
+                # leave a phantom long position once the later BUY lands. Negative running
+                # balances are skipped at valuation time instead (matches the ACB engine).
                 positions[acct_id][sec_id] -= abs(qty)
-                if positions[acct_id][sec_id] < ZERO:
-                    positions[acct_id][sec_id] = ZERO
             elif t_type == "OPTION_SELL":
                 # Short option: negative quantity
                 positions[acct_id][sec_id] -= abs(qty)
@@ -364,22 +365,17 @@ def compute_portfolio_snapshots(
             elif t_type in _QTY_SET:
                 positions[acct_id][sec_id] = abs(qty)
             elif t_type == "JOURNAL":
-                # Quantity can be positive (inflow) or negative (outflow).
-                # Clamp to zero: a JOURNAL outflow that exactly matches the position
-                # should result in zero, never a negative residual (matches ACB service).
+                # Quantity can be positive (inflow) or negative (outflow). No clamp here —
+                # see the _QTY_SUB note; negative running balances are skipped at valuation.
                 positions[acct_id][sec_id] += qty
-                if positions[acct_id][sec_id] < ZERO:
-                    positions[acct_id][sec_id] = ZERO
             elif t_type == "OPTION_EXERCISE":
                 # Long option exercised — removes the option position (goes to zero).
                 # The underlying shares are handled via a separate BUY/SELL transaction.
                 positions[acct_id][sec_id] = ZERO
             elif t_type == "SPLIT":
-                # Some SPLIT rows add shares (+), some are adjustments (net delta).
-                # Clamp to zero: a corrective SPLIT should never produce a negative.
+                # Some SPLIT rows add shares (+), some are adjustments (net delta). No clamp
+                # here — see the _QTY_SUB note; negatives are skipped at valuation.
                 positions[acct_id][sec_id] += qty
-                if positions[acct_id][sec_id] < ZERO:
-                    positions[acct_id][sec_id] = ZERO
 
             # ── Invested capital ──────────────────────────────────────────────
             if t_type in _INVESTED_ADD and cad_amt > ZERO:
@@ -429,10 +425,12 @@ def compute_portfolio_snapshots(
                 # Skip flat positions.
                 if qty == ZERO:
                     continue
-                # Negative positions are only valid for options (written/short positions).
-                # Non-option negatives arise from data rounding in JOURNAL/DRIP sequences
-                # and should be treated as zero — matches ACB service clamping behaviour.
-                if qty < ZERO and sec_id not in option_sec_ids:
+                # A negative running balance is never a real holding — it's a disposal
+                # recorded before its matching acquisition (e.g. same-day or out-of-order
+                # trades) or a genuine over-disposal data error. Skip it (value $0), which
+                # makes net-zero securities correctly worth nothing regardless of order.
+                # (Short options are left at $0 here too, preserving prior behaviour.)
+                if qty < ZERO:
                     continue
                 price = _get_price(sec_id, snap_date)
                 if price is not None:

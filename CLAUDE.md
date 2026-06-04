@@ -227,5 +227,47 @@ Bank of Canada rates fetched via `services/fx_service.py`.
 Auto-refreshed on startup if rates are more than 3 days stale.  
 Used for CAD↔USD conversion throughout portfolio calculations.
 
+## Performance & Snapshot Engine
+The Performance page is driven by daily `portfolio_snapshots` (per account, per date),
+computed by `services/portfolio_history_service.py` (`compute_portfolio_snapshots`) and
+surfaced via `/api/portfolio/performance/timeline` (chart) and `/performance/returns`
+(table). Snapshot dates = distinct `historical_prices.price_date` (so they're sparse —
+only trading days with price data). Trigger a rebuild with the **"Recompute Snapshots"**
+button (or `POST /api/portfolio/compute-snapshots`).
+
+Hard-won correctness rules (June 2026 — these fixed a long series of data bugs; don't
+regress them):
+- **Positions:** running quantity is NOT clamped to ≥0 per-transaction (that created
+  phantom long positions when a disposal was recorded before its matching buy, common in
+  wheel-trading accounts). Negative running balances are skipped (valued $0) at valuation.
+- **Pricing:** `_price_at` carries the last price **forward**, and **backward** from the
+  earliest known price when a held position predates its price history. Unpriced securities
+  fall back to a **manual MarketPrice** (this is how structured notes show at $100 par — set
+  a manual price for any sourceless holding; it fixes both dashboard and snapshots).
+- **Cash:** tracked in the account's **base currency** (mirrors `get_cash_balances` routing:
+  `transaction_amount` same-ccy, `account_currency_amount`/`cad_amount` cross-ccy), converted
+  to CAD at the **snapshot-date** FX rate. Do NOT sum `cad_amount` — it drifts on FX /
+  Norbert's-Gambit (DLR) flows.
+- **Dormant/closed accounts:** if no positions AND last transaction > 365 days before the
+  snapshot date, cash is zeroed (an FX/spread residual on a closed account isn't real money).
+  Active accounts that merely dip to $0 keep recent transactions, so they're untouched.
+- **Returns:** Modified Dietz — gain net of external cash flows (DEPOSIT/WITHDRAWAL/
+  TRANSFER_IN/TRANSFER_OUT/JOURNAL), over time-weighted average capital. Returns are
+  suppressed ("—") when an account's current value ≈ $0. Income is already inside account
+  value (cash), so there is NO separate income term (avoids double-counting).
+- **CAD+USD sub-accounts** with the same base name merge into one logical account on the
+  Performance page (the returns endpoint strips the " (USD)" suffix).
+
+## Roadmap (next up — discussed, not yet started)
+Two workstreams were planned before the snapshot data-fix detour:
+1. **Responsive / multi-device + PWA** — app is desktop-first; make it usable on iPhone/iPad
+   (responsive Tailwind + tables→cards on mobile + bottom-tab nav + installable PWA).
+2. **Information-architecture rethink** — reorganize ~10 nav items around jobs (Overview /
+   Holdings / Performance / Activity / Research), plus easier mobile transaction capture.
+A bigger future feature set: an **opportunity engine** (whole-market screeners merging
+technical signals + social/news sentiment, e.g. via the Claude API) — needs a paid market-data
+provider decision first. Five scoping questions are still open (devices, users, data budget,
+markets, signal philosophy: suggest/explain vs auto buy-sell).
+
 ## GitHub
 Check `git remote -v` for the remote URL.

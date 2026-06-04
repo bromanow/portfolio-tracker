@@ -317,6 +317,17 @@ def compute_portfolio_snapshots(
     foreign_cash: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
     # Most recent transaction date per account, used to detect dormant/closed accounts.
     last_txn_date: dict[int, date] = {}
+    # Group CAD+USD sub-accounts (same name minus " (USD)") so dormancy is judged at the
+    # LOGICAL account level: an idle sub must NOT be zeroed if a sibling is still active
+    # (e.g. the idle USD cash sub of an actively-traded TFSA, whose USD cash offsets the
+    # CAD sub's negative cash from a Norbert's-Gambit conversion).
+    _logical_groups: dict[str, list[int]] = defaultdict(list)
+    for _aid, _a in accounts.items():
+        _logical_groups[(_a.name or "").replace(" (USD)", "").strip()].append(_aid)
+    account_siblings: dict[int, list[int]] = {
+        _aid: _logical_groups[(_a.name or "").replace(" (USD)", "").strip()]
+        for _aid, _a in accounts.items()
+    }
 
     # Cached FX lookup (ccy → CAD at a given date), forward-fills via fx_service.
     from app.services.fx_service import get_rate as _get_rate
@@ -512,11 +523,13 @@ def compute_portfolio_snapshots(
             for _fccy, _famt in foreign_cash.get(acct_id, {}).items():
                 if _famt != ZERO:
                     cash_cad_val += _famt * _fx_to_cad(_fccy, snap_date)
-            # Dormant/closed account: no positions AND no transactions for >12 months ⇒
-            # any leftover cash is an FX / Norbert's-Gambit spread residual, not real money
-            # (e.g. a closed RRSP whose CAD/USD legs net to a small non-zero figure). Zero it.
-            # Active accounts that merely dip to $0 keep recent transactions, so they're untouched.
-            _ltx = last_txn_date.get(acct_id)
+            # Dormant/closed account: no positions AND no transactions for >12 months —
+            # judged across the LOGICAL account (all CAD/USD siblings) so an idle sub isn't
+            # zeroed while a sibling is active. Any leftover cash on a truly closed account is
+            # an FX / Norbert's-Gambit spread residual, not real money (e.g. a closed RRSP
+            # whose CAD/USD legs net to a small non-zero figure). Zero it.
+            _sibs = account_siblings.get(acct_id, [acct_id])
+            _ltx = max((last_txn_date[s] for s in _sibs if s in last_txn_date), default=None)
             if total_val == ZERO and _ltx is not None and (snap_date - _ltx).days > 365:
                 cash_cad_val = ZERO
             snap.cash_balance_cad = cash_cad_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)

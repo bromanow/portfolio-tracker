@@ -102,14 +102,19 @@ def _d(v) -> Decimal:
 
 def _price_at(series: list[tuple[date, Decimal]], snap_date: date) -> Optional[Decimal]:
     """
-    Return the most recent price on or before snap_date from a sorted
-    [(date, price)] list.  Returns None only if no price exists at or
-    before snap_date (i.e. the security had no price history yet).
+    Return the nearest available price for snap_date from a sorted
+    [(date, price)] list:
+      - the most recent price on or before snap_date (carry-forward), or
+      - if none exists yet, the earliest price we ever got (carry-backward).
 
-    No staleness cutoff is applied: if a position is still open (qty > 0)
-    the last known price is always used, exactly as the Holdings page does.
-    Weekly-NAV mutual funds, thinly-traded securities, and data gaps are all
-    handled correctly — the caller already skips zero-qty positions.
+    Carry-forward handles weekly-NAV funds, thinly-traded names and data gaps.
+    Carry-backward handles a held position whose price history only *starts*
+    later than the holding period (e.g. Scotia Wealth USD funds first priced
+    well after they were bought) — without it those positions value at $0 and
+    the account looks empty even though it's fully invested. The look-back uses
+    the first-known price for dates before the security's history begins (a mild
+    approximation, but far better than $0). Returns None only if there is no
+    price for the security at all.
     """
     if not series:
         return None
@@ -124,7 +129,8 @@ def _price_at(series: list[tuple[date, Decimal]], snap_date: date) -> Optional[D
         else:
             hi = mid - 1
     if idx < 0:
-        return None
+        # No price on/before snap_date — carry the earliest known price backward.
+        return series[0][1]
     return series[idx][1]
 
 

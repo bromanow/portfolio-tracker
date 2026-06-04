@@ -434,22 +434,46 @@ export default function Performance() {
   const returns  = returnsQ.data ?? []
 
   // Map date → event (for tooltip)
+  // Snapshots are sparse (only on dates with price history), so a flow date can
+  // fall on a gap day with no data point. Recharts only draws dots at data
+  // points, so snap each event to the nearest available chart point.
+  const snapToPoint = useMemo(() => {
+    const sorted = points.map(p => p.date.slice(0, 10)).sort()
+    return (d: string): string => {
+      if (!sorted.length) return d
+      let best = sorted[0], bestDiff = Infinity
+      for (const pd of sorted) {
+        const diff = Math.abs(Date.parse(pd) - Date.parse(d))
+        if (diff < bestDiff) { bestDiff = diff; best = pd }
+      }
+      return best
+    }
+  }, [points])
+
   const dateToEvents = useMemo(() => {
     const m: Record<string, ChartEvent> = {}
-    for (const e of events) m[e.date] = e
-    return m
-  }, [events])
-
-  // Map series-label → Set of dates that have events for that label (for dots)
-  const labelEventDates = useMemo(() => {
-    const m: Record<string, Set<string>> = {}
-    for (const ev of events) {
-      for (const item of ev.items) {
-        ;(m[item.group_label] ??= new Set()).add(ev.date)
+    for (const e of events) {
+      const key = snapToPoint(e.date)
+      if (m[key]) {
+        m[key] = { ...m[key], net_cad: m[key].net_cad + e.net_cad, items: [...m[key].items, ...e.items] }
+      } else {
+        m[key] = { ...e, date: key }
       }
     }
     return m
-  }, [events])
+  }, [events, snapToPoint])
+
+  // Map series-label → Set of (snapped) dates that have events for that label (for dots)
+  const labelEventDates = useMemo(() => {
+    const m: Record<string, Set<string>> = {}
+    for (const ev of events) {
+      const key = snapToPoint(ev.date)
+      for (const item of ev.items) {
+        ;(m[item.group_label] ??= new Set()).add(key)
+      }
+    }
+    return m
+  }, [events, snapToPoint])
 
   const chartData = useMemo(() => points.map(p => {
     const row: Record<string, string | number> = { date: p.date.slice(0, 10) }

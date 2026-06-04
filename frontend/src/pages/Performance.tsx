@@ -332,8 +332,6 @@ export default function Performance() {
   // Returns table controls
   const [tableGroup, setTableGroup]   = useState<TableGroup>('none')
   const [tableSearch, setTableSearch] = useState('')
-  const [tableType, setTableType]     = useState<Set<string>>(new Set())
-  const [tableBrokerage, setTableBrokerage] = useState<Set<string>>(new Set())
   const [collapsed, setCollapsed]     = useState<Set<string>>(new Set())
   const [sortCol, setSortCol]         = useState('account_name')
   const [sortDir, setSortDir]         = useState<SortDir>('asc')
@@ -517,9 +515,15 @@ export default function Performance() {
     })
   }, [chartData, indexSeries])
 
-  // ── Table: filter + sort + group ────────────────────────────────────────────
-  const uniqueBrokerages = useMemo(() => [...new Set(returns.map(r => r.brokerage))].sort(), [returns])
-  const uniqueTypes      = useMemo(() => [...new Set(returns.map(r => r.account_type))].sort(), [returns])
+  // ── Unified filtering ─────────────────────────────────────────────────────
+  // The chart's account/type/brokerage filters drive the table AND summary cards,
+  // so one set of controls updates everything together.
+  const scopedReturns = useMemo(() => returns.filter(r => {
+    if (filterBrokerages.length > 0 && !filterBrokerages.includes(r.brokerage)) return false
+    if (filterTypes.length > 0 && !filterTypes.includes(r.account_type)) return false
+    if (filterAccounts.length > 0 && !r.account_ids.some(id => filterAccounts.includes(String(id)))) return false
+    return true
+  }), [returns, filterBrokerages, filterTypes, filterAccounts])
 
   const onSort = (col: string) => {
     if (sortCol === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc')
@@ -527,12 +531,9 @@ export default function Performance() {
   }
 
   const filteredReturns = useMemo(() => {
-    let rows = returns.filter(r => {
-      if (tableSearch && !r.account_name.toLowerCase().includes(tableSearch.toLowerCase())) return false
-      if (tableType.size > 0 && !tableType.has(r.account_type)) return false
-      if (tableBrokerage.size > 0 && !tableBrokerage.has(r.brokerage)) return false
-      return true
-    })
+    let rows = scopedReturns.filter(r =>
+      !tableSearch || r.account_name.toLowerCase().includes(tableSearch.toLowerCase())
+    )
     rows = [...rows].sort((a, b) => {
       let va: number | string, vb: number | string
       if (sortCol === 'account_name') { va = a.account_name; vb = b.account_name }
@@ -542,7 +543,7 @@ export default function Performance() {
       return sortDir === 'asc' ? (va as number) - (vb as number) : (vb as number) - (va as number)
     })
     return rows
-  }, [returns, tableSearch, tableType, tableBrokerage, sortCol, sortDir])
+  }, [scopedReturns, tableSearch, sortCol, sortDir])
 
   // Group rows for display
   const groupedRows = useMemo(() => {
@@ -560,9 +561,9 @@ export default function Performance() {
     const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n
   })
 
-  // Summary stats
-  const totalCurrent = useMemo(() => returns.reduce((s, r) => s + r.current_value, 0), [returns])
-  const sorted1Y = [...returns].filter(r => r.returns['1Y'] != null).sort((a, b) => (b.returns['1Y'] ?? 0) - (a.returns['1Y'] ?? 0))
+  // Summary stats — scoped to the active filters so the cards match the chart + table
+  const totalCurrent = useMemo(() => scopedReturns.reduce((s, r) => s + r.current_value, 0), [scopedReturns])
+  const sorted1Y = [...scopedReturns].filter(r => r.returns['1Y'] != null).sort((a, b) => (b.returns['1Y'] ?? 0) - (a.returns['1Y'] ?? 0))
   const bestAcct  = sorted1Y[0]
   const worstAcct = sorted1Y[sorted1Y.length - 1]
   const latestDate = points.length ? points[points.length - 1].date : null
@@ -596,14 +597,6 @@ export default function Performance() {
           <RefreshCw className={`h-4 w-4 ${computeMut.isPending ? 'animate-spin' : ''}`} />
           {computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}
         </button>
-      </div>
-
-      {/* ── Summary cards ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        <SummaryCard label="Total Portfolio Value" value={fmtCAD(totalCurrent)} sub={latestDate ?? undefined} />
-        <SummaryCard label="YTD Return" value={fmtPct(ytdPct)} color={pctClass(ytdPct)} />
-        <SummaryCard label="Best Account (1Y)" value={bestAcct ? fmtPct(bestAcct.returns['1Y']) : '—'} sub={bestAcct?.account_name} color={pctClass(bestAcct?.returns['1Y'])} />
-        <SummaryCard label="Worst Account (1Y)" value={worstAcct ? fmtPct(worstAcct.returns['1Y']) : '—'} sub={worstAcct?.account_name} color={pctClass(worstAcct?.returns['1Y'])} />
       </div>
 
       {/* ── Chart panel ── */}
@@ -749,6 +742,14 @@ export default function Performance() {
         )}
       </div>
 
+      {/* ── Summary cards (scoped to the active filters) ── */}
+      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+        <SummaryCard label="Total Portfolio Value" value={fmtCAD(totalCurrent)} sub={latestDate ?? undefined} />
+        <SummaryCard label="YTD Return" value={fmtPct(ytdPct)} color={pctClass(ytdPct)} />
+        <SummaryCard label="Best Account (1Y)" value={bestAcct ? fmtPct(bestAcct.returns['1Y']) : '—'} sub={bestAcct?.account_name} color={pctClass(bestAcct?.returns['1Y'])} />
+        <SummaryCard label="Worst Account (1Y)" value={worstAcct ? fmtPct(worstAcct.returns['1Y']) : '—'} sub={worstAcct?.account_name} color={pctClass(worstAcct?.returns['1Y'])} />
+      </div>
+
       {/* ── Returns table ── */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         <div className="px-5 py-3 border-b border-gray-100 space-y-2">
@@ -763,18 +764,11 @@ export default function Performance() {
               onChange={e => setTableSearch(e.target.value)}
               className="text-xs border border-gray-200 rounded px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-blue-400"
             />
-            {/* Type filter */}
-            <select value={[...tableType].join(',') || ''} onChange={e => setTableType(e.target.value ? new Set([e.target.value]) : new Set())}
-              className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">
-              <option value="">All types</option>
-              {uniqueTypes.map(t => <option key={t} value={t}>{t}</option>)}
-            </select>
-            {/* Brokerage filter */}
-            <select value={[...tableBrokerage].join(',') || ''} onChange={e => setTableBrokerage(e.target.value ? new Set([e.target.value]) : new Set())}
-              className="text-xs border border-gray-200 rounded px-2 py-1 focus:outline-none focus:ring-1 focus:ring-blue-400">
-              <option value="">All brokerages</option>
-              {uniqueBrokerages.map(b => <option key={b} value={b}>{b}</option>)}
-            </select>
+            {hasFilters && (
+              <span className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
+                Filtered by chart controls
+              </span>
+            )}
             {/* Group by */}
             <div className="ml-auto flex items-center gap-1 text-xs text-gray-500">
               <span>Group:</span>

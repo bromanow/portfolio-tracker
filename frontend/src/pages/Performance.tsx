@@ -600,15 +600,17 @@ export default function Performance() {
   const bestAcct  = sorted1Y[0]
   const worstAcct = sorted1Y[sorted1Y.length - 1]
   const latestDate = points.length ? points[points.length - 1].date : null
+  // YTD card: value-weighted average of the per-account Modified Dietz YTD returns,
+  // so the card matches the table (and excludes transfers/deposits) rather than the
+  // naive (end−start)/start over the chart timeline.
   const ytdPct = useMemo(() => {
-    const jan1 = `${new Date().getFullYear()}-01-01`
-    const jan1pt = points.find(p => p.date >= jan1) || points[0]
-    const latestPt = points[points.length - 1]
-    if (!jan1pt || !latestPt) return null
-    const s = labels.reduce((s, l) => s + (jan1pt.values[l] ?? 0), 0)
-    const e = labels.reduce((s, l) => s + (latestPt.values[l] ?? 0), 0)
-    return s === 0 ? null : ((e - s) / s) * 100
-  }, [points, labels])
+    const weighted = scopedReturns.reduce(
+      (s, r) => { const v = r.returns['YTD']; return v != null ? s + v * r.current_value : s }, 0)
+    const tw = scopedReturns
+      .filter(r => r.returns['YTD'] != null)
+      .reduce((s, r) => s + r.current_value, 0)
+    return tw > 0 ? weighted / tw : null
+  }, [scopedReturns])
 
   const noData = !timelineQ.isLoading && points.length === 0
   const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0

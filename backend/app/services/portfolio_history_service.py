@@ -303,6 +303,10 @@ def compute_portfolio_snapshots(
     income: dict[int, Decimal] = defaultdict(Decimal)
     # cash[account_id] = running cash balance in CAD (mirrors get_cash_balances logic)
     cash: dict[int, Decimal] = defaultdict(Decimal)
+    # Running cash in the account's NATIVE currency — used only to detect a fully
+    # drained account so the FX-drift residual (from summing cad_amount at historical
+    # rates on a foreign account) can be zeroed out.
+    cash_native: dict[int, Decimal] = defaultdict(Decimal)
 
     txn_idx = 0
     n_txns = len(all_txns)
@@ -406,13 +410,22 @@ def compute_portfolio_snapshots(
             if ct_type in _CASH_NEUTRAL:
                 continue
             raw_cad = _d(ct.cad_amount)  # signed: negative = outflow, positive = inflow
+            # Native amount in the account's base currency (account_currency_amount is
+            # stored in base ccy; IBKR rows leave it NULL and use transaction_amount).
+            raw_native = (
+                _d(ct.account_currency_amount) if ct.account_currency_amount is not None
+                else _d(ct.transaction_amount) if ct.transaction_amount is not None
+                else raw_cad
+            )
             if ct_type == "DRIP":
                 # iTrade DRIP purchase (outflow) or cash-dividend income (no shares issued)
                 ct_qty = _d(ct.quantity)
                 if raw_cad < ZERO or (raw_cad > ZERO and ct_qty == ZERO):
                     cash[ct_acct] += raw_cad
+                    cash_native[ct_acct] += raw_native
             elif raw_cad != ZERO:
                 cash[ct_acct] += raw_cad
+                cash_native[ct_acct] += raw_native
 
         # ── Compute market value per account ──────────────────────────────────
         for acct_id in accounts:
@@ -451,7 +464,12 @@ def compute_portfolio_snapshots(
                 db.add(snap)
                 existing_snaps[key] = snap
             snap.market_value_cad = total_val
-            snap.cash_balance_cad = cash.get(acct_id, ZERO)
+            cash_cad_val = cash.get(acct_id, ZERO)
+            # Fully drained account (no positions + ~zero native cash) ⇒ the CAD figure
+            # should be $0, not the FX-drift residual left by summing cad_amount.
+            if total_val == ZERO and abs(cash_native.get(acct_id, ZERO)) < Decimal("1"):
+                cash_cad_val = ZERO
+            snap.cash_balance_cad = cash_cad_val
             snap.invested_cad = invested.get(acct_id, ZERO)
             snap.income_cad = income.get(acct_id, ZERO)
             snap.priced_fraction = priced_frac

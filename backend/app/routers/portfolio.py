@@ -1623,6 +1623,15 @@ def get_performance_returns(
         }
         end_date    = sorted_dates[-1]
         group_flows = flows_by_group.get(key, [])
+
+        # Emptied/closed account: a return on ~$0 of current capital is mathematically
+        # undefined (Modified Dietz's denominator collapses), so show "—" for all periods
+        # rather than a meaningless figure like +1260%.
+        if end_mv < D("1"):
+            row_result["returns"] = {lbl: None for lbl in list(period_starts) + ["inception"]}
+            results.append(row_result)
+            continue
+
         for label, start_date in period_starts.items():
             if eff_date > start_date:
                 row_result["returns"][label] = None

@@ -436,65 +436,6 @@ def scan_ticker_ibeam(
     return all_results
 
 
-def fetch_equity_price_ibeam(symbol: str, is_canadian: bool = False) -> Optional[dict]:
-    """
-    Fetch a live equity/ETF last price from IBKR Client Portal (IBeam).
-
-    Used by price_service as a *fallback* when yfinance can't price a security.
-    Looks up the symbol's contract id, then snapshots last/bid/ask.
-
-    Returns {"price": Decimal, "fetch_ticker": str, "source": "ibeam"} or None.
-    Currency is left to the caller (it already knows the security's currency).
-    """
-    if not is_ibeam_available():
-        return None
-    clean = (symbol or "").strip().upper().split(".")[0]
-    if not clean:
-        return None
-
-    try:
-        results = _cp_get("/iserver/secdef/search", {"symbol": clean})
-        time.sleep(_CP_RATE_DELAY)
-    except Exception as exc:
-        logger.debug("IBeam equity search failed for %s: %s", symbol, exc)
-        return None
-
-    if not isinstance(results, list) or not results:
-        return None
-
-    # Prefer a TSX/Toronto listing for Canadian names; otherwise take the first
-    # result that carries a contract id.
-    chosen = None
-    if is_canadian:
-        for item in results:
-            desc = (item.get("description") or "").upper()
-            if item.get("conid") and ("TSX" in desc or "TORONTO" in desc or "VENTURE" in desc):
-                chosen = item
-                break
-    if chosen is None:
-        chosen = next((it for it in results if it.get("conid")), None)
-    if chosen is None:
-        return None
-
-    try:
-        conid = int(chosen["conid"])
-        snap = _cp_snapshot([conid])
-    except Exception as exc:
-        logger.debug("IBeam equity snapshot failed for %s: %s", symbol, exc)
-        return None
-
-    d = snap.get(str(conid), {})
-    price = _f(d, 31) or _f(d, 84) or _f(d, 86)   # 31=last, 84=bid, 86=ask
-    if not price or price <= 0:
-        return None
-
-    return {
-        "price": Decimal(str(price)),
-        "fetch_ticker": f"ibeam:{clean}",
-        "source": "ibeam",
-    }
-
-
 def fetch_option_price_ibeam(
     underlying: str,
     expiry: "date",

@@ -315,6 +315,8 @@ def compute_portfolio_snapshots(
     # Foreign-currency cash held inside an account (e.g. a USD opening balance in a CAD
     # account): {acct_id: {ccy: native_amount}}.
     foreign_cash: dict[int, dict[str, Decimal]] = defaultdict(lambda: defaultdict(Decimal))
+    # Most recent transaction date per account, used to detect dormant/closed accounts.
+    last_txn_date: dict[int, date] = {}
 
     # Cached FX lookup (ccy → CAD at a given date), forward-fills via fx_service.
     from app.services.fx_service import get_rate as _get_rate
@@ -427,6 +429,10 @@ def compute_portfolio_snapshots(
 
             ct_type = ct.transaction_type
             ct_acct = ct.account_id
+            # Track the most recent transaction per account (all types) to detect
+            # dormant/closed accounts. Processed in date order, so this ends up as the
+            # latest transaction on or before snap_date.
+            last_txn_date[ct_acct] = ct_date
             if ct_type in _CASH_NEUTRAL:
                 continue
 
@@ -506,6 +512,13 @@ def compute_portfolio_snapshots(
             for _fccy, _famt in foreign_cash.get(acct_id, {}).items():
                 if _famt != ZERO:
                     cash_cad_val += _famt * _fx_to_cad(_fccy, snap_date)
+            # Dormant/closed account: no positions AND no transactions for >12 months ⇒
+            # any leftover cash is an FX / Norbert's-Gambit spread residual, not real money
+            # (e.g. a closed RRSP whose CAD/USD legs net to a small non-zero figure). Zero it.
+            # Active accounts that merely dip to $0 keep recent transactions, so they're untouched.
+            _ltx = last_txn_date.get(acct_id)
+            if total_val == ZERO and _ltx is not None and (snap_date - _ltx).days > 365:
+                cash_cad_val = ZERO
             snap.cash_balance_cad = cash_cad_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             snap.invested_cad = invested.get(acct_id, ZERO)
             snap.income_cad = income.get(acct_id, ZERO)

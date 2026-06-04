@@ -21,7 +21,7 @@ interface TimelinePoint {
   invested: Record<string, number>
 }
 interface ChartEventItem {
-  type: 'DEPOSIT' | 'WITHDRAWAL'
+  type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'JOURNAL'
   amount_cad: number
   account: string
   group_label: string
@@ -102,6 +102,15 @@ const fmtPct = (n: number | null | undefined) => {
 const pctClass = (n: number | null | undefined) =>
   n == null ? 'text-gray-400' : n >= 0 ? 'text-emerald-600' : 'text-red-500'
 
+// Cash-flow event helpers: classify deposits/transfers-in as inflows (↑ green),
+// withdrawals/transfers-out as outflows (↓ red); JOURNAL by amount sign.
+const isInflowEvent = (it: ChartEventItem) =>
+  it.type === 'DEPOSIT' || it.type === 'TRANSFER_IN' || (it.type === 'JOURNAL' && it.amount_cad >= 0)
+const FLOW_LABEL: Record<ChartEventItem['type'], string> = {
+  DEPOSIT: 'Deposit', WITHDRAWAL: 'Withdrawal',
+  TRANSFER_IN: 'Transfer in', TRANSFER_OUT: 'Transfer out', JOURNAL: 'Transfer',
+}
+
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
 function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
@@ -155,9 +164,9 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
         <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
           <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
           {ev.items.map((item, i) => (
-            <div key={i} className={`flex justify-between gap-3 font-medium ${item.type === 'DEPOSIT' ? 'text-emerald-600' : 'text-red-500'}`}>
-              <span className="truncate max-w-[120px]">
-                {item.type === 'DEPOSIT' ? '↑' : '↓'} {item.account}
+            <div key={i} className={`flex justify-between gap-3 font-medium ${isInflowEvent(item) ? 'text-emerald-600' : 'text-red-500'}`}>
+              <span className="truncate max-w-[150px]">
+                {isInflowEvent(item) ? '↑' : '↓'} {FLOW_LABEL[item.type]} · {item.account}
               </span>
               <span className="whitespace-nowrap">{fmtCAD(item.amount_cad)}</span>
             </div>
@@ -718,8 +727,9 @@ export default function Performance() {
                             return <g key={`dot-${lbl}-${date}`} />
                           }
                           const ev = dateToEvents[date]
-                          const hasWithdrawal = ev?.items.some(it => it.group_label === lbl && it.type === 'WITHDRAWAL')
-                          const hasDeposit    = ev?.items.some(it => it.group_label === lbl && it.type === 'DEPOSIT')
+                          const lblItems = ev?.items.filter(it => it.group_label === lbl) ?? []
+                          const hasDeposit    = lblItems.some(it => isInflowEvent(it))
+                          const hasWithdrawal = lblItems.some(it => !isInflowEvent(it))
                           const fill = (hasWithdrawal && hasDeposit) ? '#d97706' : hasWithdrawal ? '#ef4444' : '#10b981'
                           return (
                             <circle key={`dot-${lbl}-${date}`} cx={cx} cy={cy} r={5} fill={fill} stroke="white" strokeWidth={2} />

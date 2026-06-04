@@ -1369,15 +1369,17 @@ def get_performance_timeline(
             point["invested"][label] = float(iv)
         points.append(point)
 
-    # ── Contribution / withdrawal events ─────────────────────────────────────
-    # Query DEPOSIT and WITHDRAWAL transactions in scope; attach group_label so
-    # the frontend can place the dot on the correct chart series.
+    # ── Cash-flow events (deposits, withdrawals, transfers) ───────────────────
+    # Query external cash-flow transactions in scope; attach group_label so the
+    # frontend can place a dot on the correct chart series.
     from app.models.transactions import Transaction as Txn
     from datetime import datetime as _dt
     flow_q = (
         db.query(Txn)
         .filter(
-            Txn.transaction_type.in_(('DEPOSIT', 'WITHDRAWAL')),
+            Txn.transaction_type.in_(
+                ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'JOURNAL')
+            ),
             Txn.cad_amount.isnot(None),
         )
     )
@@ -1505,6 +1507,29 @@ def get_performance_returns(
             mv, inc, inv = by_group[key][d]
             by_group[key][d] = (max(mv, D(0)), inc, inv)
 
+    # ── External cash flows per group (for Modified Dietz return) ────────────────
+    # Deposits, withdrawals and inter-account transfers are capital movements, not
+    # gains/losses. cad_amount is stored signed: inflows +, outflows −.
+    from app.models.transactions import Transaction as _Txn
+    _FLOW_TYPES = ("DEPOSIT", "WITHDRAWAL", "TRANSFER_IN", "TRANSFER_OUT", "JOURNAL")
+    flows_by_group: dict[tuple, list[tuple[date, float]]] = defaultdict(list)
+    _fq = db.query(_Txn).filter(
+        _Txn.transaction_type.in_(_FLOW_TYPES),
+        _Txn.cad_amount.isnot(None),
+    )
+    if parsed_ids:
+        _fq = _fq.filter(_Txn.account_id.in_(parsed_ids))
+    for _t in _fq.all():
+        _key = acct_to_group.get(_t.account_id)
+        if _key is None:
+            continue
+        _td = _t.transaction_date
+        if hasattr(_td, "date"):
+            _td = _td.date()
+        flows_by_group[_key].append((_td, float(_t.cad_amount or 0)))
+    for _key in flows_by_group:
+        flows_by_group[_key].sort(key=lambda x: x[0])
+
     def _closest(date_map: dict[date, tuple[D, D, D]], target: date) -> Optional[tuple[D, D, D]]:
         """Return (market_value, income, invested) for the snapshot closest to (but not after) target."""
         best_date = None
@@ -1515,32 +1540,37 @@ def get_performance_returns(
                 break
         return date_map[best_date] if best_date is not None else None
 
-    def _total_return_pct(
-        end_mv: D, end_inc: D, end_inv: D,
-        start_mv: D, start_inc: D, start_inv: D,
+    def _modified_dietz(
+        start_value: float, end_value: float,
+        flows: list[tuple[date, float]],
+        period_start: date, period_end: date,
     ) -> Optional[float]:
         """
-        Total return for a period including income and returned capital:
+        Modified Dietz return — gain net of external cash flows, over the
+        time-weighted average capital:
 
-          Total gain = (end_mv - start_mv)          ← price appreciation
-                     + (end_inc - start_inc)         ← income earned (interest/dividends/premiums)
-                     + max(0, start_inv - end_inv)   ← capital returned to investor (principal
-                                                        repayments, net position reductions)
+          R = (End − Start − ΣFᵢ) / (Start + Σ wᵢ·Fᵢ) × 100
+              where wᵢ = (period_end − dateᵢ) / (period_end − period_start)
 
-          Total Return % = Total gain / start_mv × 100
-
-        The "capital returned" term correctly handles fixed-income principal repayments:
-        when a mortgage borrower repays $33K of principal, invested_cad drops by $33K and
-        market_value drops by $33K — without this term those would cancel to a spurious loss.
-        For equity accounts where sell proceeds are reinvested, invested_cad stays roughly
-        flat so this term is near zero.
+        External flows (deposits, withdrawals, inter-account transfers) are
+        capital movements, not gains/losses, so they are removed from the
+        numerator and weighted by their time-in-account in the denominator.
+        Income (interest/dividends) is already reflected in the account value
+        (cash balance), so it is captured by (End − Start) — no separate term,
+        which avoids the double-counting the previous formula suffered from.
         """
-        if start_mv == 0:
+        if start_value is None:
             return None
-        period_income    = end_inc - start_inc
-        capital_returned = max(D(0), start_inv - end_inv)
-        total_gain       = (end_mv - start_mv) + period_income + capital_returned
-        return float(total_gain / abs(start_mv) * 100)
+        net_flow = sum(a for _, a in flows)
+        total_days = (period_end - period_start).days
+        if total_days > 0:
+            weighted = sum(a * ((period_end - d).days / total_days) for d, a in flows)
+        else:
+            weighted = 0.0
+        denom = start_value + weighted
+        if abs(denom) < 1e-6:
+            return None
+        return (end_value - start_value - net_flow) / denom * 100.0
 
     def _effective_inception(date_map: dict[date, tuple[D, D, D]], current_mv: D) -> tuple[date, tuple[D, D, D]]:
         """
@@ -1591,21 +1621,30 @@ def get_performance_returns(
             "inception_date_custom": date_custom,
             "returns": {},
         }
+        end_date    = sorted_dates[-1]
+        group_flows = flows_by_group.get(key, [])
         for label, start_date in period_starts.items():
             if eff_date > start_date:
                 row_result["returns"][label] = None
-            else:
-                snap = _closest(date_map, start_date)
-                if snap is None:
-                    row_result["returns"][label] = None
+                continue
+            # Snapshot on/before the period start anchors the opening value.
+            start_snap_date = None
+            for d in sorted_dates:
+                if d <= start_date:
+                    start_snap_date = d
                 else:
-                    s_mv, s_inc, s_inv = snap
-                    row_result["returns"][label] = _total_return_pct(
-                        end_mv, end_inc, end_inv, s_mv, s_inc, s_inv
-                    )
-        eff_mv, eff_inc, eff_inv = eff_snap
-        row_result["returns"]["inception"] = _total_return_pct(
-            end_mv, end_inc, end_inv, eff_mv, eff_inc, eff_inv
+                    break
+            if start_snap_date is None:
+                row_result["returns"][label] = None
+                continue
+            s_val    = date_map[start_snap_date][0]
+            flows_in = [(d, a) for (d, a) in group_flows if start_snap_date < d <= end_date]
+            row_result["returns"][label] = _modified_dietz(
+                float(s_val), float(end_mv), flows_in, start_snap_date, end_date
+            )
+        eff_flows = [(d, a) for (d, a) in group_flows if eff_date < d <= end_date]
+        row_result["returns"]["inception"] = _modified_dietz(
+            float(eff_snap[0]), float(end_mv), eff_flows, eff_date, end_date
         )
         results.append(row_result)
 

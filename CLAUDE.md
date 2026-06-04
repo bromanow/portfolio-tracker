@@ -250,6 +250,8 @@ regress them):
   Norbert's-Gambit (DLR) flows.
 - **Dormant/closed accounts:** if no positions AND last transaction > 365 days before the
   snapshot date, cash is zeroed (an FX/spread residual on a closed account isn't real money).
+  Dormancy is judged across the **logical account** (all CAD/USD siblings, by name minus
+  " (USD)") — so an idle USD cash sub isn't zeroed while its CAD sibling is actively traded.
   Active accounts that merely dip to $0 keep recent transactions, so they're untouched.
 - **Returns:** Modified Dietz — gain net of external cash flows (DEPOSIT/WITHDRAWAL/
   TRANSFER_IN/TRANSFER_OUT/JOURNAL), over time-weighted average capital. Returns are

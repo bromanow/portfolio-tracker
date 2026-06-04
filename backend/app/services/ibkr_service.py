@@ -462,18 +462,28 @@ def fetch_equity_price_ibeam(symbol: str, is_canadian: bool = False) -> Optional
     if not isinstance(results, list) or not results:
         return None
 
-    # Prefer a TSX/Toronto listing for Canadian names; otherwise take the first
-    # result that carries a contract id.
+    # Choose a CONFIDENT match only — guards against ambiguous tickers (e.g. "SQ")
+    # resolving to the wrong instrument and producing a bogus price.
+    #   1. exact symbol match (IBKR searched by `clean`, so its results carry symbol==clean)
+    #   2. the listing must be on an exchange in the security's expected region
+    # If nothing matches both, return None (no price is better than a wrong price).
+    _CA_EXCHANGES = ("TSX", "TORONTO", "VENTURE", "TSXV", "CSE", "NEO")
+    _US_EXCHANGES = ("NYSE", "NASDAQ", "ARCA", "AMEX", "BATS", "NYSENAT", "PINK", "OTC", "ISLAND")
+    wanted = _CA_EXCHANGES if is_canadian else _US_EXCHANGES
+
     chosen = None
-    if is_canadian:
-        for item in results:
-            desc = (item.get("description") or "").upper()
-            if item.get("conid") and ("TSX" in desc or "TORONTO" in desc or "VENTURE" in desc):
-                chosen = item
-                break
+    for item in results:
+        if not item.get("conid"):
+            continue
+        if (item.get("symbol") or "").upper() != clean:
+            continue
+        desc = (item.get("description") or "").upper()
+        if any(x in desc for x in wanted):
+            chosen = item
+            break
     if chosen is None:
-        chosen = next((it for it in results if it.get("conid")), None)
-    if chosen is None:
+        logger.debug("IBeam: no confident %s-region match for %s — skipping to avoid mismatch",
+                     "CA" if is_canadian else "US", symbol)
         return None
 
     try:

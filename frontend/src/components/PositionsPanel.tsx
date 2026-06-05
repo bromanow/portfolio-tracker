@@ -1,5 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { useNavigate } from 'react-router-dom'
 import { getConsolidatedPositions } from '../api/client'
 import type { ConsolidatedPosition, CashBalance } from '../api/client'
 import {
@@ -128,12 +129,23 @@ interface PositionsPanelProps {
 }
 
 export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPanelProps) {
+  const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())
   const [cashExpanded, setCashExpanded] = useState(false)
   const [sortCol, setSortCol] = useState('total_acb_cad')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [selectedPosition, setSelectedPosition] = useState<ConsolidatedPosition | null>(null)
+
+  const handleTickerClick = (pos: ConsolidatedPosition, e: React.MouseEvent) => {
+    e.stopPropagation()
+    // On mobile (< md = 768px) navigate to full-page detail; on desktop open slide-over
+    if (pos.security_id && window.innerWidth < 768) {
+      navigate(`/holdings/security/${pos.security_id}`)
+    } else {
+      setSelectedPosition(pos)
+    }
+  }
 
   const { data: consolidated = [], isLoading } = useQuery({
     queryKey: ['consolidated-positions', accountIds, asOf],
@@ -322,7 +334,60 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
           ) : (consolidated as ConsolidatedPosition[]).length === 0 ? (
             <div className="p-8 text-center text-gray-400 text-sm">No positions found.</div>
           ) : (
-            <div className="overflow-x-auto">
+            <>
+            {/* ── Mobile card list ── */}
+            <div className="md:hidden divide-y divide-gray-100">
+              {sorted.map(pos => {
+                const mktVal  = pos.market_value_cad ? parseFloat(pos.market_value_cad) : null
+                const pnl     = pos.unrealized_pnl_cad ? parseFloat(pos.unrealized_pnl_cad) : null
+                const pnlPct  = pos.unrealized_pnl_pct ? parseFloat(pos.unrealized_pnl_pct) : null
+                const dayChg  = pos.day_change_pct ? parseFloat(pos.day_change_pct) : null
+                const qty     = parseFloat(pos.total_quantity || '0')
+                return (
+                  <div
+                    key={pos.ticker}
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+                    onClick={() => pos.security_id && handleTickerClick(pos, { stopPropagation: () => {} } as React.MouseEvent)}
+                  >
+                    {/* Left: ticker + name */}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5">
+                        <span className="font-mono font-semibold text-blue-700 text-sm">
+                          {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
+                        </span>
+                        <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-500'}`}>
+                          {pos.asset_class}
+                        </span>
+                      </div>
+                      <div className="text-xs text-gray-400 truncate mt-0.5">
+                        {pos.security_name ?? pos.exchange ?? ''}
+                        {qty !== 0 && <span className="ml-1">· {qty % 1 === 0 ? qty.toFixed(0) : qty.toFixed(2)} shares</span>}
+                      </div>
+                    </div>
+
+                    {/* Right: value + P&L */}
+                    <div className="text-right flex-shrink-0">
+                      <div className="text-sm font-semibold text-gray-900">
+                        {mktVal != null ? fmtCAD(mktVal) : '—'}
+                      </div>
+                      <div className={`text-xs font-medium ${pnl != null ? (pnl >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-gray-400'}`}>
+                        {pnl != null ? (pnl >= 0 ? '+' : '') + fmtCAD(pnl) : '—'}
+                        {pnlPct != null && <span className="ml-1 text-[10px]">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>}
+                      </div>
+                      {dayChg != null && (
+                        <div className={`text-[10px] ${dayChg >= 0 ? 'text-emerald-500' : 'text-red-400'}`}>
+                          {dayChg >= 0 ? '▲' : '▼'} {Math.abs(dayChg).toFixed(2)}% today
+                        </div>
+                      )}
+                    </div>
+                    <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                  </div>
+                )
+              })}
+            </div>
+
+            {/* ── Desktop table ── */}
+            <div className="hidden md:block overflow-x-auto">
               <table className="min-w-full text-sm divide-y divide-gray-100">
                 <thead className="bg-gray-50">
                   <tr className="text-xs text-gray-500 uppercase">
@@ -367,7 +432,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           <td className="px-4 py-2.5 whitespace-nowrap">
                             <span
                               className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
-                              onClick={e => { e.stopPropagation(); setSelectedPosition(pos) }}
+                              onClick={e => handleTickerClick(pos, e)}
                             >
                               {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
                             </span>
@@ -669,6 +734,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 </p>
               )}
             </div>
+            </>
           )}
         </div>
       )}

@@ -2,6 +2,8 @@ import { Outlet } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { AlertTriangle, RefreshCw } from 'lucide-react'
 import Sidebar from './Sidebar'
+import BottomNav from './BottomNav'
+import QuickAddFAB from './QuickAddFAB'
 import Header from './Header'
 import api from '../api/client'
 
@@ -9,7 +11,7 @@ function useBackendHealth() {
   return useQuery({
     queryKey: ['health'],
     queryFn: () => api.get('/health').then(r => r.data),
-    refetchInterval: 15_000,        // re-check every 15s
+    refetchInterval: 15_000,
     refetchIntervalInBackground: true,
     retry: 1,
     retryDelay: 2_000,
@@ -21,7 +23,11 @@ export default function Layout() {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <Sidebar />
+      {/* Desktop sidebar — hidden on mobile */}
+      <div className="hidden md:flex">
+        <Sidebar />
+      </div>
+
       <div className="flex flex-col flex-1 min-w-0 overflow-hidden">
         <Header />
         {isError && (
@@ -39,12 +45,21 @@ export default function Layout() {
             </button>
           </div>
         )}
-        <main className="flex-1 overflow-auto">
-          <div className="p-6">
+        {/* Bottom padding on mobile so content clears the tab bar */}
+        <main className="flex-1 overflow-auto pb-safe">
+          <div className="p-4 md:p-6 pb-20 md:pb-6">
             <Outlet />
           </div>
         </main>
       </div>
+
+      {/* Mobile bottom nav — hidden on desktop */}
+      <div className="md:hidden">
+        <BottomNav />
+      </div>
+
+      {/* Floating action button — mobile only */}
+      <QuickAddFAB />
     </div>
   )
 }

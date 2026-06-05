@@ -1,3 +1,4 @@
+import Reports from './Reports'
 import { useState, useMemo, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -320,7 +321,9 @@ function SortTh({ label, col, sortCol, sortDir, onSort, right = false }: {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-export default function Performance() {
+type PageTab = 'performance' | 'reports'
+
+function PerformanceInner() {
   const queryClient = useQueryClient()
 
   // Chart controls
@@ -616,28 +619,29 @@ export default function Performance() {
   const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0
 
   return (
-    <div className="p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto">
 
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Performance</h1>
-          <p className="text-sm text-gray-400 mt-0.5">Portfolio value over time · {latestDate ?? '—'}</p>
+          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Performance</h1>
+          <p className="text-xs md:text-sm text-gray-400 mt-0.5">Portfolio value over time · {latestDate ?? '—'}</p>
         </div>
+        {/* Desktop: full button label; mobile: icon only */}
         <button
           onClick={() => computeMut.mutate()}
           disabled={computeMut.isPending}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+          className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
         >
           <RefreshCw className={`h-4 w-4 ${computeMut.isPending ? 'animate-spin' : ''}`} />
-          {computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}
+          <span className="hidden md:inline">{computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}</span>
         </button>
       </div>
 
       {/* ── Chart panel ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-3">
+      <div className="bg-white rounded-xl border border-gray-200 p-3 md:p-5 space-y-3">
         {/* Row 1: group-by + period + date range + show-invested */}
-        <div className="flex flex-wrap items-center gap-3">
+        <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
             {(['total','brokerage','account_type','account'] as GroupBy[]).map(g => (
               <button key={g} onClick={() => setGroupBy(g)}
@@ -655,8 +659,8 @@ export default function Performance() {
               </button>
             ))}
           </div>
-          {/* Custom date range */}
-          <div className="flex items-center gap-1 text-xs text-gray-500">
+          {/* Custom date range — desktop only */}
+          <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
             <input type="date" value={customFromDate} onChange={e => setCustomFromDate(e.target.value)}
               className={`border rounded px-2 py-1 w-30 focus:outline-none focus:ring-1 focus:ring-blue-400 ${customFromDate ? 'border-blue-400' : 'border-gray-200'}`} />
             <span className="text-gray-400">→</span>
@@ -674,7 +678,7 @@ export default function Performance() {
         </div>
 
         {/* Row 2: account filters (same MultiSelectDropdown style as header) */}
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <MultiSelectDropdown
             placeholder="All Brokerages"
             options={brokerageOptions}
@@ -702,8 +706,8 @@ export default function Performance() {
               <X className="h-3.5 w-3.5" /> Clear
             </button>
           )}
-          {/* Benchmark index comparison */}
-          <div className="flex items-center gap-2 ml-auto">
+          {/* Benchmark index comparison — desktop only */}
+          <div className="hidden md:flex items-center gap-2 ml-auto">
             <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Compare:</span>
             <MultiSelectDropdown
               placeholder="Add indices"
@@ -915,6 +919,35 @@ export default function Performance() {
         </div>
       </div>
 
+    </div>
+  )
+}
+
+export default function Performance() {
+  const [tab, setTab] = useState<PageTab>('performance')
+
+  return (
+    <div className="space-y-4">
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex gap-1">
+          {(['performance', 'reports'] as PageTab[]).map(t => (
+            <button
+              key={t}
+              onClick={() => setTab(t)}
+              className={`px-4 py-2 text-sm font-medium border-b-2 capitalize transition-colors ${
+                tab === t
+                  ? 'border-blue-600 text-blue-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              {t === 'performance' ? 'Returns' : 'Reports'}
+            </button>
+          ))}
+        </nav>
+      </div>
+
+      {tab === 'performance' && <PerformanceInner />}
+      {tab === 'reports'     && <Reports />}
     </div>
   )
 }

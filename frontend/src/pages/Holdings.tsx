@@ -7,20 +7,22 @@ import PortfolioAnalyticsPanel from '../components/PortfolioAnalyticsPanel'
 import RiskScoringPanel from '../components/RiskScoringPanel'
 import FundamentalsTab from '../components/FundamentalsTab'
 import SignalsTab from '../components/SignalsTab'
+import Options from './Options'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 
-type Tab = 'holdings' | 'fundamentals' | 'signals'
+type Tab = 'positions' | 'options' | 'fundamentals' | 'signals'
 
 const TABS: { id: Tab; label: string }[] = [
-  { id: 'holdings',     label: 'Holdings' },
+  { id: 'positions',    label: 'Positions' },
+  { id: 'options',      label: 'Options' },
   { id: 'fundamentals', label: 'Fundamentals' },
   { id: 'signals',      label: 'Signals' },
 ]
 
 export default function Holdings() {
   const { toDate: asOf } = useFilterContext()
-  const [activeTab, setActiveTab] = useState<Tab>('holdings')
+  const [activeTab, setActiveTab] = useState<Tab>('positions')
 
   const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
   const { data: cashBalances = [] } = useQuery({ queryKey: ['cash-balances', asOf],   queryFn: () => getCashBalances({ as_of: asOf }) })
@@ -74,12 +76,16 @@ export default function Holdings() {
       </div>
 
       {/* Tab content */}
-      {activeTab === 'holdings' && (
+      {activeTab === 'positions' && (
         <div className="space-y-6">
           <PositionsPanel accountIds={readyAccountIds} cash={filteredCash} asOf={asOf} />
           <PortfolioAnalyticsPanel accountIds={histAccountIds} asOf={asOf} />
           <RiskScoringPanel accountIds={histAccountIds} />
         </div>
+      )}
+
+      {activeTab === 'options' && (
+        <Options />
       )}
 
       {activeTab === 'fundamentals' && (

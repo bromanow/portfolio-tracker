@@ -5,13 +5,11 @@ import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Holdings from './pages/Holdings'
 import Performance from './pages/Performance'
-import Import from './pages/Import'
-import Transactions from './pages/Transactions'
-import Options from './pages/Options'
+import Activity from './pages/Activity'
+import SecurityDetail from './pages/SecurityDetail'
 import Scanner from './pages/Scanner'
 import Prices from './pages/Prices'
 import Admin from './pages/Admin'
-import Reports from './pages/Reports'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
@@ -46,14 +44,18 @@ export default function App() {
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard"    element={<Dashboard />} />
         <Route path="holdings"     element={<Holdings />} />
+        <Route path="holdings/security/:securityId" element={<SecurityDetail />} />
         <Route path="performance"  element={<Performance />} />
-        <Route path="import"       element={<Import />} />
-        <Route path="transactions" element={<Transactions />} />
+        <Route path="activity"     element={<Activity />} />
         <Route path="scanner"      element={<Scanner />} />
-        <Route path="options"      element={<Options />} />
         <Route path="prices"       element={<Prices />} />
         <Route path="admin"        element={<Admin />} />
-        <Route path="reports"      element={<Reports />} />
+
+        {/* Legacy redirects — keep old bookmarks working */}
+        <Route path="import"       element={<Navigate to="/activity" replace />} />
+        <Route path="transactions" element={<Navigate to="/activity" replace />} />
+        <Route path="options"      element={<Navigate to="/holdings" replace />} />
+        <Route path="reports"      element={<Navigate to="/performance" replace />} />
       </Route>
 
       {/* Catch-all */}

@@ -4,9 +4,6 @@ import {
   LayoutDashboard,
   List,
   Settings,
-  BarChart2,
-  Layers,
-  DollarSign,
   Briefcase,
   TrendingUp,
   ScanSearch,
@@ -17,15 +14,12 @@ import {
 import { useAuth } from '../context/AuthContext'
 
 const nav = [
-  { to: '/dashboard',    label: 'Dashboard',    icon: LayoutDashboard },
-  { to: '/holdings',     label: 'Holdings',     icon: Briefcase },
-  { to: '/performance',  label: 'Performance',  icon: TrendingUp },
-  { to: '/scanner',      label: 'Scanner',      icon: ScanSearch },
-  { to: '/options',      label: 'Options',      icon: Layers },
-  { to: '/prices',       label: 'Prices',       icon: DollarSign },
-  { to: '/import',       label: 'Transactions', icon: List },
-  { to: '/reports',      label: 'Reports',      icon: BarChart2 },
-  { to: '/admin',        label: 'Admin',        icon: Settings },
+  { to: '/dashboard',   label: 'Overview',     icon: LayoutDashboard },
+  { to: '/holdings',    label: 'Holdings',     icon: Briefcase },
+  { to: '/performance', label: 'Performance',  icon: TrendingUp },
+  { to: '/activity',    label: 'Activity',     icon: List },
+  { to: '/scanner',     label: 'Research',     icon: ScanSearch },
+  { to: '/admin',       label: 'Admin',        icon: Settings },
 ]
 
 export default function Sidebar() {

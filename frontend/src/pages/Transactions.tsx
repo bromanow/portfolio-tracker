@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getTransactions, getAccounts, getSecurities, createTransaction, createTransferPair, deleteTransaction, updateTransaction, deleteAllTransactions, getFxRateLookup, bulkUpdateTransactions, bulkDeleteTransactions } from '../api/client'
 import type { Transaction, Security, Account, TransferPairCreate } from '../api/client'
@@ -501,6 +502,21 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
   // Create new transaction
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+
+  // Auto-open create form when navigated here with ?new=1 (e.g. from mobile FAB)
+  const [searchParams, setSearchParams] = useSearchParams()
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      setCreateError(null)
+      setCreateTickerInput('')
+      setLinkedAccountId('')
+      setLinkedTransferType('JOURNAL')
+      setNewTxn({ transaction_date: new Date().toISOString().slice(0, 10), transaction_type: 'BUY', transaction_currency: 'CAD' })
+      setCreating(true)
+      setSearchParams({}, { replace: true })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
   const [isExporting, setIsExporting] = useState(false)
   const [createTickerInput, setCreateTickerInput] = useState('')
   const [newTxn, setNewTxn] = useState<Partial<Transaction>>({
@@ -958,7 +974,52 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
             <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
           </div>
         ) : (
-          <div className="overflow-x-auto">
+          <>
+          {/* ── Mobile card list ── */}
+          <div className="md:hidden divide-y divide-gray-100">
+            {data?.items.length === 0 ? (
+              <div className="p-8 text-center text-gray-400 text-sm">No transactions found</div>
+            ) : (
+              data?.items.map((t: Transaction) => {
+                const cadAmt = t.cad_amount != null ? parseFloat(t.cad_amount) : null
+                const isBuy = ['BUY', 'OPTION_BUY', 'TRANSFER_IN', 'DEPOSIT'].includes(t.transaction_type)
+                const isSell = ['SELL', 'OPTION_SELL', 'TRANSFER_OUT', 'WITHDRAWAL'].includes(t.transaction_type)
+                return (
+                  <div key={t.id} className="flex items-start gap-3 px-4 py-3">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <TxTypeBadge type={t.transaction_type} />
+                        {t.security_ticker && (
+                          <span className="font-mono text-xs font-semibold text-blue-700">{t.security_ticker}</span>
+                        )}
+                        <span className="text-xs text-gray-400">{t.transaction_date}</span>
+                      </div>
+                      <div className="text-xs text-gray-400 mt-0.5 truncate">
+                        {t.account_name}
+                        {t.quantity && <span className="ml-1.5">· {fmtNum(t.quantity, 4)} @ {fmtNum(t.price)}</span>}
+                      </div>
+                      {(t.raw_description || t.notes) && (
+                        <div className="text-xs text-gray-300 truncate mt-0.5">{t.raw_description || t.notes}</div>
+                      )}
+                    </div>
+                    <div className="text-right flex-shrink-0">
+                      <div className={`text-sm font-semibold ${isBuy ? 'text-emerald-600' : isSell ? 'text-red-500' : 'text-gray-700'}`}>
+                        {cadAmt != null
+                          ? (cadAmt >= 0 ? '+' : '') + cadAmt.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 })
+                          : '—'}
+                      </div>
+                      {t.transaction_currency && t.transaction_currency !== 'CAD' && (
+                        <div className="text-xs text-gray-400">{t.transaction_currency} {fmtNum(t.transaction_amount)}</div>
+                      )}
+                    </div>
+                  </div>
+                )
+              })
+            )}
+          </div>
+
+          {/* ── Desktop table ── */}
+          <div className="hidden md:block overflow-x-auto">
             <table className="min-w-full text-sm divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr className="text-xs text-gray-500 uppercase">
@@ -1054,6 +1115,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
               })()}
             </table>
           </div>
+          </>
         )}
 
         {/* Bottom pagination — mirrors top */}

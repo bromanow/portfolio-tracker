@@ -203,10 +203,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
     { label: 'Total Cost (CAD)', col: 'total_acb_cad',       right: true  },
     { label: 'Price (CAD)',      col: 'current_price_cad',   right: true  },
     { label: 'Mkt Value (CAD)', col: 'market_value_cad',    right: true  },
-    { label: 'P&L ($)',         col: 'unrealized_pnl_cad',  right: true  },
-    { label: 'P&L (%)',         col: 'unrealized_pnl_pct',  right: true  },
     { label: 'Day Gain ($)',    col: 'day_gain_cad',         right: true  },
     { label: 'Day Gain (%)',    col: 'day_change_pct',       right: true  },
+    { label: 'P&L ($)',         col: 'unrealized_pnl_cad',  right: true  },
+    { label: 'P&L (%)',         col: 'unrealized_pnl_pct',  right: true  },
   ]
 
   const exportCsv = () => {
@@ -550,24 +550,6 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                             )}
                           </td>
 
-                          {/* P&L ($) */}
-                          <td className="px-4 py-2.5 text-right">
-                            {pos.unrealized_pnl_cad ? (
-                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>
-                                {fmtCAD(pos.unrealized_pnl_cad)}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-
-                          {/* P&L (%) */}
-                          <td className="px-4 py-2.5 text-right">
-                            {pos.unrealized_pnl_pct ? (
-                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>
-                                {fmtPct(pos.unrealized_pnl_pct)}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-
                           {/* Day Gain ($) */}
                           <td className="px-3 py-2 text-right">
                             {pos.day_gain_cad ? (
@@ -584,6 +566,24 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                                 {fmtPct(pos.day_change_pct)}
                               </span>
                             ) : '—'}
+                          </td>
+
+                          {/* P&L ($) */}
+                          <td className="px-4 py-2.5 text-right">
+                            {pos.unrealized_pnl_cad ? (
+                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>
+                                {fmtCAD(pos.unrealized_pnl_cad)}
+                              </span>
+                            ) : <span className="text-gray-300">—</span>}
+                          </td>
+
+                          {/* P&L (%) */}
+                          <td className="px-4 py-2.5 text-right">
+                            {pos.unrealized_pnl_pct ? (
+                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>
+                                {fmtPct(pos.unrealized_pnl_pct)}
+                              </span>
+                            ) : <span className="text-gray-300">—</span>}
                           </td>
                         </tr>
 
@@ -623,16 +623,6 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         {fallbackCount > 0 && <span className="text-amber-400 ml-0.5">*</span>}
                       </td>
                       <td className="px-4 py-2 text-right">
-                        <span className={pnlClass(totalPnl)}>{fmtCAD(totalPnl)}</span>
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {totalACB > 0 && (
-                          <span className={pnlClass(totalPnl)}>
-                            {fmtPct(String((totalPnl / totalACB) * 100))}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right">
                         {hasDayGain && (
                           <span className={pnlClass(totalDayGain)}>
                             {fmtCAD(totalDayGain)}
@@ -643,6 +633,16 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         {hasDayGain && totalMkt > 0 && (
                           <span className={pnlClass(totalDayGain)}>
                             {fmtPct(String((totalDayGain / totalMkt) * 100))}
+                          </span>
+                        )}
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        <span className={pnlClass(totalPnl)}>{fmtCAD(totalPnl)}</span>
+                      </td>
+                      <td className="px-4 py-2 text-right">
+                        {totalACB > 0 && (
+                          <span className={pnlClass(totalPnl)}>
+                            {fmtPct(String((totalPnl / totalACB) * 100))}
                           </span>
                         )}
                       </td>

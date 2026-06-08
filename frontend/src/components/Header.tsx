@@ -5,11 +5,12 @@ import {
   getPriceStatus, refreshAllPrices, getPriceJob, getAccounts, getScannerMeta,
 } from '../api/client'
 import type { Account } from '../api/client'
-import { RefreshCw, Clock, X, SlidersHorizontal } from 'lucide-react'
+import { RefreshCw, Clock, X, SlidersHorizontal, LogOut } from 'lucide-react'
 import MultiSelectDropdown from './MultiSelectDropdown'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
+import { useAuth } from '../context/AuthContext'
 
 // Pages that show portfolio account filters
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
@@ -47,6 +48,7 @@ const PAGE_TITLES: Record<string, string> = {
 // ── Main Header ───────────────────────────────────────────────────────────────
 export default function Header() {
   const location = useLocation()
+  const { logout } = useAuth()
   const showAccountFilters = ACCOUNT_FILTER_PATHS.has(location.pathname)
   const showTimeRange      = TIME_RANGE_PATHS.has(location.pathname)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -263,6 +265,15 @@ export default function Header() {
             )}
           </button>
         )}
+
+        {/* Sign out */}
+        <button
+          onClick={logout}
+          title="Sign out"
+          className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200"
+        >
+          <LogOut className="h-4 w-4" />
+        </button>
       </header>
 
       {/* ── Mobile filter bottom sheet ── */}

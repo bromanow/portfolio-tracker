@@ -279,12 +279,13 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
           <span className="text-xs text-gray-400 ml-2">Loading…</span>
         ) : (
           <div className="flex items-center gap-x-5 gap-y-1 flex-wrap ml-1">
-            <div className="text-sm">
+            {/* Book / Securities / Cash — desktop only (redundant with Total on mobile) */}
+            <div className="hidden md:block text-sm">
               <span className="text-xs text-gray-400 mr-1">Book</span>
               <span className="font-semibold text-gray-700">{fmtCAD0(totalACB)}</span>
             </div>
             {hasPrices && (
-              <div className="text-sm">
+              <div className="hidden md:block text-sm">
                 <span className="text-xs text-gray-400 mr-1">Securities</span>
                 <span className="font-semibold text-gray-700">{fmtCAD0(totalMkt)}</span>
                 {fallbackCount > 0 && (
@@ -292,7 +293,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 )}
               </div>
             )}
-            <div className="text-sm">
+            <div className="hidden md:block text-sm">
               <span className="text-xs text-gray-400 mr-1">Cash</span>
               <span className={`font-semibold ${totalCash < 0 ? 'text-red-500' : 'text-gray-700'}`}>
                 {fmtCAD0(totalCash)}
@@ -300,13 +301,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
             </div>
             {hasPrices && (
               <>
-                <div className="text-sm border-l border-gray-200 pl-5">
+                <div className="text-sm md:border-l md:border-gray-200 md:pl-5">
                   <span className="text-xs text-gray-400 mr-1">Total</span>
                   <span className="font-bold text-gray-900">{fmtCAD0(totalVal)}</span>
                 </div>
                 <div className={`text-sm flex items-center gap-1 ${pnlClass(totalPnl)}`}>
                   {totalPnl >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
                   <span className="font-semibold">{fmtCAD0(totalPnl)}</span>
+                  {totalACB !== 0 && <span className="text-xs">({totalPnl >= 0 ? '+' : ''}{(totalPnl / Math.abs(totalACB) * 100).toFixed(1)}%)</span>}
                 </div>
               </>
             )}
@@ -335,6 +337,27 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
             <div className="p-8 text-center text-gray-400 text-sm">No positions found.</div>
           ) : (
             <>
+            {/* ── Mobile: sort control ── */}
+            <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50/40">
+              <span className="text-xs text-gray-400">Sort</span>
+              <select
+                value={sortCol}
+                onChange={e => setSortCol(e.target.value)}
+                className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+              >
+                {COLUMNS.filter(c => c.col !== 'asset_class').map(c => (
+                  <option key={c.col} value={c.col}>{c.label}</option>
+                ))}
+              </select>
+              <button
+                onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
+                className="text-sm border border-gray-200 rounded px-3 py-1.5 bg-white text-gray-600 hover:bg-gray-50"
+                title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
+              >
+                {sortDir === 'asc' ? '↑' : '↓'}
+              </button>
+            </div>
+
             {/* ── Mobile card list ── */}
             <div className="md:hidden divide-y divide-gray-100">
               {sorted.map(pos => {

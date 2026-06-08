@@ -7,6 +7,11 @@ import { AuthProvider } from './context/AuthContext'
 import { ClientProvider } from './context/ClientContext'
 import App from './App'
 import './index.css'
+import { registerSW } from 'virtual:pwa-register'
+
+// Auto-update the PWA: activate the new service worker and reload when a new
+// deploy is detected, so home-screen installs never get stuck on a stale build.
+registerSW({ immediate: true })
 
 const queryClient = new QueryClient({
   defaultOptions: {

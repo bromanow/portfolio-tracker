@@ -590,31 +590,31 @@ export default function Dashboard() {
       )}
 
       {/* ── Summary bar ── */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-6 py-4 shadow-sm">
-        <div className="flex flex-wrap items-center gap-x-10 gap-y-3">
+      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-3 md:flex md:flex-wrap md:items-center md:gap-x-10 md:gap-y-3">
           <div>
             <div className="text-xs text-blue-500 uppercase tracking-wide">Book Value</div>
-            <div className="text-2xl font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>
+            <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>
           </div>
           <div>
             <div className="text-xs text-blue-500 uppercase tracking-wide">
               Securities
               {fallbackCount > 0 && <span className="ml-1 text-amber-500" title={`${fallbackCount} position(s) valued at cost`}>*</span>}
             </div>
-            <div className="text-2xl font-bold text-blue-900">{fmtCAD(totalSecurities)}</div>
+            <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(totalSecurities)}</div>
           </div>
           <div>
             <div className="text-xs text-blue-500 uppercase tracking-wide">Cash</div>
-            <div className={`text-2xl font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
+            <div className={`text-xl md:text-2xl font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
           </div>
-          <div className="border-l border-blue-200 pl-10">
+          <div className="md:border-l md:border-blue-200 md:pl-10">
             <div className="text-xs text-blue-500 uppercase tracking-wide">Total Value</div>
-            <div className="text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
+            <div className="text-2xl md:text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
           </div>
           {hasPrices && (
             <div>
               <div className="text-xs text-blue-500 uppercase tracking-wide">Unrealized P&L</div>
-              <div className={`text-2xl font-bold flex items-center gap-1 ${pnlClass(totalPnl)}`}>
+              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass(totalPnl)}`}>
                 {totalPnl >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                 {fmtCAD(totalPnl)}
               </div>
@@ -623,7 +623,7 @@ export default function Dashboard() {
           {hasDayGain && (
             <div>
               <div className="text-xs text-blue-500 uppercase tracking-wide">Day Gain</div>
-              <div className={`text-2xl font-bold flex items-center gap-1 ${pnlClass(totalDayGain)}`}>
+              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass(totalDayGain)}`}>
                 {totalDayGain >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                 {fmtCAD(totalDayGain)}
               </div>
@@ -636,7 +636,7 @@ export default function Dashboard() {
                   ? `YTD ${new Date(toDate).getFullYear()} P&L`
                   : 'YTD P&L'}
               </div>
-              <div className={`text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_cad)}`}>
+              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_cad)}`}>
                 {(summaryMetrics as SummaryMetrics).ytd_gain_cad >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                 {fmtCAD((summaryMetrics as SummaryMetrics).ytd_gain_cad)}
               </div>
@@ -654,7 +654,7 @@ export default function Dashboard() {
                   ? `1Y P&L (to ${toDate})`
                   : '1Y P&L'}
               </div>
-              <div className={`text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_cad)}`}>
+              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_cad)}`}>
                 {(summaryMetrics as SummaryMetrics).one_year_gain_cad >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
                 {fmtCAD((summaryMetrics as SummaryMetrics).one_year_gain_cad)}
               </div>

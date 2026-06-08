@@ -591,7 +591,61 @@ export default function Dashboard() {
 
       {/* ── Summary bar ── */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-3 md:flex md:flex-wrap md:items-center md:gap-x-10 md:gap-y-3">
+        {/* ── Mobile: Total Value hero + compact 2-col grid ── */}
+        <div className="md:hidden">
+          <div className="text-center pb-3 mb-3 border-b border-blue-200">
+            <div className="text-xs text-blue-500 uppercase tracking-wide">Total Value</div>
+            <div className="text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
+            <div className="text-[11px] text-blue-400 mt-0.5">{filteredPositions.length} positions · {allAcctIds.length} accounts</div>
+          </div>
+          <div className="grid grid-cols-2 gap-x-4 gap-y-3">
+            <div>
+              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Book Value</div>
+              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-blue-500 uppercase tracking-wide">
+                Securities{fallbackCount > 0 && <span className="ml-1 text-amber-500">*</span>}
+              </div>
+              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalSecurities)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Cash</div>
+              <div className={`text-lg font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
+            </div>
+            {hasPrices && (
+              <div>
+                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Unrealized P&L</div>
+                <div className={`text-lg font-bold ${pnlClass(totalPnl)}`}>{(totalPnl >= 0 ? '+' : '') + fmtCAD(totalPnl)}</div>
+              </div>
+            )}
+            {hasDayGain && (
+              <div>
+                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Day Gain</div>
+                <div className={`text-lg font-bold ${pnlClass(totalDayGain)}`}>{(totalDayGain >= 0 ? '+' : '') + fmtCAD(totalDayGain)}</div>
+              </div>
+            )}
+            {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).ytd_gain_cad !== undefined && (
+              <div>
+                <div className="text-[11px] text-blue-500 uppercase tracking-wide">YTD P&L</div>
+                <div className={`text-lg font-bold ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_cad)}`}>
+                  {((summaryMetrics as SummaryMetrics).ytd_gain_cad >= 0 ? '+' : '') + fmtCAD((summaryMetrics as SummaryMetrics).ytd_gain_cad)}
+                </div>
+              </div>
+            )}
+            {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).one_year_gain_cad !== undefined && (
+              <div>
+                <div className="text-[11px] text-blue-500 uppercase tracking-wide">1Y P&L</div>
+                <div className={`text-lg font-bold ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_cad)}`}>
+                  {((summaryMetrics as SummaryMetrics).one_year_gain_cad >= 0 ? '+' : '') + fmtCAD((summaryMetrics as SummaryMetrics).one_year_gain_cad)}
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ── Desktop: flex-wrap metrics row ── */}
+        <div className="hidden md:flex md:flex-wrap md:items-center md:gap-x-10 md:gap-y-3">
           <div>
             <div className="text-xs text-blue-500 uppercase tracking-wide">Book Value</div>
             <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>

@@ -74,7 +74,55 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
     return <p className="text-gray-400 text-sm py-4">No positions found.</p>
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <>
+    {/* ── Mobile: brokerage cards (the table is too dense for phones) ── */}
+    <div className="md:hidden space-y-3">
+      {data.map(brok => {
+        const isOpen = expanded.has(brok.name)
+        return (
+          <div key={brok.name} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+            <button
+              onClick={() => toggleBrok(brok.name)}
+              className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left active:bg-gray-50"
+            >
+              <div className="min-w-0">
+                <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                  {isOpen
+                    ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
+                    : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
+                  {brok.name}
+                </div>
+                <div className="text-xs text-gray-400 mt-0.5 truncate">
+                  {brok.accounts.length} acct{brok.accounts.length !== 1 ? 's' : ''} · Cash {fmtCAD(brok.totalCash)}
+                </div>
+              </div>
+              <div className="text-right flex-shrink-0">
+                <div className="font-bold text-blue-700">{fmtCAD(brok.total)}</div>
+                <div className={`text-xs font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-gray-400'}`}>
+                  {brok.hasPrices ? (brok.pnl >= 0 ? '+' : '') + fmtCAD(brok.pnl) + ' P&L' : '—'}
+                </div>
+              </div>
+            </button>
+            {isOpen && (
+              <div className="border-t border-gray-100 divide-y divide-gray-50 bg-gray-50/30">
+                {brok.accounts.map(acct => (
+                  <div key={acct.account_id} className="px-4 py-2 flex items-center justify-between gap-2 text-sm">
+                    <span className="flex items-center gap-1.5 min-w-0">
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium whitespace-nowrap">{acct.account_type}</span>
+                      <span className="text-gray-700 truncate">{acct.account_name}</span>
+                    </span>
+                    <span className="font-mono font-medium text-gray-900 flex-shrink-0">{fmtCAD(acct.total)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )
+      })}
+    </div>
+
+    {/* ── Desktop: full table ── */}
+    <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       <table className="w-full text-sm">
         <colgroup>
           <col />
@@ -288,6 +336,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
         </p>
       )}
     </div>
+    </>
   )
 }
 

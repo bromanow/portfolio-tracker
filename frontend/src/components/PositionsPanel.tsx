@@ -115,7 +115,46 @@ function sortRows<T>(rows: T[], col: string, dir: SortDir): T[] {
 }
 
 // ─── Column definitions ──────────────────────────────────────────────────────
-// Built dynamically inside the component based on whether any position is USD-priced.
+// The desktop table is data-driven: a single ordered list of column ids drives
+// the header, body, breakdown, subtotal and totals rows. Users can drag column
+// headers to reorder, and the order is persisted to localStorage.
+
+const COL_ORDER_KEY = 'holdings-col-order'
+const DEFAULT_COL_ORDER = [
+  'ticker', 'asset_class', 'total_quantity', 'acb_per_share_cad', 'total_acb_cad',
+  'current_price_cad', 'market_value_cad', 'day_gain_cad', 'day_change_pct',
+  'unrealized_pnl_cad', 'unrealized_pnl_pct',
+]
+
+/** Load the saved column order, dropping unknown ids and appending any new columns (forward-compatible). */
+function loadColOrder(): string[] {
+  try {
+    const raw = localStorage.getItem(COL_ORDER_KEY)
+    if (!raw) return DEFAULT_COL_ORDER
+    const saved = JSON.parse(raw)
+    if (!Array.isArray(saved)) return DEFAULT_COL_ORDER
+    const known = saved.filter((c: unknown): c is string => typeof c === 'string' && DEFAULT_COL_ORDER.includes(c))
+    const missing = DEFAULT_COL_ORDER.filter(c => !known.includes(c))
+    return [...known, ...missing]
+  } catch {
+    return DEFAULT_COL_ORDER
+  }
+}
+
+type AcctPos = ConsolidatedPosition['accounts'][number]
+/** Aggregates for subtotal / group-header / totals rows. `mkt` is the value to show
+ *  in the Mkt-Value column; `mktForPct` is the base for the day-gain percentage. */
+type SummaryCtx = { cost: number; mkt: number; mktForPct: number; pnl: number; day: number; hasDay: boolean; fallback: number }
+interface ColDef {
+  col: string
+  label: string
+  right: boolean
+  nowrap?: boolean
+  tdClass?: string
+  cell: (pos: ConsolidatedPosition) => React.ReactNode
+  summary?: (c: SummaryCtx) => React.ReactNode
+  acct?: (a: AcctPos) => React.ReactNode
+}
 
 // ─── Main component ───────────────────────────────────────────────────────────
 
@@ -140,6 +179,25 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set())
   const toggleClass = (k: string) =>
     setCollapsedClasses(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
+
+  // Column order (drag-to-reorder, persisted). dragCol = the column being dragged;
+  // dragOverCol = the header currently hovered as the drop target.
+  const [colOrder, setColOrder] = useState<string[]>(loadColOrder)
+  const [dragCol, setDragCol] = useState<string | null>(null)
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null)
+  const persistOrder = (order: string[]) => {
+    setColOrder(order)
+    try { localStorage.setItem(COL_ORDER_KEY, JSON.stringify(order)) } catch { /* ignore */ }
+  }
+  const dropColumn = (target: string) => {
+    if (dragCol && dragCol !== target) {
+      const next = colOrder.filter(c => c !== dragCol)
+      next.splice(next.indexOf(target), 0, dragCol)   // insert dragged col before the drop target
+      persistOrder(next)
+    }
+    setDragCol(null); setDragOverCol(null)
+  }
+  const isCustomOrder = colOrder.join(',') !== DEFAULT_COL_ORDER.join(',')
 
   const handleTickerClick = (pos: ConsolidatedPosition, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -223,19 +281,159 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   }, [sorted, groupByClass])
 
   // All values shown in CAD. USD securities show native price/value as a subscript.
-  const COLUMNS = [
-    { label: 'Ticker / Name',    col: 'ticker',             right: false },
-    { label: 'Class',            col: 'asset_class',         right: false },
-    { label: 'Qty',              col: 'total_quantity',      right: true  },
-    { label: 'ACB/Share (CAD)',  col: 'acb_per_share_cad',   right: true  },
-    { label: 'Total Cost (CAD)', col: 'total_acb_cad',       right: true  },
-    { label: 'Price (CAD)',      col: 'current_price_cad',   right: true  },
-    { label: 'Mkt Value (CAD)', col: 'market_value_cad',    right: true  },
-    { label: 'Day Gain ($)',    col: 'day_gain_cad',         right: true  },
-    { label: 'Day Gain (%)',    col: 'day_change_pct',       right: true  },
-    { label: 'P&L ($)',         col: 'unrealized_pnl_cad',  right: true  },
-    { label: 'P&L (%)',         col: 'unrealized_pnl_pct',  right: true  },
-  ]
+  // Each column carries its own renderers: cell (position row), summary (subtotal/
+  // group/totals rows) and acct (per-account breakdown row).
+  const COLUMNS: Record<string, ColDef> = {
+    ticker: {
+      col: 'ticker', label: 'Ticker / Name', right: false, nowrap: true,
+      cell: pos => (
+        <>
+          <span
+            className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
+            onClick={e => handleTickerClick(pos, e)}
+          >
+            {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
+          </span>
+          {pos.asset_class !== 'OPTION' && pos.security_name && (
+            <span className="ml-2 text-xs text-gray-500">{pos.security_name}</span>
+          )}
+        </>
+      ),
+      acct: a => (
+        <>
+          <span className={`px-1.5 py-0.5 rounded text-xs mr-1.5 ${ACCOUNT_TYPE_COLORS[a.account_type] || 'bg-gray-100 text-gray-600'}`}>
+            {a.account_type}
+          </span>
+          {a.account_name}
+        </>
+      ),
+    },
+    asset_class: {
+      col: 'asset_class', label: 'Class', right: false, nowrap: true,
+      cell: pos => (
+        <>
+          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-600'}`}>
+            {pos.asset_class}
+          </span>
+          {pos.exchange && <span className="ml-1.5 text-xs text-gray-400">{pos.exchange}</span>}
+        </>
+      ),
+    },
+    total_quantity: {
+      col: 'total_quantity', label: 'Qty', right: true,
+      cell: pos => fmtQty(pos.total_quantity),
+      acct: a => fmtQty(a.quantity),
+    },
+    acb_per_share_cad: {
+      col: 'acb_per_share_cad', label: 'ACB/Share (CAD)', right: true, tdClass: 'text-gray-600',
+      cell: pos => {
+        const cadAcb = parseFloat(pos.acb_per_share_cad || '0')
+        const isUSD = pos.price_currency === 'USD'
+        const usdAcb = (isUSD && pos.current_price_cad && pos.current_price)
+          ? cadAcb * parseFloat(pos.current_price) / parseFloat(pos.current_price_cad)
+          : null
+        return (
+          <div>
+            <div>{fmtCAD(pos.acb_per_share_cad)}</div>
+            {usdAcb !== null && <div className="text-xs text-gray-400 leading-none">US{fmtUSD(usdAcb)}</div>}
+          </div>
+        )
+      },
+    },
+    total_acb_cad: {
+      col: 'total_acb_cad', label: 'Total Cost (CAD)', right: true, tdClass: 'font-semibold',
+      cell: pos => fmtCAD(pos.total_acb_cad),
+      acct: a => fmtCAD(a.total_acb_cad),
+      summary: c => fmtCAD(c.cost),
+    },
+    current_price_cad: {
+      col: 'current_price_cad', label: 'Price (CAD)', right: true, nowrap: true,
+      cell: pos => pos.current_price_cad ? (
+        <div>
+          <div className="font-semibold flex items-center justify-end gap-1">
+            {fmtCAD(pos.current_price_cad)}
+            {pos.day_change_pct && (
+              <span className={`text-xs ${pnlClass(pos.day_change_pct)}`}>{fmtPct(pos.day_change_pct)}</span>
+            )}
+          </div>
+          {pos.price_currency === 'USD' && pos.current_price && (
+            <div className="text-xs text-gray-400 leading-none">US{fmtUSD(parseFloat(pos.current_price))}</div>
+          )}
+        </div>
+      ) : <span className="text-gray-300">—</span>,
+    },
+    market_value_cad: {
+      col: 'market_value_cad', label: 'Mkt Value (CAD)', right: true, tdClass: 'font-semibold',
+      cell: pos => pos.market_value_cad ? (
+        <div>
+          <div>{fmtCAD(pos.market_value_cad)}</div>
+          {pos.price_currency === 'USD' && (() => {
+            const usd = usdMarketValue(pos)
+            return usd !== null ? (
+              <div className="text-xs text-gray-400 font-normal leading-none">US{fmtUSD(usd)}</div>
+            ) : null
+          })()}
+        </div>
+      ) : (
+        <span className="text-amber-600" title="Valued at cost — no market price available">
+          {fmtCAD(pos.total_acb_cad)}<span className="text-amber-400 ml-0.5">*</span>
+        </span>
+      ),
+      summary: c => (
+        <>
+          {fmtCAD(c.mkt)}
+          {c.fallback > 0 && <span className="text-amber-400 ml-0.5">*</span>}
+        </>
+      ),
+    },
+    day_gain_cad: {
+      col: 'day_gain_cad', label: 'Day Gain ($)', right: true,
+      cell: pos => pos.day_gain_cad
+        ? <span className={`font-medium ${pnlClass(pos.day_gain_cad)}`}>{fmtCAD(pos.day_gain_cad)}</span>
+        : '—',
+      summary: c => c.hasDay ? <span className={pnlClass(c.day)}>{fmtCAD(c.day)}</span> : null,
+    },
+    day_change_pct: {
+      col: 'day_change_pct', label: 'Day Gain (%)', right: true,
+      cell: pos => pos.day_change_pct
+        ? <span className={`font-medium ${pnlClass(pos.day_change_pct)}`}>{fmtPct(pos.day_change_pct)}</span>
+        : '—',
+      summary: c => (c.hasDay && c.mktForPct > 0)
+        ? <span className={pnlClass(c.day)}>{fmtPct(String((c.day / c.mktForPct) * 100))}</span>
+        : null,
+    },
+    unrealized_pnl_cad: {
+      col: 'unrealized_pnl_cad', label: 'P&L ($)', right: true,
+      cell: pos => pos.unrealized_pnl_cad
+        ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>{fmtCAD(pos.unrealized_pnl_cad)}</span>
+        : <span className="text-gray-300">—</span>,
+      summary: c => <span className={pnlClass(c.pnl)}>{fmtCAD(c.pnl)}</span>,
+    },
+    unrealized_pnl_pct: {
+      col: 'unrealized_pnl_pct', label: 'P&L (%)', right: true,
+      cell: pos => pos.unrealized_pnl_pct
+        ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>{fmtPct(pos.unrealized_pnl_pct)}</span>
+        : <span className="text-gray-300">—</span>,
+      summary: c => c.cost > 0
+        ? <span className={pnlClass(c.pnl)}>{fmtPct(String((c.pnl / c.cost) * 100))}</span>
+        : null,
+    },
+  }
+
+  // The ordered, resolved column list that drives every desktop row.
+  const orderedCols = colOrder.map(id => COLUMNS[id]).filter(Boolean) as ColDef[]
+  const sortableCols = orderedCols.filter(c => c.col !== 'asset_class')
+
+  const tdClassFor = (c: ColDef) =>
+    `px-4 py-2.5 ${c.right ? 'text-right' : ''} ${c.nowrap ? 'whitespace-nowrap' : ''} ${c.tdClass ?? ''}`
+
+  // Subtotal / group-header / totals numeric cells. `lead` fills the Ticker column.
+  const summaryCells = (ctx: SummaryCtx, lead: React.ReactNode) =>
+    orderedCols.map(c => (
+      <td key={c.col} className={`px-4 py-2 ${c.right ? 'text-right' : ''}`}>
+        {c.col === 'ticker' ? lead : (c.summary ? c.summary(ctx) : null)}
+      </td>
+    ))
 
   const exportCsv = () => {
     const headers = ['Ticker', 'Name', 'Currency', 'Total Qty',
@@ -346,6 +544,15 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
         {/* Group-by-class toggle + Export CSV — only when expanded; stop propagation so they don't toggle the panel */}
         {expanded && !isLoading && (
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            {isCustomOrder && (
+              <button
+                onClick={e => { e.stopPropagation(); persistOrder(DEFAULT_COL_ORDER) }}
+                className="hidden md:block text-xs border border-gray-200 rounded px-3 py-1 bg-white text-gray-500 hover:bg-gray-50"
+                title="Reset column order to default"
+              >
+                Reset columns
+              </button>
+            )}
             <button
               onClick={e => { e.stopPropagation(); setGroupByClass(g => !g) }}
               className={`hidden md:block text-xs border rounded px-3 py-1 ${groupByClass ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
@@ -382,7 +589,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 onChange={e => setSortCol(e.target.value)}
                 className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
               >
-                {COLUMNS.filter(c => c.col !== 'asset_class').map(c => (
+                {sortableCols.map(c => (
                   <option key={c.col} value={c.col}>{c.label}</option>
                 ))}
               </select>
@@ -489,15 +696,22 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                   <tr className="text-xs text-gray-500 uppercase">
                     {/* Expand chevron spacer */}
                     <th className="w-8 px-4 py-2.5" />
-                    {COLUMNS.map(({ label, col, right }) => (
+                    {orderedCols.map(c => (
                       <th
-                        key={col}
-                        className={`px-4 py-2.5 cursor-pointer hover:bg-gray-100 select-none ${right ? 'text-right' : 'text-left'}`}
-                        onClick={() => toggleSort(col)}
+                        key={c.col}
+                        draggable
+                        onDragStart={() => setDragCol(c.col)}
+                        onDragOver={e => { e.preventDefault(); if (dragOverCol !== c.col) setDragOverCol(c.col) }}
+                        onDragLeave={() => setDragOverCol(o => (o === c.col ? null : o))}
+                        onDrop={() => dropColumn(c.col)}
+                        onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
+                        onClick={() => toggleSort(c.col)}
+                        title="Drag to reorder · click to sort"
+                        className={`px-4 py-2.5 cursor-move hover:bg-gray-100 select-none ${c.right ? 'text-right' : 'text-left'} ${dragCol === c.col ? 'opacity-40' : ''} ${dragOverCol === c.col && dragCol && dragCol !== c.col ? 'border-l-2 border-blue-400' : ''}`}
                       >
-                        <div className={`flex items-center gap-1 ${right ? 'justify-end' : ''}`}>
-                          {label}
-                          <SortIcon col={col} />
+                        <div className={`flex items-center gap-1 ${c.right ? 'justify-end' : ''}`}>
+                          {c.label}
+                          <SortIcon col={c.col} />
                         </div>
                       </th>
                     ))}
@@ -519,200 +733,53 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                                 ? <ChevronRight className="h-4 w-4" />
                                 : <ChevronDown className="h-4 w-4" />}
                             </td>
-                            <td className="px-4 py-2" colSpan={4}>
-                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
-                              <span className="ml-2 text-xs font-normal text-gray-400">{group.positions.length} position{group.positions.length !== 1 ? 's' : ''}</span>
-                            </td>
-                            <td className="px-4 py-2 text-right">{fmtCAD(String(group.cost))}</td>
-                            <td />
-                            <td className="px-4 py-2 text-right">{fmtCAD(String(group.mkt))}</td>
-                            <td className="px-4 py-2 text-right">
-                              {group.hasDay && <span className={pnlClass(group.day)}>{fmtCAD(group.day)}</span>}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              {group.hasDay && group.mkt > 0 && <span className={pnlClass(group.day)}>{fmtPct(String((group.day / group.mkt) * 100))}</span>}
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              <span className={pnlClass(group.pnl)}>{fmtCAD(group.pnl)}</span>
-                            </td>
-                            <td className="px-4 py-2 text-right">
-                              {group.cost > 0 && <span className={pnlClass(group.pnl)}>{fmtPct(String((group.pnl / group.cost) * 100))}</span>}
-                            </td>
+                            {summaryCells(
+                              { cost: group.cost, mkt: group.mkt, mktForPct: group.mkt, pnl: group.pnl, day: group.day, hasDay: group.hasDay, fallback: 0 },
+                              <>
+                                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
+                                <span className="ml-2 text-xs font-normal text-gray-400">{group.positions.length} position{group.positions.length !== 1 ? 's' : ''}</span>
+                              </>,
+                            )}
                           </tr>
                         )}
                         {!groupCollapsed && group.positions.map(pos => {
-                    const isExp = expandedTickers.has(pos.ticker)
-                    const canExpand = pos.account_count > 1
-                    return (
-                      <>
-                        <tr
-                          key={pos.ticker}
-                          className={`hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
-                          onClick={() => canExpand && toggleTicker(pos.ticker)}
-                        >
-                          {/* Expand chevron */}
-                          <td className="w-8 px-4 py-2.5 text-gray-400">
-                            {canExpand
-                              ? isExp
-                                ? <ChevronDown className="h-4 w-4" />
-                                : <ChevronRight className="h-4 w-4" />
-                              : null}
-                          </td>
+                          const isExp = expandedTickers.has(pos.ticker)
+                          const canExpand = pos.account_count > 1
+                          return (
+                            <Fragment key={pos.ticker}>
+                              <tr
+                                className={`hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
+                                onClick={() => canExpand && toggleTicker(pos.ticker)}
+                              >
+                                {/* Expand chevron (fixed leading column) */}
+                                <td className="w-8 px-4 py-2.5 text-gray-400">
+                                  {canExpand
+                                    ? isExp
+                                      ? <ChevronDown className="h-4 w-4" />
+                                      : <ChevronRight className="h-4 w-4" />
+                                    : null}
+                                </td>
+                                {orderedCols.map(c => (
+                                  <td key={c.col} className={tdClassFor(c)}>{c.cell(pos)}</td>
+                                ))}
+                              </tr>
 
-                          {/* Ticker / Name */}
-                          <td className="px-4 py-2.5 whitespace-nowrap">
-                            <span
-                              className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
-                              onClick={e => handleTickerClick(pos, e)}
-                            >
-                              {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
-                            </span>
-                            {pos.asset_class !== 'OPTION' && pos.security_name && (
-                              <span className="ml-2 text-xs text-gray-500">{pos.security_name}</span>
-                            )}
-                          </td>
-
-                          {/* Class / Exchange */}
-                          <td className="px-4 py-2.5 whitespace-nowrap">
-                            <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-600'}`}>
-                              {pos.asset_class}
-                            </span>
-                            {pos.exchange && (
-                              <span className="ml-1.5 text-xs text-gray-400">{pos.exchange}</span>
-                            )}
-                          </td>
-
-                          {/* Qty */}
-                          <td className="px-4 py-2.5 text-right">{fmtQty(pos.total_quantity)}</td>
-
-                          {/* ACB/Share (CAD); USD securities show native USD equivalent as subscript */}
-                          <td className="px-4 py-2.5 text-right text-gray-600">
-                            {(() => {
-                              const cadAcb = parseFloat(pos.acb_per_share_cad || '0')
-                              const isUSD = pos.price_currency === 'USD'
-                              // Derive USD ACB/share from CAD ACB/share using the current FX rate
-                              const usdAcb = (isUSD && pos.current_price_cad && pos.current_price)
-                                ? cadAcb * parseFloat(pos.current_price) / parseFloat(pos.current_price_cad)
-                                : null
-                              return (
-                                <div>
-                                  <div>{fmtCAD(pos.acb_per_share_cad)}</div>
-                                  {usdAcb !== null && (
-                                    <div className="text-xs text-gray-400 leading-none">
-                                      US{fmtUSD(usdAcb)}
-                                    </div>
-                                  )}
-                                </div>
-                              )
-                            })()}
-                          </td>
-
-                          {/* Total Cost */}
-                          <td className="px-4 py-2.5 text-right font-semibold">{fmtCAD(pos.total_acb_cad)}</td>
-
-                          {/* Price (CAD) — always CAD; USD securities show native price as subscript */}
-                          <td className="px-4 py-2.5 text-right whitespace-nowrap">
-                            {pos.current_price_cad ? (
-                              <div>
-                                <div className="font-semibold flex items-center justify-end gap-1">
-                                  {fmtCAD(pos.current_price_cad)}
-                                  {pos.day_change_pct && (
-                                    <span className={`text-xs ${pnlClass(pos.day_change_pct)}`}>
-                                      {fmtPct(pos.day_change_pct)}
-                                    </span>
-                                  )}
-                                </div>
-                                {/* USD native price subscript */}
-                                {pos.price_currency === 'USD' && pos.current_price && (
-                                  <div className="text-xs text-gray-400 leading-none">
-                                    US{fmtUSD(parseFloat(pos.current_price))}
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
-                              <span className="text-gray-300">—</span>
-                            )}
-                          </td>
-
-                          {/* Mkt Value (CAD) — show book value with * when no market price;
-                              USD securities show native USD value as subscript */}
-                          <td className="px-4 py-2.5 text-right font-semibold">
-                            {pos.market_value_cad ? (
-                              <div>
-                                <div>{fmtCAD(pos.market_value_cad)}</div>
-                                {/* USD native market value subscript */}
-                                {pos.price_currency === 'USD' && (() => {
-                                  const usd = usdMarketValue(pos)
-                                  return usd !== null ? (
-                                    <div className="text-xs text-gray-400 font-normal leading-none">
-                                      US{fmtUSD(usd)}
-                                    </div>
-                                  ) : null
-                                })()}
-                              </div>
-                            ) : (
-                              <span className="text-amber-600" title="Valued at cost — no market price available">
-                                {fmtCAD(pos.total_acb_cad)}
-                                <span className="text-amber-400 ml-0.5">*</span>
-                              </span>
-                            )}
-                          </td>
-
-                          {/* Day Gain ($) */}
-                          <td className="px-3 py-2 text-right">
-                            {pos.day_gain_cad ? (
-                              <span className={`font-medium ${pnlClass(pos.day_gain_cad)}`}>
-                                {fmtCAD(pos.day_gain_cad)}
-                              </span>
-                            ) : '—'}
-                          </td>
-
-                          {/* Day Gain (%) */}
-                          <td className="px-3 py-2 text-right">
-                            {pos.day_change_pct ? (
-                              <span className={`font-medium ${pnlClass(pos.day_change_pct)}`}>
-                                {fmtPct(pos.day_change_pct)}
-                              </span>
-                            ) : '—'}
-                          </td>
-
-                          {/* P&L ($) */}
-                          <td className="px-4 py-2.5 text-right">
-                            {pos.unrealized_pnl_cad ? (
-                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>
-                                {fmtCAD(pos.unrealized_pnl_cad)}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-
-                          {/* P&L (%) */}
-                          <td className="px-4 py-2.5 text-right">
-                            {pos.unrealized_pnl_pct ? (
-                              <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>
-                                {fmtPct(pos.unrealized_pnl_pct)}
-                              </span>
-                            ) : <span className="text-gray-300">—</span>}
-                          </td>
-                        </tr>
-
-                        {/* Per-account breakdown rows */}
-                        {isExp && pos.accounts.map(acct => (
-                          <tr key={`${pos.ticker}-${acct.account_id}`} className="bg-blue-50/40">
-                            <td className="w-8 px-4 py-1.5" />
-                            <td className="px-4 py-1.5 pl-10 text-xs text-gray-500" colSpan={2}>
-                              <span className={`px-1.5 py-0.5 rounded text-xs mr-1.5 ${ACCOUNT_TYPE_COLORS[acct.account_type] || 'bg-gray-100 text-gray-600'}`}>
-                                {acct.account_type}
-                              </span>
-                              {acct.account_name}
-                            </td>
-                            <td className="px-4 py-1.5 text-right text-xs text-gray-500">{fmtQty(acct.quantity)}</td>
-                            <td />
-                            <td className="px-4 py-1.5 text-right text-xs text-gray-500">{fmtCAD(acct.total_acb_cad)}</td>
-                            <td colSpan={6} />
-                          </tr>
-                        ))}
-                      </>
-                    )
+                              {/* Per-account breakdown rows */}
+                              {isExp && pos.accounts.map(acct => (
+                                <tr key={`${pos.ticker}-${acct.account_id}`} className="bg-blue-50/40">
+                                  <td className="w-8 px-4 py-1.5" />
+                                  {orderedCols.map(c => (
+                                    <td
+                                      key={c.col}
+                                      className={`px-4 py-1.5 text-xs text-gray-500 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'pl-10 whitespace-nowrap' : ''}`}
+                                    >
+                                      {c.acct ? c.acct(acct) : null}
+                                    </td>
+                                  ))}
+                                </tr>
+                              ))}
+                            </Fragment>
+                          )
                         })}
                       </Fragment>
                     )
@@ -723,40 +790,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 {cash.length > 0 && hasPrices && (
                   <tbody>
                     <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-sm">
-                      <td colSpan={2} className="px-4 py-2 text-gray-500 text-xs uppercase tracking-wide">
-                        Securities subtotal
-                      </td>
-                      <td colSpan={3} />
-                      <td className="px-4 py-2 text-right">{fmtCAD(totalACB)}</td>
-                      <td />
-                      <td className="px-4 py-2 text-right">
-                        {fmtCAD(totalMkt)}
-                        {fallbackCount > 0 && <span className="text-amber-400 ml-0.5">*</span>}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {hasDayGain && (
-                          <span className={pnlClass(totalDayGain)}>
-                            {fmtCAD(totalDayGain)}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {hasDayGain && totalMkt > 0 && (
-                          <span className={pnlClass(totalDayGain)}>
-                            {fmtPct(String((totalDayGain / totalMkt) * 100))}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        <span className={pnlClass(totalPnl)}>{fmtCAD(totalPnl)}</span>
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {totalACB > 0 && (
-                          <span className={pnlClass(totalPnl)}>
-                            {fmtPct(String((totalPnl / totalACB) * 100))}
-                          </span>
-                        )}
-                      </td>
+                      <td className="w-8 px-4 py-2" />
+                      {summaryCells(
+                        { cost: totalACB, mkt: totalMkt, mktForPct: totalMkt, pnl: totalPnl, day: totalDayGain, hasDay: hasDayGain, fallback: fallbackCount },
+                        <span className="text-gray-500 text-xs uppercase tracking-wide">Securities subtotal</span>,
+                      )}
                     </tr>
                   </tbody>
                 )}
@@ -774,43 +812,46 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           ? <ChevronDown className="h-4 w-4" />
                           : <ChevronRight className="h-4 w-4" />}
                       </td>
-                      <td className="px-4 py-2.5 whitespace-nowrap">
-                        <span className="font-mono font-semibold text-green-700">CASH</span>
-                        <span className="ml-2 text-xs text-gray-400">
-                          {cash.length} account{cash.length !== 1 ? 's' : ''}
-                          {!cashExpanded && ' — click to expand'}
-                        </span>
-                      </td>
-                      <td className="px-4 py-2.5">
-                        <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">CASH</span>
-                      </td>
-                      <td colSpan={3} />
-                      <td />
-                      <td className="px-4 py-2.5 text-right font-semibold text-green-700">
-                        {fmtCAD(totalCash)}
-                      </td>
-                      <td colSpan={4} />
+                      {orderedCols.map(c => (
+                        <td key={c.col} className={`px-4 py-2.5 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'whitespace-nowrap' : ''}`}>
+                          {c.col === 'ticker' ? (
+                            <>
+                              <span className="font-mono font-semibold text-green-700">CASH</span>
+                              <span className="ml-2 text-xs text-gray-400">
+                                {cash.length} account{cash.length !== 1 ? 's' : ''}
+                                {!cashExpanded && ' — click to expand'}
+                              </span>
+                            </>
+                          ) : c.col === 'asset_class' ? (
+                            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">CASH</span>
+                          ) : c.col === 'market_value_cad' ? (
+                            <span className="font-semibold text-green-700">{fmtCAD(totalCash)}</span>
+                          ) : null}
+                        </td>
+                      ))}
                     </tr>
 
                     {/* Per-account cash rows, shown only when expanded */}
-                    {cashExpanded && cash.map(c => (
-                      <tr key={`${c.account_id}-${c.currency}`} className="bg-green-50/30 hover:bg-green-50/60">
+                    {cashExpanded && cash.map(cc => (
+                      <tr key={`${cc.account_id}-${cc.currency}`} className="bg-green-50/30 hover:bg-green-50/60">
                         <td className="w-8 px-4 py-2" />
-                        <td className="px-4 py-2 pl-10 whitespace-nowrap">
-                          <span className="text-xs text-gray-500">{c.account_name}</span>
-                          <span className="ml-1.5 text-xs text-gray-400">· {c.currency}</span>
-                        </td>
-                          <td colSpan={4} />
-                        <td />
-                        <td className="px-4 py-2 text-right font-semibold text-green-700">
-                          <div>{fmtCAD(c.balance_cad ?? c.balance)}</div>
-                          {c.currency === 'USD' && (
-                            <div className="text-xs text-gray-400 font-normal leading-none">
-                              US{fmtUSD(parseFloat(c.balance))}
-                            </div>
-                          )}
-                        </td>
-                        <td colSpan={4} />
+                        {orderedCols.map(c => (
+                          <td key={c.col} className={`px-4 py-2 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'pl-10 whitespace-nowrap' : ''}`}>
+                            {c.col === 'ticker' ? (
+                              <>
+                                <span className="text-xs text-gray-500">{cc.account_name}</span>
+                                <span className="ml-1.5 text-xs text-gray-400">· {cc.currency}</span>
+                              </>
+                            ) : c.col === 'market_value_cad' ? (
+                              <>
+                                <div className="font-semibold text-green-700">{fmtCAD(cc.balance_cad ?? cc.balance)}</div>
+                                {cc.currency === 'USD' && (
+                                  <div className="text-xs text-gray-400 font-normal leading-none">US{fmtUSD(parseFloat(cc.balance))}</div>
+                                )}
+                              </>
+                            ) : null}
+                          </td>
+                        ))}
                       </tr>
                     ))}
                   </tbody>
@@ -819,46 +860,23 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 {/* Totals footer */}
                 <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                   <tr className="font-semibold text-sm">
-                    <td colSpan={2} className="px-4 py-2.5 text-gray-600">Totals</td>
-                    <td colSpan={3} />
-                    <td className="px-4 py-2.5 text-right">{fmtCAD(totalACB)}</td>
-                    {/* Price column — empty */}
-                    <td />
-                    {/* Mkt Value (CAD) total — securities + cash (includes book-value fallback) */}
-                    <td className="px-4 py-2.5 text-right">
-                      {hasPrices ? (
-                        <>
-                          {fmtCAD(totalVal)}
-                          {fallbackCount > 0 && <span className="text-amber-400 ml-0.5">*</span>}
-                        </>
-                      ) : '—'}
-                    </td>
-                    {/* P&L ($) total */}
-                    <td className="px-4 py-2.5 text-right">
-                      {hasPrices ? (
-                        <span className={`font-semibold ${pnlClass(totalPnl)}`}>
-                          {fmtCAD(totalPnl)}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    {/* P&L (%) total */}
-                    <td className="px-4 py-2.5 text-right">
-                      {hasPrices && totalACB > 0 ? (
-                        <span className={`font-semibold ${pnlClass(totalPnl)}`}>
-                          {fmtPct(String((totalPnl / totalACB) * 100))}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    {/* Day Gain ($) total */}
-                    <td className="px-3 py-2.5 text-right">
-                      {hasDayGain ? (
-                        <span className={`font-semibold ${pnlClass(totalDayGain)}`}>
-                          {fmtCAD(totalDayGain)}
-                        </span>
-                      ) : '—'}
-                    </td>
-                    {/* Day Gain (%) total — not summed, leave empty */}
-                    <td className="px-3 py-2.5 text-right">—</td>
+                    <td className="w-8 px-4 py-2.5" />
+                    {orderedCols.map(c => {
+                      const ctx: SummaryCtx = {
+                        cost: totalACB, mkt: totalVal, mktForPct: totalMkt,
+                        pnl: totalPnl, day: totalDayGain, hasDay: hasDayGain, fallback: fallbackCount,
+                      }
+                      let content: React.ReactNode = null
+                      if (c.col === 'ticker') content = <span className="text-gray-600">Totals</span>
+                      else if (c.col === 'market_value_cad') content = hasPrices ? c.summary?.(ctx) : '—'
+                      else if (c.col === 'unrealized_pnl_cad') content = hasPrices ? c.summary?.(ctx) : '—'
+                      else if (c.col === 'unrealized_pnl_pct') content = (hasPrices && totalACB > 0) ? c.summary?.(ctx) : '—'
+                      else if (c.col === 'day_change_pct') content = '—'   // total day % isn't meaningful — not summed
+                      else if (c.summary) content = c.summary(ctx)
+                      return (
+                        <td key={c.col} className={`px-4 py-2.5 ${c.right ? 'text-right' : ''}`}>{content}</td>
+                      )
+                    })}
                   </tr>
                 </tfoot>
               </table>

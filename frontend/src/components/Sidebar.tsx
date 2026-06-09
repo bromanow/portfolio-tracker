@@ -6,7 +6,6 @@ import {
   Settings,
   Briefcase,
   TrendingUp,
-  FileText,
   ScanSearch,
   ChevronLeft,
   ChevronRight,
@@ -17,10 +16,9 @@ import { useAuth } from '../context/AuthContext'
 const nav = [
   { to: '/dashboard',   label: 'Overview',     icon: LayoutDashboard },
   { to: '/holdings',    label: 'Holdings',     icon: Briefcase },
-  { to: '/performance', label: 'Performance',  icon: TrendingUp },
+  { to: '/performance', label: 'Performance & Reports', icon: TrendingUp },
   { to: '/activity',    label: 'Activity',     icon: List },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },
-  { to: '/reports',     label: 'Reports',      icon: FileText },
   { to: '/admin',       label: 'Admin',        icon: Settings },
 ]
 

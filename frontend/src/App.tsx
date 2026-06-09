@@ -9,7 +9,6 @@ import Activity from './pages/Activity'
 import SecurityDetail from './pages/SecurityDetail'
 import Scanner from './pages/Scanner'
 import Prices from './pages/Prices'
-import Reports from './pages/Reports'
 import Admin from './pages/Admin'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -50,13 +49,13 @@ export default function App() {
         <Route path="activity"     element={<Activity />} />
         <Route path="scanner"      element={<Scanner />} />
         <Route path="prices"       element={<Prices />} />
-        <Route path="reports"      element={<Reports />} />
         <Route path="admin"        element={<Admin />} />
 
         {/* Legacy redirects — keep old bookmarks working */}
         <Route path="import"       element={<Navigate to="/activity" replace />} />
         <Route path="transactions" element={<Navigate to="/activity" replace />} />
         <Route path="options"      element={<Navigate to="/holdings" replace />} />
+        <Route path="reports"      element={<Navigate to="/performance" replace />} />
       </Route>
 
       {/* Catch-all */}

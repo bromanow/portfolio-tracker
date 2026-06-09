@@ -38,10 +38,9 @@ function usePriceAge(liveLastUpdated: string | null) {
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard':   'Overview',
   '/holdings':    'Holdings',
-  '/performance': 'Performance',
+  '/performance': 'Performance & Reports',
   '/activity':    'Activity',
   '/scanner':     'Research',
-  '/reports':     'Reports',
   '/admin':       'Admin',
   '/prices':      'Prices',
 }

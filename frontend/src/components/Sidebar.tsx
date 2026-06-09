@@ -6,6 +6,7 @@ import {
   Settings,
   Briefcase,
   TrendingUp,
+  FileText,
   ScanSearch,
   ChevronLeft,
   ChevronRight,
@@ -19,6 +20,7 @@ const nav = [
   { to: '/performance', label: 'Performance',  icon: TrendingUp },
   { to: '/activity',    label: 'Activity',     icon: List },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },
+  { to: '/reports',     label: 'Reports',      icon: FileText },
   { to: '/admin',       label: 'Admin',        icon: Settings },
 ]
 

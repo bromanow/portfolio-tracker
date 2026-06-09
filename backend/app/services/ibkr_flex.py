@@ -527,12 +527,18 @@ def import_trades(db: Session, account_id: int, trades: list[dict]) -> tuple[int
         if _stamp_existing_trade(db, account_id, trade_date, txn_type, sec.id, qty, ext_ref):
             continue
 
+        # CAD amount drives the ACB engine (cost basis = abs(cad_amount)).  For
+        # CAD-denominated trades the rate is 1:1 — set cad_amount = txn_amount
+        # directly (mirrors import_cash()).  Forgetting this left CAD trades with
+        # a NULL cad_amount → zero cost basis → ACB of 0 for CAD securities.
         fx_to_cad = None
         cad_amount = None
-        if currency != "CAD":
+        if currency == "CAD":
+            cad_amount = txn_amount
+        elif txn_amount is not None:
             fx_to_cad = get_rate(db, trade_date, currency, "CAD")
-        if fx_to_cad and txn_amount:
-            cad_amount = (txn_amount * fx_to_cad).quantize(Decimal("0.01"))
+            if fx_to_cad:
+                cad_amount = (txn_amount * fx_to_cad).quantize(Decimal("0.01"))
 
         db.add(Transaction(
             account_id=account_id,

@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getConsolidatedPositions } from '../api/client'
@@ -136,6 +136,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const [sortCol, setSortCol] = useState('total_acb_cad')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [selectedPosition, setSelectedPosition] = useState<ConsolidatedPosition | null>(null)
+  const [groupByClass, setGroupByClass] = useState(false)
+  const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set())
+  const toggleClass = (k: string) =>
+    setCollapsedClasses(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
 
   const handleTickerClick = (pos: ConsolidatedPosition, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -193,6 +197,30 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
     () => sortRows(consolidated as ConsolidatedPosition[], sortCol, sortDir),
     [consolidated, sortCol, sortDir],
   )
+
+  // Optionally group the (already-sorted) rows by asset class, each group
+  // carrying its own subtotals. When grouping is off, everything sits in a
+  // single unlabelled group so the render path stays the same.
+  const groups = useMemo(() => {
+    const summarize = (key: string, positions: ConsolidatedPosition[]) => {
+      let mkt = 0, pnl = 0, day = 0, cost = 0, hasDay = false
+      for (const p of positions) {
+        cost += parseFloat(p.total_acb_cad || '0')
+        mkt += p.market_value_cad ? parseFloat(p.market_value_cad) : parseFloat(p.total_acb_cad || '0')
+        if (p.unrealized_pnl_cad) pnl += parseFloat(p.unrealized_pnl_cad)
+        if (p.day_gain_cad) { day += parseFloat(p.day_gain_cad); hasDay = true }
+      }
+      return { key, positions, mkt, pnl, day, cost, hasDay }
+    }
+    if (!groupByClass) return [summarize('', sorted)]
+    const m = new Map<string, ConsolidatedPosition[]>()
+    for (const p of sorted) {
+      const k = p.asset_class || 'OTHER'
+      if (!m.has(k)) m.set(k, [])
+      m.get(k)!.push(p)
+    }
+    return [...m.entries()].map(([k, ps]) => summarize(k, ps))
+  }, [sorted, groupByClass])
 
   // All values shown in CAD. USD securities show native price/value as a subscript.
   const COLUMNS = [
@@ -315,14 +343,23 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
           </div>
         )}
 
-        {/* Export CSV — only when expanded; stop propagation so it doesn't toggle panel */}
+        {/* Group-by-class toggle + Export CSV — only when expanded; stop propagation so they don't toggle the panel */}
         {expanded && !isLoading && (
-          <button
-            onClick={e => { e.stopPropagation(); exportCsv() }}
-            className="ml-auto text-xs bg-white border border-gray-200 rounded px-3 py-1 hover:bg-gray-50 flex-shrink-0"
-          >
-            Export CSV
-          </button>
+          <div className="ml-auto flex items-center gap-2 flex-shrink-0">
+            <button
+              onClick={e => { e.stopPropagation(); setGroupByClass(g => !g) }}
+              className={`hidden md:block text-xs border rounded px-3 py-1 ${groupByClass ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              title="Group holdings by asset class with subtotals"
+            >
+              Group by Class
+            </button>
+            <button
+              onClick={e => { e.stopPropagation(); exportCsv() }}
+              className="text-xs bg-white border border-gray-200 rounded px-3 py-1 hover:bg-gray-50"
+            >
+              Export CSV
+            </button>
+          </div>
         )}
       </div>
 
@@ -356,11 +393,42 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
               >
                 {sortDir === 'asc' ? '↑' : '↓'}
               </button>
+              <button
+                onClick={() => setGroupByClass(g => !g)}
+                className={`text-sm border rounded px-3 py-1.5 ${groupByClass ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                title="Group by asset class"
+              >
+                Group
+              </button>
             </div>
 
             {/* ── Mobile card list ── */}
-            <div className="md:hidden divide-y divide-gray-100">
-              {sorted.map(pos => {
+            <div className="md:hidden">
+              {groups.map(group => {
+                const collapsed = collapsedClasses.has(group.key)
+                return (
+                  <div key={group.key || 'all'}>
+                    {groupByClass && group.key && (
+                      <div
+                        className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 cursor-pointer select-none"
+                        onClick={() => toggleClass(group.key)}
+                      >
+                        {collapsed
+                          ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
+                          : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
+                        <span className="text-xs text-gray-400">{group.positions.length}</span>
+                        <span className="ml-auto text-sm font-semibold text-gray-800">{fmtCAD(group.mkt)}</span>
+                        {group.pnl !== 0 && (
+                          <span className={`text-xs font-medium ${group.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                            {group.pnl >= 0 ? '+' : ''}{fmtCAD(group.pnl)}
+                          </span>
+                        )}
+                      </div>
+                    )}
+                    {!collapsed && (
+                      <div className="divide-y divide-gray-100">
+                        {group.positions.map(pos => {
                 const mktVal  = pos.market_value_cad ? parseFloat(pos.market_value_cad) : null
                 const pnl     = pos.unrealized_pnl_cad ? parseFloat(pos.unrealized_pnl_cad) : null
                 const pnlPct  = pos.unrealized_pnl_pct ? parseFloat(pos.unrealized_pnl_pct) : null
@@ -406,6 +474,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                     <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
                   </div>
                 )
+                        })}
+                      </div>
+                    )}
+                  </div>
+                )
               })}
             </div>
 
@@ -432,7 +505,42 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 </thead>
 
                 <tbody className="divide-y divide-gray-100 bg-white">
-                  {sorted.map(pos => {
+                  {groups.map(group => {
+                    const groupCollapsed = collapsedClasses.has(group.key)
+                    return (
+                      <Fragment key={group.key || 'all'}>
+                        {groupByClass && group.key && (
+                          <tr
+                            className="bg-gray-50/80 border-t border-gray-200 cursor-pointer select-none hover:bg-gray-100 font-semibold text-sm"
+                            onClick={() => toggleClass(group.key)}
+                          >
+                            <td className="w-8 px-4 py-2 text-gray-400">
+                              {groupCollapsed
+                                ? <ChevronRight className="h-4 w-4" />
+                                : <ChevronDown className="h-4 w-4" />}
+                            </td>
+                            <td className="px-4 py-2" colSpan={4}>
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
+                              <span className="ml-2 text-xs font-normal text-gray-400">{group.positions.length} position{group.positions.length !== 1 ? 's' : ''}</span>
+                            </td>
+                            <td className="px-4 py-2 text-right">{fmtCAD(String(group.cost))}</td>
+                            <td />
+                            <td className="px-4 py-2 text-right">{fmtCAD(String(group.mkt))}</td>
+                            <td className="px-4 py-2 text-right">
+                              {group.hasDay && <span className={pnlClass(group.day)}>{fmtCAD(group.day)}</span>}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {group.hasDay && group.mkt > 0 && <span className={pnlClass(group.day)}>{fmtPct(String((group.day / group.mkt) * 100))}</span>}
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              <span className={pnlClass(group.pnl)}>{fmtCAD(group.pnl)}</span>
+                            </td>
+                            <td className="px-4 py-2 text-right">
+                              {group.cost > 0 && <span className={pnlClass(group.pnl)}>{fmtPct(String((group.pnl / group.cost) * 100))}</span>}
+                            </td>
+                          </tr>
+                        )}
+                        {!groupCollapsed && group.positions.map(pos => {
                     const isExp = expandedTickers.has(pos.ticker)
                     const canExpand = pos.account_count > 1
                     return (
@@ -604,6 +712,9 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           </tr>
                         ))}
                       </>
+                    )
+                        })}
+                      </Fragment>
                     )
                   })}
                 </tbody>

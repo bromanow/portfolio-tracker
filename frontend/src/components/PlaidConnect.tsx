@@ -1,9 +1,9 @@
 import { useEffect, useState, useCallback } from 'react'
 import { usePlaidLink } from 'react-plaid-link'
-import { RefreshCw, Trash2, Plus, Link2, Loader2 } from 'lucide-react'
+import { Trash2, Plus, Link2, Loader2 } from 'lucide-react'
 import {
   getPlaidStatus, createPlaidLinkToken, exchangePlaidToken, sandboxCreatePlaid,
-  getPlaidItems, syncPlaidItem, deletePlaidItem, type PlaidItem,
+  getPlaidItems, deletePlaidItem, type PlaidItem,
 } from '../api/client'
 
 // Mounts only once a link token exists; auto-opens the Plaid Link widget.
@@ -57,13 +57,6 @@ export default function PlaidConnect() {
     finally { setBusy(false) }
   }
 
-  const sync = async (id: number) => {
-    setBusy(true); setError(null)
-    try { await syncPlaidItem(id); await refresh() }
-    catch (e: any) { setError(e?.response?.data?.detail ?? 'Sync failed') }
-    finally { setBusy(false) }
-  }
-
   const remove = async (id: number) => {
     if (!confirm('Disconnect this institution? Synced holdings stay; future syncs stop.')) return
     setBusy(true)
@@ -77,6 +70,10 @@ export default function PlaidConnect() {
         <h3 className="font-medium text-gray-700">Plaid connections</h3>
         {env && <span className="text-[10px] uppercase tracking-wide bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">{env}</span>}
       </div>
+      <p className="text-xs text-gray-400">
+        Connect or remove institutions here. To pull the latest holdings, use{' '}
+        <strong>Activity → Import → Plaid</strong>.
+      </p>
 
       {configured === false && (
         <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
@@ -141,10 +138,6 @@ export default function PlaidConnect() {
                     <td className="text-gray-500">{it.accounts}</td>
                     <td className="text-gray-500">{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('en-CA') : '—'}</td>
                     <td className="text-right">
-                      <button onClick={() => sync(it.id)} disabled={busy} title="Sync now"
-                        className="text-gray-400 hover:text-blue-600 px-1 disabled:opacity-40">
-                        <RefreshCw className="h-4 w-4" />
-                      </button>
                       <button onClick={() => remove(it.id)} disabled={busy} title="Disconnect"
                         className="text-gray-400 hover:text-red-500 px-1 disabled:opacity-40">
                         <Trash2 className="h-4 w-4" />

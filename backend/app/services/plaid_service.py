@@ -40,6 +40,42 @@ def is_configured() -> bool:
     return bool(PLAID_CLIENT_ID and PLAID_SECRET)
 
 
+# ── Access-token encryption at rest ───────────────────────────────────────────
+# A production access_token grants read access to real financial data, so it must
+# not sit in the DB as plaintext. Encrypt with Fernet using PLAID_ENCRYPTION_KEY.
+# If no key is set we fall back to plaintext (with a warning) so dev/sandbox still
+# works; production should always set the key.
+def _fernet():
+    key = os.environ.get("PLAID_ENCRYPTION_KEY", "").strip()
+    if not key:
+        return None
+    try:
+        from cryptography.fernet import Fernet
+        return Fernet(key.encode())
+    except Exception as e:
+        logger.warning("PLAID_ENCRYPTION_KEY invalid (%s) — storing token unencrypted", e)
+        return None
+
+
+def encrypt_token(token: str) -> str:
+    f = _fernet()
+    if not f:
+        logger.warning("No PLAID_ENCRYPTION_KEY — storing Plaid access_token unencrypted")
+        return token
+    return f.encrypt(token.encode()).decode()
+
+
+def decrypt_token(stored: str) -> str:
+    f = _fernet()
+    if not f:
+        return stored
+    try:
+        from cryptography.fernet import InvalidToken
+        return f.decrypt(stored.encode()).decode()
+    except Exception:
+        return stored   # not encrypted (pre-key) — treat as plaintext
+
+
 def _post(path: str, body: dict) -> dict:
     payload = {"client_id": PLAID_CLIENT_ID, "secret": PLAID_SECRET, **body}
     with httpx.Client(timeout=30) as client:
@@ -261,7 +297,7 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
     from app.models.transactions import Transaction
     from sqlalchemy import text
 
-    data = _post("/investments/holdings/get", {"access_token": item.access_token})
+    data = _post("/investments/holdings/get", {"access_token": decrypt_token(item.access_token)})
     accounts = {a["account_id"]: a for a in data.get("accounts", [])}
     securities = {s["security_id"]: s for s in data.get("securities", [])}
     holdings = data.get("holdings", [])

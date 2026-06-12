@@ -63,13 +63,13 @@ def exchange(body: ExchangeBody, db: Session = Depends(get_db)):
     item = db.query(PlaidItem).filter(PlaidItem.item_id == item_id).first()
     if not item:
         inst_id, inst_name = plaid.get_institution(access_token)
-        item = PlaidItem(item_id=item_id, access_token=access_token,
+        item = PlaidItem(item_id=item_id, access_token=plaid.encrypt_token(access_token),
                          institution_id=inst_id, institution_name=inst_name)
         db.add(item)
         db.commit()
         db.refresh(item)
     else:
-        item.access_token = access_token
+        item.access_token = plaid.encrypt_token(access_token)
         db.commit()
 
     try:
@@ -93,13 +93,13 @@ def sandbox_create(body: ExchangeBody, db: Session = Depends(get_db)):
     item = db.query(PlaidItem).filter(PlaidItem.item_id == item_id).first()
     if not item:
         inst_id, inst_name = plaid.get_institution(access_token)
-        item = PlaidItem(item_id=item_id, access_token=access_token,
+        item = PlaidItem(item_id=item_id, access_token=plaid.encrypt_token(access_token),
                          institution_id=inst_id, institution_name=inst_name or "Sandbox Investments")
         db.add(item)
         db.commit()
         db.refresh(item)
     else:
-        item.access_token = access_token
+        item.access_token = plaid.encrypt_token(access_token)
         db.commit()
 
     try:
@@ -154,7 +154,7 @@ def delete_item(item_id: int, db: Session = Depends(get_db)):
         raise HTTPException(404, "Item not found")
     # Best-effort: tell Plaid to remove the Item too (stops any billing).
     try:
-        plaid._post("/item/remove", {"access_token": item.access_token})
+        plaid._post("/item/remove", {"access_token": plaid.decrypt_token(item.access_token)})
     except Exception as e:
         logger.warning("Plaid item remove failed (continuing): %s", e)
     db.query(PlaidAccount).filter(PlaidAccount.plaid_item_id == item.id).delete()

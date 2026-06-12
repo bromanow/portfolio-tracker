@@ -289,19 +289,27 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const COLUMNS: Record<string, ColDef> = {
     ticker: {
       col: 'ticker', label: 'Ticker / Name', right: false, nowrap: true,
-      cell: pos => (
-        <>
-          <span
-            className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
-            onClick={e => handleTickerClick(pos, e)}
-          >
-            {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
-          </span>
-          {pos.asset_class !== 'OPTION' && pos.security_name && (
-            <span className="ml-2 text-xs text-gray-500">{pos.security_name}</span>
-          )}
-        </>
-      ),
+      cell: pos => {
+        // Proprietary funds have no public symbol (ticker is a synthetic 'PLAID:…');
+        // show the fund name as the primary label instead of the opaque id.
+        const synthetic = pos.ticker.startsWith('PLAID:')
+        const primary = synthetic
+          ? (pos.security_name || 'Fund')
+          : (pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker)
+        return (
+          <>
+            <span
+              className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
+              onClick={e => handleTickerClick(pos, e)}
+            >
+              {primary}
+            </span>
+            {!synthetic && pos.asset_class !== 'OPTION' && pos.security_name && (
+              <span className="ml-2 text-xs text-gray-500">{pos.security_name}</span>
+            )}
+          </>
+        )
+      },
       acct: a => (
         <>
           <span className={`px-1.5 py-0.5 rounded text-xs mr-1.5 ${ACCOUNT_TYPE_COLORS[a.account_type] || 'bg-gray-100 text-gray-600'}`}>
@@ -653,8 +661,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                     {/* Left: ticker + name */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-semibold text-blue-700 text-sm">
-                          {pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker}
+                        <span className="font-mono font-semibold text-blue-700 text-sm truncate">
+                          {pos.ticker.startsWith('PLAID:')
+                            ? (pos.security_name || 'Fund')
+                            : (pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker)}
                         </span>
                         <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-500'}`}>
                           {pos.asset_class}

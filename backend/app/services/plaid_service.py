@@ -279,10 +279,23 @@ def _get_or_create_account(db: Session, item, pacct: dict, owner: str):
         return db.get(Account, pa.account_id)
 
     subtype = (pacct.get("subtype") or "").lower()
-    account_type = _SUBTYPE_MAP.get(subtype, (subtype.upper()[:20] if subtype else "NON_REG"))
+    name = pacct.get("official_name") or pacct.get("name") or "Plaid account"
+    # Plaid sometimes mis-types retirement plans (e.g. a 401k tagged "thrift savings
+    # plan"). Prefer the subtype map, but fall back to keywords in the account name.
+    account_type = _SUBTYPE_MAP.get(subtype)
+    if not account_type:
+        _nm = name.lower()
+        account_type = (
+            "401K" if "401" in _nm else
+            "ROTH" if "roth" in _nm else
+            "IRA"  if "ira" in _nm else
+            "RRSP" if ("rrsp" in _nm or "rsp" in _nm) else
+            "TFSA" if "tfsa" in _nm else
+            "RESP" if "resp" in _nm else
+            (subtype.upper()[:20] if subtype else "NON_REG")
+        )
     ccy = ((pacct.get("balances") or {}).get("iso_currency_code") or "USD").upper()
     mask = pacct.get("mask")
-    name = pacct.get("official_name") or pacct.get("name") or "Plaid account"
     if mask:
         name = f"{name} ••{mask}"
 
@@ -364,6 +377,9 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
                 continue
 
             if qty == 0:
+                continue
+            # Skip dust (e.g. ~$0.20 target-date glide-path residue) — clutter, not real holdings.
+            if mkt_val is not None and abs(mkt_val) < Decimal("1"):
                 continue
             unit_price = _d(h.get("institution_price"))
             # Value at market (Book = Securities, P&L ≈ 0). These are registered accounts

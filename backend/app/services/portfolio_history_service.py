@@ -530,8 +530,19 @@ def compute_portfolio_snapshots(
             # whose CAD/USD legs net to a small non-zero figure). Zero it.
             _sibs = account_siblings.get(acct_id, [acct_id])
             _ltx = max((last_txn_date[s] for s in _sibs if s in last_txn_date), default=None)
-            if total_val == ZERO and _ltx is not None and (snap_date - _ltx).days > 365:
-                cash_cad_val = ZERO
+            if total_val == ZERO and _ltx is not None:
+                _days_idle = (snap_date - _ltx).days
+                # Negative reconstructed cash on a holding-less account is always an
+                # artifact: a non-margin cash account can't owe money with no positions,
+                # so it's reconstruction drift on a closed / transferred-out account (e.g.
+                # an iTrade RRSP fully journaled to Scotia Wealth, whose cash sweep leaves
+                # the rebuilt balance off zero). Clear it after a short idle window so it
+                # doesn't drag the line for a year. Positive residuals (FX / Norbert's-
+                # Gambit spreads) keep the conservative 365-day window. Dormancy is judged
+                # across the LOGICAL account (siblings), so an idle sub paired with an
+                # active sibling is never zeroed.
+                if (cash_cad_val < ZERO and _days_idle > 30) or _days_idle > 365:
+                    cash_cad_val = ZERO
             snap.cash_balance_cad = cash_cad_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             snap.invested_cad = invested.get(acct_id, ZERO)
             snap.income_cad = income.get(acct_id, ZERO)

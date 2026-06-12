@@ -80,6 +80,18 @@ def exchange_public_token(public_token: str) -> tuple[str, str]:
     return resp["access_token"], resp["item_id"]
 
 
+def create_sandbox_public_token(institution_id: str = "ins_109508") -> str:
+    """Sandbox only: mint a public_token for an investments-capable test institution,
+    skipping the Link UI (whose returning-user phone flow only offers depository banks)."""
+    if PLAID_ENV != "sandbox":
+        raise PlaidError("NOT_SANDBOX", "Simulated connect is only available in Sandbox.")
+    resp = _post("/sandbox/public_token/create", {
+        "institution_id": institution_id,
+        "initial_products": PRODUCTS,
+    })
+    return resp["public_token"]
+
+
 def get_institution(access_token: str) -> tuple[Optional[str], Optional[str]]:
     """Returns (institution_id, institution_name) for display."""
     try:

@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback } from 'react'
 import { usePlaidLink } from 'react-plaid-link'
 import { RefreshCw, Trash2, Plus, Link2, Loader2 } from 'lucide-react'
 import {
-  getPlaidStatus, createPlaidLinkToken, exchangePlaidToken,
+  getPlaidStatus, createPlaidLinkToken, exchangePlaidToken, sandboxCreatePlaid,
   getPlaidItems, syncPlaidItem, deletePlaidItem, type PlaidItem,
 } from '../api/client'
 
@@ -49,6 +49,13 @@ export default function PlaidConnect() {
   }
 
   const finish = async () => { setLinkToken(null); setBusy(false); await refresh() }
+
+  const simulate = async () => {
+    setError(null); setBusy(true)
+    try { await sandboxCreatePlaid(owner); await refresh() }
+    catch (e: any) { setError(e?.response?.data?.detail ?? 'Sandbox connect failed') }
+    finally { setBusy(false) }
+  }
 
   const sync = async (id: number) => {
     setBusy(true); setError(null)
@@ -97,10 +104,24 @@ export default function PlaidConnect() {
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Connect account
             </button>
-            <span className="text-xs text-gray-400">
-              Sandbox test login: <code>user_good</code> / <code>pass_good</code>
-            </span>
+            {env === 'sandbox' && (
+              <button
+                onClick={simulate}
+                disabled={busy}
+                title="Create a fake investment account directly (skips Link's depository-only test banks)"
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded hover:bg-blue-50 disabled:opacity-50"
+              >
+                {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+                Simulate investment account
+              </button>
+            )}
           </div>
+          {env === 'sandbox' && (
+            <p className="text-xs text-gray-400">
+              Tip: "Simulate" is the reliable Sandbox path — Plaid Link's test flow only offers
+              depository banks. Use the real <strong>Connect account</strong> flow in Production.
+            </p>
+          )}
 
           {linkToken && <LinkLauncher token={linkToken} owner={owner} onDone={finish} onExit={() => { setLinkToken(null); setBusy(false) }} />}
 

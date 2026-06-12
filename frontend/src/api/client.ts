@@ -1201,6 +1201,8 @@ export const createPlaidLinkToken = () =>
   api.post<{ link_token: string }>('/plaid/link-token', {}).then(r => r.data)
 export const exchangePlaidToken = (public_token: string, owner: string) =>
   api.post('/plaid/exchange', { public_token, owner }).then(r => r.data)
+export const sandboxCreatePlaid = (owner: string) =>
+  api.post('/plaid/sandbox-create', { public_token: 'sandbox', owner }).then(r => r.data)
 export const getPlaidItems = () =>
   api.get<PlaidItem[]>('/plaid/items').then(r => r.data)
 export const syncPlaidItem = (id: number) =>

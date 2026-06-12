@@ -79,6 +79,36 @@ def exchange(body: ExchangeBody, db: Session = Depends(get_db)):
     return {"item_id": item.item_id, "institution": item.institution_name, "synced": summary}
 
 
+@router.post("/sandbox-create")
+def sandbox_create(body: ExchangeBody, db: Session = Depends(get_db)):
+    """Sandbox only: create an investments test Item without the Link UI, then sync.
+    (Link's returning-user phone flow in Sandbox only offers depository test banks.)"""
+    _require_configured()
+    try:
+        public_token = plaid.create_sandbox_public_token()
+        access_token, item_id = plaid.exchange_public_token(public_token)
+    except plaid.PlaidError as e:
+        raise HTTPException(502, f"{e.code}: {e.message}")
+
+    item = db.query(PlaidItem).filter(PlaidItem.item_id == item_id).first()
+    if not item:
+        inst_id, inst_name = plaid.get_institution(access_token)
+        item = PlaidItem(item_id=item_id, access_token=access_token,
+                         institution_id=inst_id, institution_name=inst_name or "Sandbox Investments")
+        db.add(item)
+        db.commit()
+        db.refresh(item)
+    else:
+        item.access_token = access_token
+        db.commit()
+
+    try:
+        summary = plaid.sync_item(db, item, owner=body.owner)
+    except plaid.PlaidError as e:
+        raise HTTPException(502, f"{e.code}: {e.message}")
+    return {"item_id": item.item_id, "institution": item.institution_name, "synced": summary}
+
+
 @router.get("/items")
 def list_items(db: Session = Depends(get_db)):
     out = []

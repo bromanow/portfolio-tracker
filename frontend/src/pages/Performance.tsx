@@ -8,6 +8,7 @@ import {
 import {
   RefreshCw, Loader2, AlertCircle, Pencil, X, Check,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
+  Download, FileText,
 } from 'lucide-react'
 import api from '../api/client'
 import { getAccounts } from '../api/client'
@@ -668,6 +669,102 @@ function PerformanceInner() {
     return tw > 0 ? weighted / tw : null
   }, [scopedReturns])
 
+  // Window stats: annualized (time-weighted) return + max drawdown over the visible
+  // window. We chain per-step returns net of external cash flows so deposits/withdrawals
+  // don't read as performance, and take drawdown off the same flow-adjusted index — so a
+  // big transfer can't masquerade as a crash. Annualized only when the window ≥ 1 year;
+  // shorter windows show the cumulative return instead (extrapolating < 1y is misleading).
+  const windowStats = useMemo(() => {
+    const empty = { value: null as number | null, annualized: false, maxDD: null as number | null }
+    if (points.length < 2) return empty
+    const totals = points.map(p => labels.reduce((s, l) => s + (p.values[l] ?? 0), 0))
+    const flowByDate: Record<string, number> = {}
+    for (const e of events) {
+      const k = snapToPoint(e.date)
+      flowByDate[k] = (flowByDate[k] ?? 0) + e.net_cad
+    }
+    let index = 1, peak = 1, maxDD = 0
+    for (let i = 1; i < points.length; i++) {
+      const prev = totals[i - 1]
+      if (prev <= 0) continue
+      const flow = flowByDate[points[i].date] ?? 0
+      index *= 1 + (totals[i] - prev - flow) / prev
+      if (index > peak) peak = index
+      if (peak > 0) maxDD = Math.max(maxDD, (peak - index) / peak)
+    }
+    const days = (new Date(points[points.length - 1].date + 'T00:00:00').getTime()
+      - new Date(points[0].date + 'T00:00:00').getTime()) / 864e5
+    if (days >= 365 && index > 0) {
+      return { value: (Math.pow(index, 365.25 / days) - 1) * 100, annualized: true, maxDD: -maxDD * 100 }
+    }
+    return { value: (index - 1) * 100, annualized: false, maxDD: -maxDD * 100 }
+  }, [points, labels, events, snapToPoint])
+
+  // ── Exports ────────────────────────────────────────────────────────────────
+  const reportRef = useRef<HTMLDivElement>(null)
+  const [pdfBusy, setPdfBusy] = useState(false)
+
+  // CSV of the chart series: date + every plotted line (portfolio, invested, benchmarks).
+  const exportChartCsv = () => {
+    if (!chartDataWithIndices.length) return
+    const keys = new Set<string>()
+    for (const row of chartDataWithIndices) for (const k of Object.keys(row)) if (k !== 'date') keys.add(k)
+    const cols = ['date', ...keys]
+    const esc = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
+    const lines = [cols.map(esc).join(',')]
+    for (const row of chartDataWithIndices) {
+      lines.push(cols.map(c => esc((row as Record<string, unknown>)[c] ?? '')).join(','))
+    }
+    const url = URL.createObjectURL(new Blob([lines.join('\n')], { type: 'text/csv' }))
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `performance_${new Date().toISOString().slice(0, 10)}.csv`
+    document.body.appendChild(a); a.click(); document.body.removeChild(a)
+    setTimeout(() => URL.revokeObjectURL(url), 100)
+  }
+
+  // PDF report: rasterize the chart + cards + table and lay it onto A4, paginating
+  // when it's taller than one page. Libraries are lazy-loaded so they stay out of the
+  // main bundle and only download when the user actually exports.
+  const exportPdf = async () => {
+    const el = reportRef.current
+    if (!el || pdfBusy) return
+    setPdfBusy(true)
+    try {
+      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
+        import('jspdf'), import('html2canvas'),
+      ])
+      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
+      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
+      const pageW = pdf.internal.pageSize.getWidth()
+      const pageH = pdf.internal.pageSize.getHeight()
+      const margin = 28
+      const contentW = pageW - margin * 2
+      pdf.setFontSize(14); pdf.setTextColor(30)
+      pdf.text('Portfolio Performance', margin, margin + 4)
+      pdf.setFontSize(9); pdf.setTextColor(120)
+      pdf.text(new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }), margin, margin + 19)
+      const imgH = (canvas.height / canvas.width) * contentW
+      let remaining = imgH, drawn = 0, firstTop = margin + 30
+      while (remaining > 0) {
+        const sliceH = Math.min(pageH - firstTop - margin, remaining)
+        const srcY = (drawn / imgH) * canvas.height
+        const srcH = (sliceH / imgH) * canvas.height
+        const tmp = document.createElement('canvas')
+        tmp.width = canvas.width; tmp.height = srcH
+        tmp.getContext('2d')!.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
+        pdf.addImage(tmp.toDataURL('image/png'), 'PNG', margin, firstTop, contentW, sliceH)
+        remaining -= sliceH; drawn += sliceH
+        if (remaining > 0) { pdf.addPage(); firstTop = margin }
+      }
+      pdf.save(`performance_${new Date().toISOString().slice(0, 10)}.pdf`)
+    } catch (e) {
+      console.error('PDF export failed', e)
+    } finally {
+      setPdfBusy(false)
+    }
+  }
+
   const noData = !timelineQ.isLoading && points.length === 0
   const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0
 
@@ -680,16 +777,40 @@ function PerformanceInner() {
           <h1 className="text-xl md:text-2xl font-bold text-gray-900">Performance</h1>
           <p className="text-xs md:text-sm text-gray-400 mt-0.5">Portfolio value over time · {latestDate ?? '—'}</p>
         </div>
-        {/* Desktop: full button label; mobile: icon only */}
-        <button
-          onClick={() => computeMut.mutate()}
-          disabled={computeMut.isPending}
-          className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
-        >
-          <RefreshCw className={`h-4 w-4 ${computeMut.isPending ? 'animate-spin' : ''}`} />
-          <span className="hidden md:inline">{computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}</span>
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Exports — disabled until there's a timeline to export */}
+          <button
+            onClick={exportChartCsv}
+            disabled={points.length === 0}
+            title="Download chart data as CSV"
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            <Download className="h-4 w-4" />
+            <span className="hidden md:inline">CSV</span>
+          </button>
+          <button
+            onClick={exportPdf}
+            disabled={points.length === 0 || pdfBusy}
+            title="Download a PDF report (chart, stats, returns)"
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+          >
+            {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
+            <span className="hidden md:inline">{pdfBusy ? 'Building…' : 'PDF'}</span>
+          </button>
+          {/* Desktop: full button label; mobile: icon only */}
+          <button
+            onClick={() => computeMut.mutate()}
+            disabled={computeMut.isPending}
+            className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${computeMut.isPending ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">{computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}</span>
+          </button>
+        </div>
       </div>
+
+      {/* PDF-capture region: chart + stat cards + returns table */}
+      <div ref={reportRef} className="space-y-4 md:space-y-6">
 
       {/* ── Chart panel ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 md:p-5 space-y-3">
@@ -816,7 +937,9 @@ function PerformanceInner() {
                 allowDataOverflow
                 tickFormatter={v => axisMode === 'indexed' ? `${v >= 0 ? '+' : ''}${v.toFixed(0)}%` : '$' + fmtShort(v)}
                 tick={{ fontSize: 10 }} width={72} />
-              <Tooltip content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} />} />
+              <Tooltip
+                cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
+                content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {labels.map((lbl, i) => {
                 const color = PALETTE[i % PALETTE.length]
@@ -859,9 +982,21 @@ function PerformanceInner() {
       </div>
 
       {/* ── Summary cards (scoped to the active filters) ── */}
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
         <SummaryCard label="Total Portfolio Value" value={fmtCAD(totalCurrent)} sub={latestDate ?? undefined} />
         <SummaryCard label="YTD Return" value={fmtPct(ytdPct)} color={pctClass(ytdPct)} />
+        <SummaryCard
+          label={windowStats.annualized ? 'Annualized' : 'Return (window)'}
+          value={fmtPct(windowStats.value)}
+          color={pctClass(windowStats.value)}
+          sub="time-weighted"
+        />
+        <SummaryCard
+          label="Max Drawdown"
+          value={fmtPct(windowStats.maxDD)}
+          color={pctClass(windowStats.maxDD)}
+          sub="over window"
+        />
         <SummaryCard label="Best Account (1Y)" value={bestAcct ? fmtPct(bestAcct.returns['1Y']) : '—'} sub={bestAcct?.account_name} color={pctClass(bestAcct?.returns['1Y'])} />
         <SummaryCard label="Worst Account (1Y)" value={worstAcct ? fmtPct(worstAcct.returns['1Y']) : '—'} sub={worstAcct?.account_name} color={pctClass(worstAcct?.returns['1Y'])} />
       </div>
@@ -993,6 +1128,8 @@ function PerformanceInner() {
             )}
           </table>
         </div>
+      </div>
+      {/* end PDF-capture region */}
       </div>
 
     </div>

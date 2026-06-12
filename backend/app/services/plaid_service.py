@@ -165,12 +165,16 @@ def _upsert_security(db: Session, psec: dict, on: date):
     from app.models.prices import MarketPrice, HistoricalPrice
 
     ticker_sym = (psec.get("ticker_symbol") or "").upper().strip()
+    cusip = (psec.get("cusip") or "").strip()
+    isin = (psec.get("isin") or "").strip()
     ptype = (psec.get("type") or "").lower()
     asset_class = _ASSET_CLASS_MAP.get(ptype, "EQUITY")
     ccy = (psec.get("iso_currency_code") or "CAD").upper()
     name = psec.get("name")
 
-    ticker = ticker_sym or f"PLAID:{psec['security_id']}"
+    # Real ticker first (also prices via yfinance); else a clean identifier
+    # (CUSIP/ISIN) for proprietary funds; else a stable synthetic key.
+    ticker = ticker_sym or cusip or isin or f"PLAID:{psec['security_id']}"
     sec = db.query(Security).filter(Security.ticker == ticker).first()
     if not sec:
         sec = Security(ticker=ticker, name=name, asset_class=asset_class, currency=ccy)
@@ -263,9 +267,13 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
     holdings = data.get("holdings", [])
     today = date.today()
 
-    # 1. Securities → our Security rows + base prices.
+    # 1. Securities → our Security rows + base prices. Cash-equivalents (e.g. a
+    #    "U S Dollar" sweep) are the account's cash, not a holding — route those to
+    #    a CASH_OPENING below instead of creating a phantom security.
     sec_map: dict[str, int] = {}
     for sid, psec in securities.items():
+        if psec.get("is_cash_equivalent"):
+            continue
         sec = _upsert_security(db, psec, today)
         sec_map[sid] = sec.id
 
@@ -291,13 +299,28 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
             psec = securities.get(h["security_id"], {})
             ccy = (h.get("iso_currency_code") or psec.get("iso_currency_code") or "CAD").upper()
             qty = _d(h.get("quantity")) or Decimal("0")
+            mkt_val = _d(h.get("institution_value"))       # native market value
+            ext = f"plaid-pos-{pacct_id}-{h['security_id']}"
+
+            # Cash-equivalent holding → account cash (CASH_OPENING), not a security.
+            if psec.get("is_cash_equivalent"):
+                cash_native = mkt_val if mkt_val is not None else qty
+                cad_amount = (cash_native * _fx_to_cad(db, ccy, today)).quantize(Decimal("0.01"))
+                db.add(Transaction(
+                    account_id=acct.id, security_id=None, transaction_date=today,
+                    transaction_type="CASH_OPENING",
+                    transaction_currency=ccy, transaction_amount=cash_native, cad_amount=cad_amount,
+                    raw_description=f"Plaid cash: {psec.get('name', '')}"[:500] or None,
+                    external_ref=ext,
+                ))
+                continue
+
             if qty == 0:
                 continue
             unit_price = _d(h.get("institution_price"))
-            cost_basis = _d(h.get("cost_basis"))          # per-unit cost
-            mkt_val = _d(h.get("institution_value"))       # native market value
-            # Cost: per-unit cost × qty, else fall back to market value (P&L ≈ 0).
-            cost_native = (cost_basis * qty) if cost_basis is not None else (mkt_val or Decimal("0"))
+            cost_basis = _d(h.get("cost_basis"))           # TOTAL cost of the holding (Plaid spec)
+            # cost_basis is the whole-position cost; fall back to market value (P&L ≈ 0) when absent.
+            cost_native = cost_basis if cost_basis is not None else (mkt_val or Decimal("0"))
             cad_amount = (cost_native * _fx_to_cad(db, ccy, today)).quantize(Decimal("0.01"))
             # Refresh the price from the holding's unit price (more current than security close).
             if unit_price is not None and h["security_id"] in sec_map:
@@ -314,7 +337,7 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
                 transaction_amount=cad_amount,
                 cad_amount=cad_amount,
                 raw_description=f"Plaid holding: {psec.get('name', '')}"[:500] or None,
-                external_ref=f"plaid-pos-{pacct_id}-{h['security_id']}",
+                external_ref=ext,
             ))
             summary["holdings"] += 1
 

@@ -114,19 +114,25 @@ const FLOW_LABEL: Record<ChartEventItem['type'], string> = {
 
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
+function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode }: {
   active?: boolean
   payload?: { name: string; value: number; color: string }[]
   label?: string
   dateToEvents?: Record<string, ChartEvent>
   indexLabels?: Set<string>
+  mode?: 'value' | 'indexed'
 }) {
   if (!active || !payload?.length) return null
   const ev = label ? dateToEvents?.[label] : undefined
+  const isIdx = mode === 'indexed'
+  // In indexed mode series values are % change from the window start, not dollars.
+  const fmtVal = (v: number | null | undefined) =>
+    isIdx ? `${(v ?? 0) >= 0 ? '+' : ''}${(v ?? 0).toFixed(2)}%` : fmtCAD(v)
   // Split payload into portfolio series, benchmark indices, and invested baselines.
   const indexRows    = payload.filter(p => indexLabels?.has(p.name))
   const portfolioRows = payload.filter(p => !indexLabels?.has(p.name))
   // Total = sum of value lines only (exclude the dashed "(invested)" baselines).
+  // Summing percentages is meaningless, so the Total row is hidden in indexed mode.
   const valueRows = portfolioRows.filter(p => !p.name.endsWith(' (invested)'))
   const total = valueRows.reduce((s, p) => s + (p.value ?? 0), 0)
   return (
@@ -138,10 +144,10 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
             <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
             {p.name}
           </span>
-          <span className="font-semibold">{fmtCAD(p.value)}</span>
+          <span className="font-semibold">{fmtVal(p.value)}</span>
         </div>
       ))}
-      {valueRows.length > 1 && (
+      {!isIdx && valueRows.length > 1 && (
         <div className="flex justify-between gap-4 py-0.5 mt-1 pt-1 border-t border-gray-100">
           <span className="font-bold text-gray-700">Total</span>
           <span className="font-bold text-gray-900">{fmtCAD(total)}</span>
@@ -156,7 +162,7 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels }: {
                 <span className="inline-block w-2 h-0.5 rounded" style={{ background: p.color }} />
                 {p.name}
               </span>
-              <span className="font-semibold">{fmtCAD(p.value)}</span>
+              <span className="font-semibold">{fmtVal(p.value)}</span>
             </div>
           ))}
         </div>
@@ -330,6 +336,10 @@ function PerformanceInner() {
   const [groupBy, setGroupBy]         = useState<GroupBy>('account_type')
   const [period, setPeriod]           = useState<Period>('ALL')
   const [showInvested, setShowInvested] = useState(false)
+  // 'value' = dollar axis auto-fitted to the data; 'indexed' = every series rebased
+  // to its first visible point and shown as % change, so different-sized accounts
+  // become directly comparable on one scale.
+  const [axisMode, setAxisMode] = useState<'value' | 'indexed'>('value')
   const [compareIndices, setCompareIndices] = useState<string[]>([])
 
   // Chart filters (which accounts to include) — string[] matches MultiSelectDropdown
@@ -551,6 +561,49 @@ function PerformanceInner() {
     })
   }, [chartData, indexSeries])
 
+  // In 'indexed' mode, rebase every numeric series to its first visible value and
+  // express it as % change (so all lines start at 0% and relative moves line up).
+  // A series whose first value is 0 (e.g. an account opened mid-window) is rebased
+  // from its first non-zero point.
+  const displayData = useMemo(() => {
+    if (axisMode === 'value') return chartDataWithIndices
+    const base: Record<string, number> = {}
+    for (const row of chartDataWithIndices) {
+      for (const k of Object.keys(row)) {
+        if (k === 'date' || k in base) continue
+        const v = row[k]
+        if (typeof v === 'number' && isFinite(v) && v !== 0) base[k] = v
+      }
+    }
+    return chartDataWithIndices.map(row => {
+      const next: Record<string, string | number> = { date: row.date as string }
+      for (const k of Object.keys(row)) {
+        if (k === 'date') continue
+        const v = row[k]
+        const b = base[k]
+        if (typeof v === 'number' && isFinite(v) && b) next[k] = (v / b - 1) * 100
+      }
+      return next
+    })
+  }, [chartDataWithIndices, axisMode])
+
+  // Auto-fit the Y axis to the visible data (with a little headroom) instead of
+  // pinning it to zero, so movement in the lines is actually legible.
+  const yDomain = useMemo<[number, number] | [number, string]>(() => {
+    let min = Infinity, max = -Infinity
+    for (const row of displayData) {
+      for (const k of Object.keys(row)) {
+        if (k === 'date') continue
+        const v = (row as Record<string, string | number>)[k]
+        if (typeof v === 'number' && isFinite(v)) { if (v < min) min = v; if (v > max) max = v }
+      }
+    }
+    if (!isFinite(min) || !isFinite(max)) return [0, 'auto']
+    if (min === max) return [min - 1, max + 1]
+    const pad = (max - min) * 0.08
+    return [min - pad, max + pad]
+  }, [displayData])
+
   // ── Unified filtering ─────────────────────────────────────────────────────
   // The chart's account/type/brokerage filters drive the table AND summary cards,
   // so one set of controls updates everything together.
@@ -671,10 +724,29 @@ function PerformanceInner() {
                 className="text-gray-400 hover:text-red-500 ml-0.5"><X className="h-3 w-3" /></button>
             )}
           </div>
-          <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer ml-auto">
-            <input type="checkbox" checked={showInvested} onChange={e => setShowInvested(e.target.checked)} className="rounded" />
-            Show invested
-          </label>
+          <div className="ml-auto flex items-center gap-3">
+            {/* Y-axis mode: dollar value vs. indexed (% change from window start) */}
+            <div className="flex items-center rounded border border-gray-200 overflow-hidden text-xs">
+              <button
+                onClick={() => setAxisMode('value')}
+                className={`px-2.5 py-1 ${axisMode === 'value' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                title="Dollar value (axis auto-fitted to the data)"
+              >
+                $
+              </button>
+              <button
+                onClick={() => setAxisMode('indexed')}
+                className={`px-2.5 py-1 border-l border-gray-200 ${axisMode === 'indexed' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                title="Indexed — each series rebased to its start as % change, for comparing differently-sized accounts"
+              >
+                %
+              </button>
+            </div>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input type="checkbox" checked={showInvested} onChange={e => setShowInvested(e.target.checked)} className="rounded" />
+              Show invested
+            </label>
+          </div>
         </div>
 
         {/* Row 2: account filters (same MultiSelectDropdown style as header) */}
@@ -734,13 +806,17 @@ function PerformanceInner() {
           </div>
         ) : (
           <ResponsiveContainer width="100%" height={320}>
-            <LineChart data={chartDataWithIndices} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
+            <LineChart data={displayData} margin={{ top: 5, right: 20, left: 10, bottom: 5 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="date"
                 tickFormatter={d => { const dt = new Date(d + 'T00:00:00'); return dt.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' }) }}
                 tick={{ fontSize: 10 }} interval="preserveStartEnd" minTickGap={60} />
-              <YAxis tickFormatter={v => '$' + fmtShort(v)} tick={{ fontSize: 10 }} width={72} />
-              <Tooltip content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} />} />
+              <YAxis
+                domain={yDomain}
+                allowDataOverflow
+                tickFormatter={v => axisMode === 'indexed' ? `${v >= 0 ? '+' : ''}${v.toFixed(0)}%` : '$' + fmtShort(v)}
+                tick={{ fontSize: 10 }} width={72} />
+              <Tooltip content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {labels.map((lbl, i) => {
                 const color = PALETTE[i % PALETTE.length]

@@ -1188,4 +1188,26 @@ export const addToWatchlist = (ticker: string, notes?: string) =>
 export const removeFromWatchlist = (ticker: string) =>
   api.delete(`/scanner/watchlist/${ticker}`).then(r => r.data)
 
+// ── Plaid ─────────────────────────────────────────────────────────────────────
+export interface PlaidItem {
+  id: number
+  institution: string | null
+  accounts: number
+  last_synced_at: string | null
+}
+export const getPlaidStatus = () =>
+  api.get<{ configured: boolean; env: string }>('/plaid/status').then(r => r.data)
+export const createPlaidLinkToken = () =>
+  api.post<{ link_token: string }>('/plaid/link-token', {}).then(r => r.data)
+export const exchangePlaidToken = (public_token: string, owner: string) =>
+  api.post('/plaid/exchange', { public_token, owner }).then(r => r.data)
+export const getPlaidItems = () =>
+  api.get<PlaidItem[]>('/plaid/items').then(r => r.data)
+export const syncPlaidItem = (id: number) =>
+  api.post(`/plaid/items/${id}/sync`, {}).then(r => r.data)
+export const syncAllPlaid = () =>
+  api.post('/plaid/sync', {}).then(r => r.data)
+export const deletePlaidItem = (id: number) =>
+  api.delete(`/plaid/items/${id}`).then(r => r.data)
+
 export default api

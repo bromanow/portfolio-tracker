@@ -18,6 +18,7 @@ import app.models.auth         # noqa
 import app.models.clients      # noqa
 import app.models.ibkr         # noqa
 import app.models.scanner      # noqa
+import app.models.plaid        # noqa
 
 from app.dependencies import get_current_user
 from app.routers import auth as auth_router
@@ -27,6 +28,7 @@ from app.routers import system as system_router
 from app.routers import ibkr as ibkr_router
 from app.routers import clients as clients_router
 from app.routers import scanner as scanner_router
+from app.routers import plaid as plaid_router
 
 log = logging.getLogger(__name__)
 
@@ -245,6 +247,7 @@ app.include_router(system_router.router,  dependencies=_auth)
 app.include_router(ibkr_router.router,    dependencies=_auth)
 app.include_router(clients_router.router, dependencies=_auth)
 app.include_router(scanner_router.router, dependencies=_auth)
+app.include_router(plaid_router.router,   dependencies=_auth)
 
 
 @app.get("/api/health")

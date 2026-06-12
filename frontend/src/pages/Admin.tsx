@@ -1,5 +1,6 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
+import PlaidConnect from '../components/PlaidConnect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import {
@@ -23,7 +24,7 @@ import {
 } from '../api/client'
 import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser, IBKRFlexConfig } from '../api/client'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex'
+type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'plaid'
 
 const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
   { id: 'system',           label: 'System',           adminOnly: true },
@@ -31,6 +32,7 @@ const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
   { id: 'accounts',         label: 'Accounts' },
   { id: 'opening-balances', label: 'Opening Balances' },
   { id: 'ibkr-flex',        label: 'IBKR Flex',        adminOnly: true },
+  { id: 'plaid',            label: 'Plaid',            adminOnly: true },
   { id: 'securities',       label: 'Securities',       adminOnly: true },
   { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
   { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
@@ -3083,6 +3085,7 @@ export default function Admin() {
         {tab === 'type-mappings' && <TypeMappingsTab />}
         {tab === 'fx-rates' && <FxRatesTab />}
         {tab === 'ibkr-flex' && isAdmin && <IBKRFlexTab />}
+        {tab === 'plaid' && isAdmin && <PlaidConnect />}
         {tab === 'users' && isAdmin && <UsersTab />}
         {tab === 'danger' && isAdmin && <DangerZoneTab />}
       </div>

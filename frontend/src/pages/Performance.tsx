@@ -8,7 +8,7 @@ import {
 import {
   RefreshCw, Loader2, AlertCircle, Pencil, X, Check,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
-  Download, FileText,
+  Download, Printer,
 } from 'lucide-react'
 import api from '../api/client'
 import { getAccounts } from '../api/client'
@@ -701,9 +701,6 @@ function PerformanceInner() {
   }, [points, labels, events, snapToPoint])
 
   // ── Exports ────────────────────────────────────────────────────────────────
-  const reportRef = useRef<HTMLDivElement>(null)
-  const [pdfBusy, setPdfBusy] = useState(false)
-
   // CSV of the chart series: date + every plotted line (portfolio, invested, benchmarks).
   const exportChartCsv = () => {
     if (!chartDataWithIndices.length) return
@@ -723,47 +720,10 @@ function PerformanceInner() {
     setTimeout(() => URL.revokeObjectURL(url), 100)
   }
 
-  // PDF report: rasterize the chart + cards + table and lay it onto A4, paginating
-  // when it's taller than one page. Libraries are lazy-loaded so they stay out of the
-  // main bundle and only download when the user actually exports.
-  const exportPdf = async () => {
-    const el = reportRef.current
-    if (!el || pdfBusy) return
-    setPdfBusy(true)
-    try {
-      const [{ default: jsPDF }, { default: html2canvas }] = await Promise.all([
-        import('jspdf'), import('html2canvas'),
-      ])
-      const canvas = await html2canvas(el, { scale: 2, backgroundColor: '#ffffff', useCORS: true })
-      const pdf = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'a4' })
-      const pageW = pdf.internal.pageSize.getWidth()
-      const pageH = pdf.internal.pageSize.getHeight()
-      const margin = 28
-      const contentW = pageW - margin * 2
-      pdf.setFontSize(14); pdf.setTextColor(30)
-      pdf.text('Portfolio Performance', margin, margin + 4)
-      pdf.setFontSize(9); pdf.setTextColor(120)
-      pdf.text(new Date().toLocaleDateString('en-CA', { year: 'numeric', month: 'long', day: 'numeric' }), margin, margin + 19)
-      const imgH = (canvas.height / canvas.width) * contentW
-      let remaining = imgH, drawn = 0, firstTop = margin + 30
-      while (remaining > 0) {
-        const sliceH = Math.min(pageH - firstTop - margin, remaining)
-        const srcY = (drawn / imgH) * canvas.height
-        const srcH = (sliceH / imgH) * canvas.height
-        const tmp = document.createElement('canvas')
-        tmp.width = canvas.width; tmp.height = srcH
-        tmp.getContext('2d')!.drawImage(canvas, 0, srcY, canvas.width, srcH, 0, 0, canvas.width, srcH)
-        pdf.addImage(tmp.toDataURL('image/png'), 'PNG', margin, firstTop, contentW, sliceH)
-        remaining -= sliceH; drawn += sliceH
-        if (remaining > 0) { pdf.addPage(); firstTop = margin }
-      }
-      pdf.save(`performance_${new Date().toISOString().slice(0, 10)}.pdf`)
-    } catch (e) {
-      console.error('PDF export failed', e)
-    } finally {
-      setPdfBusy(false)
-    }
-  }
+  // Print → 'Save as PDF'. A print stylesheet (`.print-area` in index.css) isolates
+  // the chart + cards + table, so the browser's print dialog produces a crisp,
+  // vector PDF — no rasterization, no extra dependencies.
+  const printReport = () => window.print()
 
   const noData = !timelineQ.isLoading && points.length === 0
   const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0
@@ -789,13 +749,13 @@ function PerformanceInner() {
             <span className="hidden md:inline">CSV</span>
           </button>
           <button
-            onClick={exportPdf}
-            disabled={points.length === 0 || pdfBusy}
-            title="Download a PDF report (chart, stats, returns)"
-            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            onClick={printReport}
+            disabled={points.length === 0}
+            title="Print / Save as PDF (chart, stats, returns)"
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors print:hidden"
           >
-            {pdfBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-            <span className="hidden md:inline">{pdfBusy ? 'Building…' : 'PDF'}</span>
+            <Printer className="h-4 w-4" />
+            <span className="hidden md:inline">Print / PDF</span>
           </button>
           {/* Desktop: full button label; mobile: icon only */}
           <button
@@ -809,8 +769,11 @@ function PerformanceInner() {
         </div>
       </div>
 
-      {/* PDF-capture region: chart + stat cards + returns table */}
-      <div ref={reportRef} className="space-y-4 md:space-y-6">
+      {/* Print region (Save-as-PDF): chart + stat cards + returns table */}
+      <div className="print-area space-y-4 md:space-y-6">
+      <div className="report-print-title">
+        Portfolio Performance · {latestDate ?? new Date().toISOString().slice(0, 10)}
+      </div>
 
       {/* ── Chart panel ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-3 md:p-5 space-y-3">

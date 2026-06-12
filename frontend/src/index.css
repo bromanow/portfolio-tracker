@@ -57,3 +57,51 @@
   background: #cbd5e1;
   border-radius: 3px;
 }
+
+/* ─── Print: "Save as PDF" for the Performance report ──────────────────────────
+   The Print / PDF button calls window.print(); these rules isolate the marked
+   .print-area (chart + stat cards + returns table) so the browser prints just the
+   report as crisp vector output. */
+.report-print-title { display: none; }
+
+@media print {
+  /* Hide everything, then reveal only the report area and pull it to the top-left
+     so surrounding app chrome (sidebar, header, controls) doesn't reserve space. */
+  body * { visibility: hidden; }
+  .print-area, .print-area * { visibility: visible; }
+  .print-area {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    padding: 0;
+    margin: 0;
+  }
+
+  .report-print-title {
+    display: block;
+    margin-bottom: 12px;
+    font-size: 15px;
+    font-weight: 700;
+    color: #111827;
+  }
+
+  /* Preserve series/brand colours and card backgrounds in the printout. */
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+  }
+
+  /* Scale the Recharts SVG down to the printable page width (SVG keeps its aspect). */
+  .recharts-responsive-container { width: 100% !important; }
+  .recharts-wrapper,
+  .recharts-surface { width: 100% !important; height: auto !important; }
+
+  /* Avoid breaking cards, the chart, or table rows across pages. */
+  .print-area > div,
+  .recharts-wrapper,
+  table, thead, tr { break-inside: avoid; }
+  table { width: 100% !important; }
+
+  @page { margin: 1.2cm; }
+}

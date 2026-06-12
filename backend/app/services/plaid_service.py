@@ -378,9 +378,6 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
 
             if qty == 0:
                 continue
-            # Skip dust (e.g. ~$0.20 target-date glide-path residue) — clutter, not real holdings.
-            if mkt_val is not None and abs(mkt_val) < Decimal("1"):
-                continue
             unit_price = _d(h.get("institution_price"))
             # Value at market (Book = Securities, P&L ≈ 0). These are registered accounts
             # where cost basis is display-only, and Plaid's cost_basis is ambiguous

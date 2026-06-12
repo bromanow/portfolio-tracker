@@ -318,9 +318,11 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
             if qty == 0:
                 continue
             unit_price = _d(h.get("institution_price"))
-            cost_basis = _d(h.get("cost_basis"))           # TOTAL cost of the holding (Plaid spec)
-            # cost_basis is the whole-position cost; fall back to market value (P&L ≈ 0) when absent.
-            cost_native = cost_basis if cost_basis is not None else (mkt_val or Decimal("0"))
+            # Value at market (Book = Securities, P&L ≈ 0). These are registered accounts
+            # where cost basis is display-only, and Plaid's cost_basis is ambiguous
+            # (docs say total; Sandbox returns per-unit-looking values). Wire real cost
+            # basis later once validated against production data.
+            cost_native = mkt_val if mkt_val is not None else Decimal("0")
             cad_amount = (cost_native * _fx_to_cad(db, ccy, today)).quantize(Decimal("0.01"))
             # Refresh the price from the holding's unit price (more current than security close).
             if unit_price is not None and h["security_id"] in sec_map:

@@ -72,16 +72,30 @@ export default function MultiSelectDropdown({
 
       {open && (
         <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 min-w-max max-h-64 overflow-y-auto">
-          {selected.length > 0 && (
-            <div className="sticky top-0 bg-white px-3 py-1.5 border-b border-gray-100 flex justify-between items-center">
-              <span className="text-xs text-gray-400">{selected.length} selected</span>
-              <button
-                type="button"
-                onClick={() => onChange([])}
-                className="text-xs text-blue-600 hover:text-blue-800 font-medium"
-              >
-                Clear
-              </button>
+          {options.length > 0 && (
+            <div className="sticky top-0 bg-white px-3 py-1.5 border-b border-gray-100 flex justify-between items-center gap-3">
+              <span className="text-xs text-gray-400">
+                {selected.length === 0 ? 'All' : `${selected.length} selected`}
+              </span>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => onChange(options.map(o => o.value))}
+                  disabled={selected.length === options.length}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-300 disabled:cursor-default"
+                >
+                  Select all
+                </button>
+                <span className="text-gray-200">·</span>
+                <button
+                  type="button"
+                  onClick={() => onChange([])}
+                  disabled={selected.length === 0}
+                  className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-300 disabled:cursor-default"
+                >
+                  Clear
+                </button>
+              </div>
             </div>
           )}
           {options.length === 0 && (

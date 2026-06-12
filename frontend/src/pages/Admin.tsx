@@ -225,7 +225,7 @@ function AccountsTab() {
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <select className="border rounded px-3 py-1.5 text-sm" value={form.account_type}
             onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))}>
-            {['RRSP', 'TFSA', 'RESP', 'NON_REG'].map(t => <option key={t}>{t}</option>)}
+            {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH'].map(t => <option key={t}>{t}</option>)}
           </select>
           <select className="border rounded px-3 py-1.5 text-sm" value={form.base_currency}
             onChange={e => setForm(f => ({ ...f, base_currency: e.target.value }))}>
@@ -251,7 +251,7 @@ function AccountsTab() {
         </select>
         <select className="border rounded px-3 py-1.5 text-sm" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="">All Types</option>
-          {['RRSP', 'TFSA', 'RESP', 'NON_REG'].map(t => <option key={t}>{t}</option>)}
+          {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH'].map(t => <option key={t}>{t}</option>)}
         </select>
         {(filterBrokerage || filterType) && (
           <button onClick={() => { setFilterBrokerage(''); setFilterType('') }} className="text-xs text-gray-500 hover:text-gray-700">Clear filters</button>
@@ -283,7 +283,7 @@ function AccountsTab() {
                       value={editData.name ?? a.name} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} /></td>
                     <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.account_type ?? a.account_type}
                       onChange={e => setEditData(d => ({ ...d, account_type: e.target.value }))}>
-                      {['RRSP', 'TFSA', 'RESP', 'NON_REG'].map(t => <option key={t}>{t}</option>)}
+                      {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH'].map(t => <option key={t}>{t}</option>)}
                     </select></td>
                     <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.base_currency ?? a.base_currency}
                       onChange={e => setEditData(d => ({ ...d, base_currency: e.target.value }))}>

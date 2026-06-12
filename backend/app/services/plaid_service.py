@@ -179,9 +179,19 @@ def _fx_to_cad(db: Session, ccy: Optional[str], on: date) -> Decimal:
         return Decimal("1")
 
 
+def _clean_institution_name(name: Optional[str]) -> str:
+    """Strip Plaid's login-portal suffixes, e.g. 'Principal Financial Group -
+    Participant Logon' → 'Principal Financial Group'."""
+    name = (name or "Plaid").strip()
+    import re as _re
+    name = _re.sub(r"\s*[-–—]\s*(participant|member|employee|plan|retirement)?\s*"
+                   r"log\s*[io]n.*$", "", name, flags=_re.I).strip()
+    return name or "Plaid"
+
+
 def _get_or_create_brokerage(db: Session, name: str):
     from app.models.master import Brokerage
-    name = name or "Plaid"
+    name = _clean_institution_name(name)
     code = ("PLAID_" + "".join(c for c in name.upper() if c.isalnum())[:14]) or "PLAID"
     b = db.query(Brokerage).filter(Brokerage.code == code).first()
     if not b:

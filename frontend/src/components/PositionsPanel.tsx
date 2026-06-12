@@ -70,6 +70,9 @@ const ACCOUNT_TYPE_COLORS: Record<string, string> = {
   TFSA: 'bg-green-100 text-green-700',
   RESP: 'bg-yellow-100 text-yellow-700',
   NON_REG: 'bg-gray-100 text-gray-600',
+  '401K': 'bg-purple-100 text-purple-700',
+  IRA: 'bg-indigo-100 text-indigo-700',
+  ROTH: 'bg-pink-100 text-pink-700',
 }
 const ASSET_CLASS_COLORS: Record<string, string> = {
   EQUITY: 'bg-blue-50 text-blue-700',

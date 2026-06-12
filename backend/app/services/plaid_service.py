@@ -206,23 +206,50 @@ def _get_or_create_brokerage(db: Session, name: str):
 def _upsert_security(db: Session, psec: dict, on: date):
     """Map a Plaid security to our Security and refresh its price.
 
-    Real tickers are reused (so they price via yfinance too); proprietary funds
-    with no ticker get a stable synthetic ticker keyed on the Plaid security id.
+    Matching is keyed on Plaid's immutable security_id (via the plaid_securities
+    map), so a user can freely rename the ticker/name of a synced fund and the next
+    sync still resolves to the same record. New funds reuse a real ticker when Plaid
+    provides one (so they also price via yfinance), else CUSIP/ISIN, else a synthetic key.
     """
     from app.models.master import Security
-    from app.models.prices import MarketPrice, HistoricalPrice
+    from app.models.plaid import PlaidSecurity
+    from app.models.transactions import Transaction
 
+    psid = psec["security_id"]
+    ccy = (psec.get("iso_currency_code") or "CAD").upper()
+
+    def _finish(sec):
+        px = _d(psec.get("close_price"))
+        if px is not None:
+            _write_price(db, sec.id, px, ccy, on)
+        return sec
+
+    # 1. Known mapping → reuse the existing record (respect any user rename).
+    pm = db.query(PlaidSecurity).filter(PlaidSecurity.plaid_security_id == psid).first()
+    if pm:
+        sec = db.get(Security, pm.security_id)
+        if sec:
+            return _finish(sec)
+
+    # 2. Recover a security from a prior sync's position row — covers funds the user
+    #    already renamed before this mapping existed — then record the mapping.
+    prior = (db.query(Transaction)
+             .filter(Transaction.external_ref.like(f"plaid-pos-%-{psid}"))
+             .first())
+    if prior and prior.security_id:
+        sec = db.get(Security, prior.security_id)
+        if sec:
+            db.add(PlaidSecurity(plaid_security_id=psid, security_id=sec.id))
+            db.flush()
+            return _finish(sec)
+
+    # 3. New security: real ticker → CUSIP → ISIN → synthetic key; then map it.
     ticker_sym = (psec.get("ticker_symbol") or "").upper().strip()
     cusip = (psec.get("cusip") or "").strip()
     isin = (psec.get("isin") or "").strip()
-    ptype = (psec.get("type") or "").lower()
-    asset_class = _ASSET_CLASS_MAP.get(ptype, "EQUITY")
-    ccy = (psec.get("iso_currency_code") or "CAD").upper()
+    asset_class = _ASSET_CLASS_MAP.get((psec.get("type") or "").lower(), "EQUITY")
     name = psec.get("name")
-
-    # Real ticker first (also prices via yfinance); else a clean identifier
-    # (CUSIP/ISIN) for proprietary funds; else a stable synthetic key.
-    ticker = ticker_sym or cusip or isin or f"PLAID:{psec['security_id']}"
+    ticker = ticker_sym or cusip or isin or f"PLAID:{psid}"
     sec = db.query(Security).filter(Security.ticker == ticker).first()
     if not sec:
         sec = Security(ticker=ticker, name=name, asset_class=asset_class, currency=ccy)
@@ -233,13 +260,9 @@ def _upsert_security(db: Session, psec: dict, on: date):
             sec.name = name
         if not sec.currency:
             sec.currency = ccy
-
-    # Price: prefer the holding's institution_price (set by caller via _price_for);
-    # here use the security's close_price as a fallback current price.
-    px = _d(psec.get("close_price"))
-    if px is not None:
-        _write_price(db, sec.id, px, ccy, on)
-    return sec
+    db.add(PlaidSecurity(plaid_security_id=psid, security_id=sec.id))
+    db.flush()
+    return _finish(sec)
 
 
 def _write_price(db: Session, security_id: int, native_price: Decimal, ccy: str, on: date):

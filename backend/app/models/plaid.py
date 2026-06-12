@@ -37,3 +37,15 @@ class PlaidAccount(Base):
     account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
 
     __table_args__ = (UniqueConstraint("plaid_account_id", name="uq_plaid_account"),)
+
+
+class PlaidSecurity(Base):
+    """Maps Plaid's immutable security_id to our Security so the sync keeps matching
+    even after a user renames the ticker/name of a synced fund."""
+    __tablename__ = "plaid_securities"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    plaid_security_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    security_id: Mapped[int] = mapped_column(Integer, ForeignKey("securities.id", ondelete="CASCADE"), nullable=False)
+
+    __table_args__ = (UniqueConstraint("plaid_security_id", name="uq_plaid_security"),)

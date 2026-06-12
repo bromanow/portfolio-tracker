@@ -198,6 +198,8 @@ def _get_or_create_brokerage(db: Session, name: str):
         b = Brokerage(name=name, code=code, active=True)
         db.add(b)
         db.flush()
+    elif b.name != name:
+        b.name = name   # heal an old/unclean name on re-sync
     return b
 
 

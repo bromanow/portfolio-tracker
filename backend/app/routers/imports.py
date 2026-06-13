@@ -618,6 +618,7 @@ def update_raw_row(
 async def import_statement(
     file: UploadFile = File(...),
     owner: str = Form("Michelle"),
+    account_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
     """Parse an investment statement PDF into a holdings time series.
@@ -670,18 +671,33 @@ async def import_statement(
             return Decimal("1")
     fx = _fx(as_of)
 
-    # Brokerage + account (one per institution + owner + account_type)
-    brk = db.query(Brokerage).filter(Brokerage.code == f"STMT_{inst_slug}").first()
-    if not brk:
-        brk = Brokerage(name=institution[:100], code=f"STMT_{inst_slug}", active=True)
-        db.add(brk); db.flush()
-    acct = (db.query(Account)
-            .filter(Account.brokerage_id == brk.id, Account.owner == owner,
-                    Account.account_type == acct_type).first())
-    if not acct:
-        acct = Account(brokerage_id=brk.id, name=f"{institution} {acct_type} — {owner}"[:100],
-                       account_type=acct_type, base_currency=ccy, owner=owner, active=True)
-        db.add(acct); db.flush()
+    # Resolve the target account.
+    if account_id is not None:
+        # Explicit target: write straight into this account regardless of parsed
+        # institution/type/owner. Lets statements that changed format (e.g. a plan
+        # provider's internal account move) all land in ONE continuous account.
+        acct = db.query(Account).filter(Account.id == account_id).first()
+        if not acct:
+            raise HTTPException(404, f"Account {account_id} not found.")
+        brk = db.query(Brokerage).filter(Brokerage.id == acct.brokerage_id).first()
+        # Derive a stable security-ticker prefix from the account's brokerage, so funds
+        # stay on the same synthetic ticker across differently-formatted statements.
+        _src = (brk.code.replace("STMT_", "", 1) if brk and brk.code else (brk.name if brk else institution))
+        inst_slug = "".join(c for c in (_src or "STMT").upper() if c.isalnum())[:14] or "STMT"
+        institution = (brk.name if brk else institution)
+    else:
+        # Auto: match/create by institution (→brokerage) + account_type + owner.
+        brk = db.query(Brokerage).filter(Brokerage.code == f"STMT_{inst_slug}").first()
+        if not brk:
+            brk = Brokerage(name=institution[:100], code=f"STMT_{inst_slug}", active=True)
+            db.add(brk); db.flush()
+        acct = (db.query(Account)
+                .filter(Account.brokerage_id == brk.id, Account.owner == owner,
+                        Account.account_type == acct_type).first())
+        if not acct:
+            acct = Account(brokerage_id=brk.id, name=f"{institution} {acct_type} — {owner}"[:100],
+                           account_type=acct_type, base_currency=ccy, owner=owner, active=True)
+            db.add(acct); db.flush()
 
     iso = as_of.isoformat()
     pos_ref = lambda code: f"stmt-pos-{acct.id}-{code}-{iso}"

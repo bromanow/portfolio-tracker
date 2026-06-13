@@ -1092,10 +1092,11 @@ export const uploadFlexXml = (file: File) => {
 export const getAllFlexConfigs = () =>
   api.get<IBKRFlexConfig[]>('/ibkr/flex/configs').then(r => r.data)
 
-export const importStatement = (file: File, owner: string) => {
+export const importStatement = (file: File, owner: string, accountId?: number | null) => {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('owner', owner)
+  if (accountId != null) fd.append('account_id', String(accountId))
   return api.post<{ institution: string; account: string; as_of: string; currency: string; holdings: number; total: string; contribution: string | null; engine: string }>(
     '/imports/statement', fd,
     { headers: { 'Content-Type': 'multipart/form-data' } },

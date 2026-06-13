@@ -1,23 +1,35 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, useMemo } from 'react'
 import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2 } from 'lucide-react'
-import { importStatement, listStatements, openStatementFile, deleteStatement, type StoredStatement } from '../api/client'
+import { importStatement, listStatements, openStatementFile, deleteStatement, getAccounts, type StoredStatement, type Account } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
-  const [owner, setOwner] = useState('Michelle')
+  const [owner, setOwner] = useState('')
+  const [accountId, setAccountId] = useState<number | null>(null)   // null = auto-detect/create
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ institution: string; account: string; as_of: string; holdings: number; total: string; currency: string; contribution: string | null; engine: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stored, setStored] = useState<StoredStatement[]>([])
+  const [accounts, setAccounts] = useState<Account[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
 
   const refresh = () => listStatements().then(setStored).catch(() => {})
-  useEffect(() => { refresh() }, [])
+  useEffect(() => {
+    refresh()
+    getAccounts().then(a => {
+      setAccounts(a)
+      // Default Owner to a real owner value so auto-match/create uses the right one.
+      const owners = [...new Set(a.map(x => x.owner).filter(Boolean))]
+      setOwner(prev => prev || owners.find(o => /michelle/i.test(o)) || owners[0] || 'Michelle Romanow')
+    }).catch(() => setOwner(o => o || 'Michelle Romanow'))
+  }, [])
+
+  const owners = useMemo(() => [...new Set(accounts.map(a => a.owner).filter(Boolean))], [accounts])
 
   const onFile = async (file?: File) => {
     if (!file) return
     setBusy(true); setError(null); setResult(null)
-    try { setResult(await importStatement(file, owner)); refresh() }
+    try { setResult(await importStatement(file, owner, accountId)); refresh() }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Import failed') }
     finally { setBusy(false); if (inputRef.current) inputRef.current.value = '' }
   }
@@ -44,13 +56,28 @@ export default function StatementImportPanel() {
         same one is safe.
       </p>
 
-      <div className="flex items-center gap-3 flex-wrap">
-        <label className="text-xs text-gray-500">Owner</label>
-        <select value={owner} onChange={e => setOwner(e.target.value)}
-          className="border border-gray-200 rounded px-2 py-1 text-sm">
-          <option>Michelle</option>
-          <option>Brian</option>
-        </select>
+      <div className="flex items-end gap-3 flex-wrap">
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500">Import into account</label>
+          <select value={accountId ?? ''} onChange={e => setAccountId(e.target.value ? Number(e.target.value) : null)}
+            className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[16rem]">
+            <option value="">Auto-detect / create from statement</option>
+            {accounts.map(a => (
+              <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1">
+          <label className="text-xs text-gray-500">Owner {accountId != null && <span className="text-gray-300">(ignored)</span>}</label>
+          <select value={owner} onChange={e => setOwner(e.target.value)} disabled={accountId != null}
+            className="border border-gray-200 rounded px-2 py-1 text-sm disabled:bg-gray-50 disabled:text-gray-400">
+            {(owners.length ? owners : ['Michelle Romanow', 'Brian Romanow']).map(o => (
+              <option key={o} value={o}>{o}</option>
+            ))}
+          </select>
+        </div>
+
         <button
           onClick={() => inputRef.current?.click()}
           disabled={busy}
@@ -62,6 +89,12 @@ export default function StatementImportPanel() {
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden"
           onChange={e => onFile(e.target.files?.[0])} />
       </div>
+      {accountId != null && (
+        <p className="text-xs text-gray-400 -mt-2">
+          All statements you upload here will be merged into this one account — use this for a plan
+          whose statement format changed but is really the same account (e.g. Manulife's internal move).
+        </p>
+      )}
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">

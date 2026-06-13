@@ -8,12 +8,14 @@ import {
 
 // Mounts only once a link token exists; auto-opens the Plaid Link widget.
 function LinkLauncher({ token, owner, onDone, onExit }: {
-  token: string; owner: string; onDone: () => void; onExit: () => void
+  token: string; owner: string; onDone: () => void; onExit: (err: any, meta?: any) => void
 }) {
   const { open, ready } = usePlaidLink({
     token,
     onSuccess: async (public_token) => { await exchangePlaidToken(public_token, owner); onDone() },
-    onExit: () => onExit(),
+    // Surface the real Plaid error (code + message + which institution) so a failed
+    // connection — e.g. an unsupported product on a Canadian brokerage — is diagnosable.
+    onExit: (err, meta) => onExit(err, meta),
   })
   useEffect(() => { if (ready) open() }, [ready, open])
   return null
@@ -120,7 +122,13 @@ export default function PlaidConnect() {
             </p>
           )}
 
-          {linkToken && <LinkLauncher token={linkToken} owner={owner} onDone={finish} onExit={() => { setLinkToken(null); setBusy(false) }} />}
+          {linkToken && <LinkLauncher token={linkToken} owner={owner} onDone={finish} onExit={(err, meta) => {
+            setLinkToken(null); setBusy(false)
+            if (err) {
+              const inst = meta?.institution?.name ? ` [${meta.institution.name}]` : ''
+              setError(`Plaid${inst}: ${err.error_code ?? ''} — ${err.error_message ?? err.display_message ?? 'connection failed'}`)
+            }
+          }} />}
 
           {items.length === 0 ? (
             <p className="text-sm text-gray-400">No institutions connected yet.</p>

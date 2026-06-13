@@ -694,9 +694,12 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         if not acct:
             raise HTTPException(404, f"Account {account_id} not found.")
         brk = db.query(Brokerage).filter(Brokerage.id == acct.brokerage_id).first()
-        # Derive a stable security-ticker prefix from the account's brokerage, so funds
-        # stay on the same synthetic ticker across differently-formatted statements.
-        _src = (brk.code.replace("STMT_", "", 1) if brk and brk.code else (brk.name if brk else institution))
+        # Stable, clean security-ticker prefix from the brokerage NAME's first word
+        # ("Principal Financial Group" → "PRINCIPAL"), so tickers read "PRINCIPAL:fund" — not
+        # "PLAID_…:fund" from the Plaid-generated brokerage code.
+        _name = ((brk.name if brk else institution) or institution or "").strip()
+        _first = _name.split()[0] if _name else ""
+        _src = _first or (brk.code.replace("STMT_", "", 1).replace("PLAID_", "", 1) if brk and brk.code else institution)
         inst_slug = "".join(c for c in (_src or "STMT").upper() if c.isalnum())[:14] or "STMT"
         institution = (brk.name if brk else institution)
     else:

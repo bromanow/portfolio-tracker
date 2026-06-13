@@ -243,6 +243,19 @@ def _upsert_security(db: Session, psec: dict, on: date):
             db.flush()
             return _finish(sec)
 
+    # 2.5 Reuse a statement-created security for the same fund (matched by normalized name) so a
+    #     value-only statement history and the live Plaid feed share ONE security — no duplicate.
+    pname = (psec.get("name") or "").strip()
+    if pname:
+        norm = "".join(c for c in pname.upper() if c.isalnum())
+        mapped = {r[0] for r in db.query(PlaidSecurity.security_id).all()}
+        for cand in db.query(Security).filter(Security.ticker.like("%:%")).all():
+            if (cand.id not in mapped and cand.name
+                    and "".join(c for c in cand.name.upper() if c.isalnum()) == norm):
+                db.add(PlaidSecurity(plaid_security_id=psid, security_id=cand.id))
+                db.flush()
+                return _finish(cand)
+
     # 3. New security: real ticker → CUSIP → ISIN → synthetic key; then map it.
     ticker_sym = (psec.get("ticker_symbol") or "").upper().strip()
     cusip = (psec.get("cusip") or "").strip()

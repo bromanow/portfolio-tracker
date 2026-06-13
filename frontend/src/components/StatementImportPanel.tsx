@@ -28,7 +28,7 @@ export default function StatementImportPanel() {
 
   // Statement-sourced funds (synthetic tickers contain ':') — the from/to options for a switch.
   const switchSecurities = useMemo(
-    () => securities.filter(s => s.ticker.includes(':')).sort((a, b) => (a.name || a.ticker).localeCompare(b.name || b.ticker)),
+    () => securities.filter(s => (s.ticker || '').includes(':')).sort((a, b) => (a.name || a.ticker || '').localeCompare(b.name || b.ticker || '')),
     [securities])
 
   const owners = useMemo(() => [...new Set(accounts.map(a => a.owner).filter(Boolean))], [accounts])

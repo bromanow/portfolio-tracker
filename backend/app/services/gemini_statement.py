@@ -51,7 +51,8 @@ Return ONLY valid JSON (no markdown, no code fences) matching exactly this shape
 
 Rules:
 - Numbers must be plain JSON numbers — never include "$", commas, or "%".
-- Include EVERY holding/fund line, even very small ones.
+- Include EVERY individual holding/fund line, but DO NOT include subtotal, total, or asset-class
+  summary rows (e.g. "Total Assets", "Total Large U.S. Equity"), and skip lines with a $0 balance.
 - If units or unit_price aren't shown but the value is, set the missing one to null.
 - For a holding's "contributions", use only NEW money added to that fund this period (payroll/
   employer contributions). Do NOT include investment gain/loss or fees. Null if not shown.

@@ -785,6 +785,8 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         units = h.get("units") or Decimal("0")
         value = h["value"]
         nav = h.get("unit_price")
+        if value is None or value < 1:       # skip $0 / dust rows (e.g. empty asset-class summary lines)
+            continue
         if units == 0:                       # value-only line → 1 unit @ value (price = value)
             units, nav = Decimal("1"), value
         elif nav is None:

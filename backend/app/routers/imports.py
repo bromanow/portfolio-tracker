@@ -775,8 +775,8 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         # quarters despite minor wording drift from the LLM (kills phantom ghost holdings).
         return "".join(ch for ch in (h.get("name") or "").upper() if ch.isalnum())[:24] or f"H{i}"
 
-    # ── Resolve securities, set NAV prices, gather per-fund unit deltas ──
-    items = []   # (sec, code, name, units, nav, delta)
+    # ── Resolve securities + gather per-fund data ──
+    items = []   # (sec, code, name, units, nav, delta, value, contrib)
     for i, h in enumerate(parsed["holdings"]):
         code = _code_for(h, i)
         units = h.get("units") or Decimal("0")
@@ -795,8 +795,10 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         elif h["name"] and not sec.name:
             sec.name = h["name"]
         seen_sids.add(sec.id)
-        _set_price(sec, nav)
-        items.append((sec, code, h["name"], units, nav, units - prior.get(sec.id, Decimal("0"))))
+        if not value_only:                   # value-only sets price = value/cost in its branch
+            _set_price(sec, nav)
+        items.append((sec, code, h["name"], units, nav, units - prior.get(sec.id, Decimal("0")),
+                      value, h.get("contributions")))
 
     # Funds held per earlier statements but absent now (with their last price for a sell).
     dropped = []   # (sec, code, name, qty, nav)
@@ -810,30 +812,64 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         nav = (_mp.price if _mp and _mp.price is not None else Decimal("0"))
         dropped.append((sec, sec.ticker.split(":", 1)[-1], sec.name or sec.ticker, qty, nav))
 
+    flows = parsed.get("flows") or {}
+    period_start = parsed.get("period_start")
+    flow_date = as_of
+    if period_start and period_start < as_of:
+        flow_date = period_start + (as_of - period_start) // 2   # midpoint ≈ evenly-paced flows
+
+    def _flow(ttype, native_amt, ext, label):
+        db.add(Transaction(
+            account_id=acct.id, security_id=None, transaction_date=flow_date,
+            transaction_type=ttype, quantity=None, price=None, transaction_currency=ccy,
+            transaction_amount=native_amt.quantize(Q2), cad_amount=(native_amt * fx).quantize(Q2),
+            raw_description=f"{institution} {iso}: {label}"[:500], external_ref=ext,
+        ))
+
     deposit_recorded = None
     if value_only:
-        # Cash-neutral: establish each fund once (OPENING_BALANCE), then its value rides on the
-        # price feed at each statement date. A dropped fund is zeroed via price, not a sell.
-        for sec, code, name, units, nav, delta in items:
-            if delta > 0:        # first time we've seen this fund (prior position was 0)
-                _pos(sec, code, "OPENING_BALANCE", units, nav, units * nav, f"{name} (statement value)")
+        # COST-BASIS model: quantity = cumulative dollars contributed, price = value ÷ cost so
+        # gain/loss rides in the price (the price table). Contributions → DEPOSIT + BUY (cash-neutral
+        # pair); a fund's first appearance opens at its value as the cost baseline. No phantom cash.
+        # Fund switches (e.g. 2035→2040 target date) are recorded separately as cash/gain-neutral
+        # JOURNALs via the manual switch tool — a drop here just zeroes a vanished fund's value.
+        acct_contrib = flows.get("contributions") or Decimal("0")
+        total_value = sum((v for (*_x, v, _ch) in items), Decimal("0"))
+        total_dep = Decimal("0")
+        for sec, code, name, _u, _nav, _d, value, c_h in items:
+            prior_cb = prior.get(sec.id, Decimal("0"))
+            if prior_cb <= 0:                # first appearance → cost baseline = current value
+                _pos(sec, code, "OPENING_BALANCE", value, Decimal("1"), value, f"{name} (opening cost)")
+                _set_price(sec, Decimal("1"))
+                continue
+            c_fund = c_h if c_h is not None else (
+                (acct_contrib * value / total_value) if (acct_contrib > 0 and total_value > 0) else Decimal("0"))
+            c_fund = (c_fund or Decimal("0")).quantize(Q2)
+            cb = prior_cb
+            if c_fund > 0:                   # contribution → BUY $c @ $1 (funded by the DEPOSIT below)
+                _pos(sec, code, "BUY", c_fund, Decimal("1"), -c_fund, f"{name} (contribution)")
+                total_dep += c_fund
+                cb = prior_cb + c_fund
+            _set_price(sec, (value / cb) if cb > 0 else Decimal("1"))   # gain/loss → price
+        if total_dep > 0:
+            _flow("DEPOSIT", total_dep, dep_ref, "plan contributions")
+            deposit_recorded = str((total_dep * fx).quantize(Q2))
         for sec, code, name, _qty, _nav in dropped:
-            _set_price(sec, Decimal("0"))   # fund gone → value 0 from this date, no cash impact
+            _set_price(sec, Decimal("0"))    # vanished fund → value 0 (no cash; switches use JOURNAL)
     elif is_first:
         # First unit-bearing statement → opening balances at NAV (cash-neutral; cost = units × NAV).
-        for sec, code, name, units, nav, _delta in items:
+        for sec, code, name, units, nav, _delta, _v, _ch in items:
             if units > 0:
                 _pos(sec, code, "OPENING_BALANCE", units, nav, units * nav, f"{name} (opening balance)")
     else:
         # Subsequent unit-bearing statements → real BUY/SELL for the unit change + DEPOSIT/
         # WITHDRAWAL for external cash. transfers_in are INTERNAL (ignored) per account continuity.
         for sec, code, name, qty, nav in dropped:
-            items.append((sec, code, name, Decimal("0"), nav, -qty))
-        flows = parsed.get("flows") or {}
+            items.append((sec, code, name, Decimal("0"), nav, -qty, Decimal("0"), None))
         C = flows.get("contributions") or Decimal("0")
         W = flows.get("withdrawals") or Decimal("0")
-        buys  = [(s, c, n, d, nav) for (s, c, n, u, nav, d) in items if d > 0]
-        sells = [(s, c, n, -d, nav) for (s, c, n, u, nav, d) in items if d < 0]
+        buys  = [(s, c, n, d, nav) for (s, c, n, u, nav, d, _v, _ch) in items if d > 0]
+        sells = [(s, c, n, -d, nav) for (s, c, n, u, nav, d, _v, _ch) in items if d < 0]
         S_nav = sum((q * nav for (_, _, _, q, nav) in sells), Decimal("0"))
         B_nav = sum((q * nav for (_, _, _, q, nav) in buys), Decimal("0"))
         # Deploy net external cash (contributions − withdrawals + sale proceeds) into the buys, so
@@ -848,18 +884,6 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
             buy_price = (cost / q) if q != 0 else nav
             _pos(s, c, "BUY", q, buy_price, -cost, f"{n} (buy)")
 
-        period_start = parsed.get("period_start")
-        flow_date = as_of
-        if period_start and period_start < as_of:
-            flow_date = period_start + (as_of - period_start) // 2   # midpoint ≈ evenly-paced flows
-
-        def _flow(ttype, native_amt, ext, label):
-            db.add(Transaction(
-                account_id=acct.id, security_id=None, transaction_date=flow_date,
-                transaction_type=ttype, quantity=None, price=None, transaction_currency=ccy,
-                transaction_amount=native_amt.quantize(Q2), cad_amount=(native_amt * fx).quantize(Q2),
-                raw_description=f"{institution} {iso}: {label}"[:500], external_ref=ext,
-            ))
         if C > 0:
             _flow("DEPOSIT", C, dep_ref, "plan contribution")
             deposit_recorded = str((C * fx).quantize(Q2))
@@ -1169,3 +1193,98 @@ def statement_handoff(payload: dict, db: Session = Depends(get_db)):
         logger.warning("handoff: snapshot recompute failed for acct %s: %s", account_id, e)
 
     return {"account": acct.name, "cutover_date": cutover.isoformat(), "securities_unwound": unwound}
+
+
+@router.post("/switch")
+def switch_security(payload: dict, db: Session = Depends(get_db)):
+    """Record a fund switch (e.g. a target-date roll 2035→2040) as a cash- AND gain/loss-neutral
+    in-kind JOURNAL: the from-fund's whole position + cost basis move to the to-fund at book value,
+    and the to-fund inherits the from-fund's price so its market value and unrealized gain carry over
+    unchanged. Switches can't be detected from value-only statements, so they're recorded here."""
+    from datetime import date as _date, datetime as _dt
+    from decimal import Decimal
+    from sqlalchemy import text as _sql
+    from app.models.master import Account, Security
+    from app.models.transactions import Transaction
+    from app.models.prices import MarketPrice, HistoricalPrice
+
+    account_id = payload.get("account_id")
+    from_id = payload.get("from_security_id")
+    to_id = payload.get("to_security_id")
+    if not (account_id and from_id and to_id):
+        raise HTTPException(400, "account_id, from_security_id and to_security_id are required.")
+    if from_id == to_id:
+        raise HTTPException(400, "The from and to securities must be different.")
+    acct = db.query(Account).filter(Account.id == account_id).first()
+    from_sec = db.query(Security).filter(Security.id == from_id).first()
+    to_sec = db.query(Security).filter(Security.id == to_id).first()
+    if not acct or not from_sec or not to_sec:
+        raise HTTPException(404, "Account or security not found.")
+
+    raw = (payload.get("switch_date") or "").strip()
+    try:
+        sdate = _dt.strptime(raw, "%Y-%m-%d").date() if raw else _date.today()
+    except Exception:
+        sdate = _date.today()
+
+    # from-fund's net position + cost basis (native) in this account, up to the switch date.
+    row = db.execute(_sql(
+        "SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE','JOURNAL') THEN quantity "
+        "WHEN transaction_type='SELL' THEN -ABS(quantity) ELSE 0 END),0) qty, "
+        "COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN ABS(transaction_amount) "
+        "WHEN transaction_type='SELL' THEN -ABS(transaction_amount) "
+        "WHEN transaction_type='JOURNAL' THEN transaction_amount ELSE 0 END),0) cost "
+        "FROM transactions WHERE account_id=:aid AND security_id=:sid AND transaction_date <= :d"),
+        {"aid": account_id, "sid": from_id, "d": sdate}).fetchone()
+    qty, cost = Decimal(str(row[0])), Decimal(str(row[1]))
+    if qty <= 0:
+        raise HTTPException(400, f"{from_sec.name or from_sec.ticker} has no position to switch as of {sdate}.")
+
+    Q2 = Decimal("0.01")
+    ccy = (from_sec.currency or acct.base_currency or "CAD").upper()
+    fx = Decimal("1")
+    if ccy != "CAD":
+        try:
+            from app.services.fx_service import get_rate
+            r = get_rate(db, sdate, ccy, "CAD"); fx = Decimal(str(r)) if r else Decimal("1")
+        except Exception:
+            fx = Decimal("1")
+    cost_cad = (cost * fx).quantize(Q2)
+    ref = f"stmt-switch-{account_id}-{from_id}-{to_id}-{sdate.isoformat()}"
+    db.execute(_sql("DELETE FROM transactions WHERE account_id=:aid AND external_ref LIKE :p"),
+               {"aid": account_id, "p": f"stmt-switch-{account_id}-{from_id}-{to_id}-%"})
+
+    # In-kind transfer at book value: JOURNAL out of `from`, JOURNAL in to `to` (cash & gain neutral).
+    db.add(Transaction(account_id=account_id, security_id=from_id, transaction_date=sdate,
+        transaction_type="JOURNAL", quantity=-qty, price=None, transaction_currency=ccy,
+        transaction_amount=(-cost).quantize(Q2), cad_amount=(-cost_cad),
+        raw_description=f"Switch → {to_sec.name or to_sec.ticker}"[:500], external_ref=ref + "-out"))
+    db.add(Transaction(account_id=account_id, security_id=to_id, transaction_date=sdate,
+        transaction_type="JOURNAL", quantity=qty, price=None, transaction_currency=ccy,
+        transaction_amount=cost.quantize(Q2), cad_amount=cost_cad,
+        raw_description=f"Switch ← {from_sec.name or from_sec.ticker}"[:500], external_ref=ref + "-in"))
+
+    # to-fund inherits from-fund's current price → market value + unrealized gain are preserved.
+    from_mp = db.query(MarketPrice).filter(MarketPrice.security_id == from_id).first()
+    if from_mp and from_mp.price is not None:
+        to_mp = db.query(MarketPrice).filter(MarketPrice.security_id == to_id).first()
+        if not to_mp:
+            to_mp = MarketPrice(security_id=to_id, price=from_mp.price, currency=ccy); db.add(to_mp)
+        to_mp.price = from_mp.price; to_mp.price_cad = from_mp.price_cad
+        to_mp.currency = ccy; to_mp.price_date = sdate; to_mp.source = "switch"
+        hp = (db.query(HistoricalPrice)
+              .filter(HistoricalPrice.security_id == to_id, HistoricalPrice.price_date == sdate).first())
+        if not hp:
+            hp = HistoricalPrice(security_id=to_id, price_date=sdate, currency=ccy, source="switch"); db.add(hp)
+        hp.close_price = from_mp.price; hp.close_price_cad = from_mp.price_cad; hp.currency = ccy
+    db.commit()
+
+    try:
+        from app.services.portfolio_history_service import compute_portfolio_snapshots
+        compute_portfolio_snapshots(db, account_ids=[account_id])
+    except Exception as e:
+        logger.warning("switch: snapshot recompute failed for acct %s: %s", account_id, e)
+
+    return {"account": acct.name, "from": from_sec.name or from_sec.ticker,
+            "to": to_sec.name or to_sec.ticker, "switch_date": sdate.isoformat(),
+            "units_moved": str(qty), "value_moved_cad": str(cost_cad)}

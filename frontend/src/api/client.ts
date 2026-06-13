@@ -1153,6 +1153,12 @@ export interface ImportStatusRow {
 export const getImportStatus = () =>
   api.get<ImportStatusRow[]>('/imports/status').then(r => r.data)
 
+export const switchSecurity = (accountId: number, fromSecurityId: number, toSecurityId: number, switchDate: string) =>
+  api.post<{ account: string; from: string; to: string; switch_date: string; value_moved_cad: string }>(
+    '/imports/switch',
+    { account_id: accountId, from_security_id: fromSecurityId, to_security_id: toSecurityId, switch_date: switchDate },
+  ).then(r => r.data)
+
 export const statementHandoff = (accountId: number, cutoverDate: string) =>
   api.post<{ account: string; cutover_date: string; securities_unwound: number }>(
     '/imports/statements/handoff', { account_id: accountId, cutover_date: cutoverDate },

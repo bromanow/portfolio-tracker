@@ -42,7 +42,9 @@ Return ONLY valid JSON (no markdown, no code fences) matching exactly this shape
       "code": string|null,      // fund code or ticker symbol if shown, else null
       "units": number|null,     // units / shares held
       "unit_price": number|null,// price per unit
-      "value": number           // market value of the holding
+      "value": number,          // market / ending value of the holding
+      "contributions": number|null // money paid INTO this specific holding during the period
+                                //   (from a per-fund change breakdown); null/0 if none or not shown
     }
   ]
 }
@@ -51,6 +53,8 @@ Rules:
 - Numbers must be plain JSON numbers — never include "$", commas, or "%".
 - Include EVERY holding/fund line, even very small ones.
 - If units or unit_price aren't shown but the value is, set the missing one to null.
+- For a holding's "contributions", use only NEW money added to that fund this period (payroll/
+  employer contributions). Do NOT include investment gain/loss or fees. Null if not shown.
 - For "flows", read the period's change-summary (opening value + contributions + transfers
   + growth = closing value). Report only money that moved IN or OUT — NOT investment growth,
   interest or dividends. If a figure isn't shown, set it to null. Withdrawals are a positive number.
@@ -143,6 +147,7 @@ def parse_statement(pdf_bytes: bytes) -> dict:
             "units": _dec(h.get("units")) or Decimal("0"),
             "unit_price": _dec(h.get("unit_price")),
             "value": value,
+            "contributions": _dec(h.get("contributions")),
         })
     if not holdings:
         raise ValueError("Gemini found no holdings in this PDF — is it an investment statement?")

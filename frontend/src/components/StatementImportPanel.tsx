@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react'
-import { importStatement, listStatements, openStatementFile, deleteStatement, reprocessStatement, reprocessStatements, statementHandoff, getAccounts, type StoredStatement, type Account } from '../api/client'
+import { importStatement, listStatements, openStatementFile, deleteStatement, reprocessStatement, reprocessStatements, statementHandoff, switchSecurity, getAccounts, getSecurities, type StoredStatement, type Account, type Security } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
@@ -12,6 +12,7 @@ export default function StatementImportPanel() {
   const [error, setError] = useState<string | null>(null)
   const [stored, setStored] = useState<StoredStatement[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
+  const [securities, setSecurities] = useState<Security[]>([])
 
   const refresh = () => listStatements().then(setStored).catch(() => {})
   useEffect(() => {
@@ -22,7 +23,13 @@ export default function StatementImportPanel() {
       const owners = [...new Set(a.map(x => x.owner).filter(Boolean))]
       setOwner(prev => prev || owners.find(o => /michelle/i.test(o)) || owners[0] || 'Michelle Romanow')
     }).catch(() => setOwner(o => o || 'Michelle Romanow'))
+    getSecurities().then(setSecurities).catch(() => {})
   }, [])
+
+  // Statement-sourced funds (synthetic tickers contain ':') — the from/to options for a switch.
+  const switchSecurities = useMemo(
+    () => securities.filter(s => s.ticker.includes(':')).sort((a, b) => (a.name || a.ticker).localeCompare(b.name || b.ticker)),
+    [securities])
 
   const owners = useMemo(() => [...new Set(accounts.map(a => a.owner).filter(Boolean))], [accounts])
 
@@ -99,6 +106,24 @@ export default function StatementImportPanel() {
     } catch (e: any) {
       setHandoffMsg(e?.response?.data?.detail ?? 'Handoff failed')
     } finally { setHandoffBusy(false) }
+  }
+
+  // ── Record a fund switch (e.g. 2035→2040) as a cash- & gain-neutral JOURNAL ──
+  const [swAcct, setSwAcct] = useState<number | null>(null)
+  const [swFrom, setSwFrom] = useState<number | null>(null)
+  const [swTo, setSwTo] = useState<number | null>(null)
+  const [swDate, setSwDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [swMsg, setSwMsg] = useState<string | null>(null)
+  const [swBusy, setSwBusy] = useState(false)
+  const onSwitch = async () => {
+    if (!swAcct || !swFrom || !swTo) return
+    if (swFrom === swTo) { setSwMsg('Pick two different funds.'); return }
+    setSwBusy(true); setSwMsg(null)
+    try {
+      const r = await switchSecurity(swAcct, swFrom, swTo, swDate)
+      setSwMsg(`Switched ${r.from} → ${r.to} (CAD $${Number(r.value_moved_cad).toLocaleString('en-CA', { minimumFractionDigits: 2 })}) as of ${r.switch_date}.`)
+    } catch (e: any) { setSwMsg(e?.response?.data?.detail ?? 'Switch failed') }
+    finally { setSwBusy(false) }
   }
 
   const fmtSize = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`
@@ -287,6 +312,55 @@ export default function StatementImportPanel() {
           </button>
         </div>
         {handoffMsg && <p className="text-xs text-gray-600 mt-2">{handoffMsg}</p>}
+      </details>
+
+      <details className="pt-2 border-t border-gray-100">
+        <summary className="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">
+          Record a fund switch
+        </summary>
+        <p className="text-xs text-gray-400 mt-2">
+          For a fund roll (e.g. a 2035 → 2040 target-date fund) that isn't a buy or sell. Moves the
+          whole position and cost basis from one fund to another at book value — no cash and no
+          gain/loss (the new fund keeps the old fund's price). Use this when a statement shows one
+          fund gone and another appeared with no contribution.
+        </p>
+        <div className="flex items-end gap-3 flex-wrap mt-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Account</label>
+            <select value={swAcct ?? ''} onChange={e => setSwAcct(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[14rem]">
+              <option value="">Select account…</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">From fund</label>
+            <select value={swFrom ?? ''} onChange={e => setSwFrom(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[12rem]">
+              <option value="">Select…</option>
+              {switchSecurities.map(s => <option key={s.id} value={s.id}>{s.name || s.ticker}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">To fund</label>
+            <select value={swTo ?? ''} onChange={e => setSwTo(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[12rem]">
+              <option value="">Select…</option>
+              {switchSecurities.map(s => <option key={s.id} value={s.id}>{s.name || s.ticker}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Switch date</label>
+            <input type="date" value={swDate} onChange={e => setSwDate(e.target.value)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm" />
+          </div>
+          <button onClick={onSwitch} disabled={!swAcct || !swFrom || !swTo || swBusy}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-800 disabled:opacity-50">
+            {swBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Record switch
+          </button>
+        </div>
+        {swMsg && <p className="text-xs text-gray-600 mt-2">{swMsg}</p>}
       </details>
     </div>
   )

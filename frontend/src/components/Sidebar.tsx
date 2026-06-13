@@ -7,6 +7,7 @@ import {
   Briefcase,
   TrendingUp,
   ScanSearch,
+  Tag,
   ChevronLeft,
   ChevronRight,
   LogOut,
@@ -18,6 +19,7 @@ const nav = [
   { to: '/holdings',    label: 'Holdings',     icon: Briefcase },
   { to: '/performance', label: 'Performance & Reports', icon: TrendingUp },
   { to: '/activity',    label: 'Activity',     icon: List },
+  { to: '/prices',      label: 'Prices',       icon: Tag },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },
   { to: '/admin',       label: 'Admin',        icon: Settings },
 ]

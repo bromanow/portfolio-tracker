@@ -1092,6 +1092,16 @@ export const uploadFlexXml = (file: File) => {
 export const getAllFlexConfigs = () =>
   api.get<IBKRFlexConfig[]>('/ibkr/flex/configs').then(r => r.data)
 
+export const importManulifeStatement = (file: File, owner: string) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  fd.append('owner', owner)
+  return api.post<{ account: string; as_of: string; funds: number; total: string; statement_total: string | null }>(
+    '/imports/manulife-statement', fd,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  ).then(r => r.data)
+}
+
 export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
 

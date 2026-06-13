@@ -611,3 +611,84 @@ def update_raw_row(
     rt.error_message = None if new_status != "ERROR" else rt.error_message
     db.commit()
     return {"id": rt.id, "status": rt.status, "raw_data": rt.raw_data}
+
+
+# ── Manulife statement import (PDF → holdings snapshot) ───────────────────────
+@router.post("/manulife-statement")
+async def import_manulife_statement(
+    file: UploadFile = File(...),
+    owner: str = Form("Michelle"),
+    db: Session = Depends(get_db),
+):
+    """Parse a Manulife group-retirement statement PDF and rebuild the account's
+    holdings (one OPENING_BALANCE per fund, valued at the statement's unit price).
+    Holdings-snapshot model like the Plaid connector; full-replace each upload."""
+    from decimal import Decimal
+    from sqlalchemy import text as _sql
+    from app.parsers.manulife_statement import parse_manulife_pdf
+    from app.models.master import Brokerage, Account, Security
+    from app.models.transactions import Transaction
+    from app.models.prices import MarketPrice, HistoricalPrice
+
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Please upload a Manulife statement PDF.")
+    try:
+        parsed = parse_manulife_pdf(await file.read())
+    except Exception as e:
+        raise HTTPException(422, f"Could not parse statement: {e}")
+
+    as_of = parsed["as_of"]
+
+    # Brokerage + account
+    brk = db.query(Brokerage).filter(Brokerage.code == "MANULIFE").first()
+    if not brk:
+        brk = Brokerage(name="Manulife", code="MANULIFE", active=True)
+        db.add(brk); db.flush()
+    acct = (db.query(Account)
+            .filter(Account.brokerage_id == brk.id, Account.owner == owner,
+                    Account.account_type == "RRSP").first())
+    if not acct:
+        acct = Account(brokerage_id=brk.id, name=f"Manulife RRSP — {owner}",
+                       account_type="RRSP", base_currency="CAD", owner=owner, active=True)
+        db.add(acct); db.flush()
+
+    # Full-replace this account's statement positions
+    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
+               {"aid": acct.id, "pat": "manulife-pos-%"})
+
+    for f in parsed["funds"]:
+        ticker = f"MUL:{f['code']}"
+        sec = db.query(Security).filter(Security.ticker == ticker).first()
+        if not sec:
+            sec = Security(ticker=ticker, name=f["name"], asset_class="FUND", currency="CAD")
+            db.add(sec); db.flush()
+        elif f["name"] and not sec.name:
+            sec.name = f["name"]
+
+        # Price (native = CAD) at the statement date
+        px = f["unit_price"]
+        mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
+        if not mp:
+            mp = MarketPrice(security_id=sec.id, price=px, currency="CAD"); db.add(mp)
+        mp.price = px; mp.currency = "CAD"; mp.price_cad = px; mp.price_date = as_of; mp.source = "manulife"
+        hp = (db.query(HistoricalPrice)
+              .filter(HistoricalPrice.security_id == sec.id, HistoricalPrice.price_date == as_of).first())
+        if not hp:
+            hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency="CAD", source="manulife"); db.add(hp)
+        hp.close_price = px; hp.close_price_cad = px; hp.currency = "CAD"
+
+        db.add(Transaction(
+            account_id=acct.id, security_id=sec.id, transaction_date=as_of,
+            transaction_type="OPENING_BALANCE", quantity=f["units"], price=px,
+            transaction_currency="CAD", transaction_amount=f["value"], cad_amount=f["value"],
+            raw_description=f"Manulife statement {as_of}: {f['name']}"[:500],
+            external_ref=f"manulife-pos-{acct.id}-{f['code']}",
+        ))
+
+    db.commit()
+    return {
+        "account": acct.name, "as_of": as_of.isoformat(),
+        "funds": len(parsed["funds"]),
+        "total": str(parsed["holdings_total"]),
+        "statement_total": str(parsed["statement_total"]) if parsed["statement_total"] else None,
+    }

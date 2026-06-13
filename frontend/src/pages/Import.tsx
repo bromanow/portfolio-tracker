@@ -1,6 +1,7 @@
 import { useState, useCallback, useRef } from 'react'
 import { useDropzone } from 'react-dropzone'
 import PlaidSyncPanel from '../components/PlaidSyncPanel'
+import StatementImportPanel from '../components/StatementImportPanel'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getImports, getAccounts, getSecurities, uploadFile, getImportPreview,
@@ -759,7 +760,7 @@ export default function Import() {
   const qc = useQueryClient()
 
   // Tab state
-  const [activeTab, setActiveTab] = useState<'csv' | 'flex' | 'plaid' | 'manual'>('csv')
+  const [activeTab, setActiveTab] = useState<'csv' | 'flex' | 'plaid' | 'statement' | 'manual'>('csv')
 
   // CSV tab state
   const [selectedBrokerageId, setSelectedBrokerageId] = useState<number | undefined>()
@@ -969,7 +970,7 @@ export default function Import() {
 
       {/* ── Tabs ── */}
       <div className="flex border-b border-gray-200">
-        {(['csv', 'flex', 'plaid', 'manual'] as const).map(tab => (
+        {(['csv', 'flex', 'plaid', 'statement', 'manual'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
@@ -979,7 +980,7 @@ export default function Import() {
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {tab === 'csv' ? 'CSV Upload' : tab === 'flex' ? 'IBKR Flex Query' : tab === 'plaid' ? 'Plaid' : 'Manual Entry'}
+            {tab === 'csv' ? 'CSV Upload' : tab === 'flex' ? 'IBKR Flex Query' : tab === 'plaid' ? 'Plaid' : tab === 'statement' ? 'Statements' : 'Manual Entry'}
           </button>
         ))}
       </div>
@@ -1344,6 +1345,8 @@ export default function Import() {
       {activeTab === 'flex' && <IBKRFlexPanel />}
 
       {activeTab === 'plaid' && <PlaidSyncPanel />}
+
+      {activeTab === 'statement' && <StatementImportPanel />}
 
       {/* ── Manual Entry tab ── */}
       {activeTab === 'manual' && <ManualEntryPanel />}

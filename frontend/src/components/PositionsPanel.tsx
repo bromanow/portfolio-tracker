@@ -292,7 +292,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       cell: pos => {
         // Proprietary funds have no public symbol (ticker is a synthetic 'PLAID:…');
         // show the fund name as the primary label instead of the opaque id.
-        const synthetic = pos.ticker.startsWith('PLAID:')
+        const synthetic = pos.ticker.includes(':')
         const primary = synthetic
           ? (pos.security_name || 'Fund')
           : (pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker)
@@ -662,7 +662,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
                         <span className="font-mono font-semibold text-blue-700 text-sm truncate">
-                          {pos.ticker.startsWith('PLAID:')
+                          {pos.ticker.includes(':')
                             ? (pos.security_name || 'Fund')
                             : (pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker)}
                         </span>

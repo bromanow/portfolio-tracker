@@ -106,6 +106,24 @@ def update_security(security_id: int, data: SecurityUpdate, db: Session = Depend
     return _sec_to_dict(s)
 
 
+def _purge_security_dependents(db, sid: int):
+    """Remove rows that reference a security (prices, plaid mapping, options) so the security
+    itself can be deleted without tripping a foreign-key constraint."""
+    from app.models.prices import MarketPrice, HistoricalPrice
+    from app.models.options import OptionContract, OptionStrategy
+    db.query(MarketPrice).filter(MarketPrice.security_id == sid).delete(synchronize_session=False)
+    db.query(HistoricalPrice).filter(HistoricalPrice.security_id == sid).delete(synchronize_session=False)
+    db.query(OptionContract).filter(
+        (OptionContract.security_id == sid) | (OptionContract.underlying_security_id == sid)
+    ).delete(synchronize_session=False)
+    db.query(OptionStrategy).filter(OptionStrategy.underlying_security_id == sid).delete(synchronize_session=False)
+    try:
+        from app.models.plaid import PlaidSecurity
+        db.query(PlaidSecurity).filter(PlaidSecurity.security_id == sid).delete(synchronize_session=False)
+    except Exception:
+        pass
+
+
 @router.delete("/securities/{security_id}")
 def delete_security(security_id: int, db: Session = Depends(get_db)):
     s = db.get(Security, security_id)
@@ -114,6 +132,7 @@ def delete_security(security_id: int, db: Session = Depends(get_db)):
     txn_count = db.query(Transaction).filter(Transaction.security_id == security_id).count()
     if txn_count > 0:
         raise HTTPException(status_code=400, detail=f"Security has {txn_count} transactions. Delete transactions first.")
+    _purge_security_dependents(db, security_id)   # prices / plaid mapping / options
     db.delete(s)
     db.commit()
     return {"deleted": security_id}
@@ -487,18 +506,11 @@ def delete_all_imports(db: Session = Depends(get_db)):
 @router.delete("/bulk/securities")
 def delete_unused_securities(db: Session = Depends(get_db)):
     """Delete securities that have no transactions."""
-    from app.models.options import OptionContract, OptionStrategy
     used_ids = {r[0] for r in db.query(Transaction.security_id).distinct().all() if r[0]}
     deleted = 0
     for s in db.query(Security).all():
         if s.id not in used_ids:
-            # Remove option_contracts and strategies that reference this security
-            db.query(OptionContract).filter(
-                (OptionContract.security_id == s.id) | (OptionContract.underlying_security_id == s.id)
-            ).delete(synchronize_session=False)
-            db.query(OptionStrategy).filter(
-                OptionStrategy.underlying_security_id == s.id
-            ).delete(synchronize_session=False)
+            _purge_security_dependents(db, s.id)   # prices / plaid mapping / options
             db.delete(s)
             deleted += 1
     db.commit()

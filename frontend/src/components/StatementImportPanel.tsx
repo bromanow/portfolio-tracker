@@ -1,5 +1,6 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
-import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2 } from 'lucide-react'
+import { useState, useEffect, useMemo, useCallback } from 'react'
+import { useDropzone } from 'react-dropzone'
+import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload } from 'lucide-react'
 import { importStatement, listStatements, openStatementFile, deleteStatement, getAccounts, type StoredStatement, type Account } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
@@ -11,7 +12,6 @@ export default function StatementImportPanel() {
   const [error, setError] = useState<string | null>(null)
   const [stored, setStored] = useState<StoredStatement[]>([])
   const [accounts, setAccounts] = useState<Account[]>([])
-  const inputRef = useRef<HTMLInputElement>(null)
 
   const refresh = () => listStatements().then(setStored).catch(() => {})
   useEffect(() => {
@@ -31,8 +31,17 @@ export default function StatementImportPanel() {
     setBusy(true); setError(null); setResult(null)
     try { setResult(await importStatement(file, owner, accountId)); refresh() }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Import failed') }
-    finally { setBusy(false); if (inputRef.current) inputRef.current.value = '' }
+    finally { setBusy(false) }
   }
+
+  const onDrop = useCallback((files: File[]) => { if (files.length) onFile(files[0]) },
+    [owner, accountId])  // eslint-disable-line react-hooks/exhaustive-deps
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: { 'application/pdf': ['.pdf'] },
+    multiple: false,
+    disabled: busy,
+  })
 
   const onDelete = async (s: StoredStatement) => {
     if (!confirm(`Remove the stored PDF "${s.original_filename}"? (Imported holdings stay.)`)) return
@@ -78,16 +87,6 @@ export default function StatementImportPanel() {
           </select>
         </div>
 
-        <button
-          onClick={() => inputRef.current?.click()}
-          disabled={busy}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
-        >
-          {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          {busy ? 'Reading statement…' : 'Choose statement PDF'}
-        </button>
-        <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden"
-          onChange={e => onFile(e.target.files?.[0])} />
       </div>
       {accountId != null && (
         <p className="text-xs text-gray-400 -mt-2">
@@ -95,6 +94,26 @@ export default function StatementImportPanel() {
           whose statement format changed but is really the same account (e.g. Manulife's internal move).
         </p>
       )}
+
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+          busy ? 'opacity-60 cursor-not-allowed border-gray-200'
+          : isDragActive ? 'border-blue-400 bg-blue-50'
+          : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+        }`}
+      >
+        <input {...getInputProps()} />
+        {busy
+          ? <Loader2 className="h-9 w-9 text-blue-400 mx-auto mb-2 animate-spin" />
+          : <Upload className="h-9 w-9 text-gray-400 mx-auto mb-2" />}
+        <p className="text-gray-600 font-medium">
+          {busy ? 'Reading statement…'
+            : isDragActive ? 'Drop the statement PDF here'
+            : 'Drag & drop a statement PDF here, or click to select'}
+        </p>
+        <p className="text-xs text-gray-400 mt-1">PDF only · one at a time</p>
+      </div>
 
       {error && (
         <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">

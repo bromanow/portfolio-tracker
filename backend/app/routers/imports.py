@@ -703,24 +703,33 @@ async def import_statement(
             db.add(acct); db.flush()
 
     iso = as_of.isoformat()
+    Q2 = Decimal("0.01")
     pos_ref = lambda code: f"stmt-pos-{acct.id}-{code}-{iso}"
-    flow_ref = f"stmt-flow-{acct.id}-{iso}"
+    dep_ref = f"stmt-dep-{acct.id}-{iso}"
+    wd_ref = f"stmt-wd-{acct.id}-{iso}"
 
-    # Idempotent re-upload: drop only THIS statement's rows (positions + flow for as_of).
-    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid "
-                    "AND (external_ref LIKE :pos OR external_ref = :flow)"),
-               {"aid": acct.id, "pos": f"stmt-pos-{acct.id}-%-{iso}", "flow": flow_ref})
+    # Idempotent re-upload: drop only THIS statement's rows (positions + cash flows for as_of).
+    # Also clears rows from the older OPENING_BALANCE/PLAN_CONTRIBUTION model (stmt-flow-).
+    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND ("
+                    "external_ref LIKE :pos OR external_ref IN (:dep, :wd, :oldflow))"),
+               {"aid": acct.id, "pos": f"stmt-pos-{acct.id}-%-{iso}",
+                "dep": dep_ref, "wd": wd_ref, "oldflow": f"stmt-flow-{acct.id}-{iso}"})
 
-    # Cumulative units per security from EARLIER statements (running position just before as_of).
+    # Net statement position per security from EARLIER statements (engine-consistent:
+    # BUY/OPENING_BALANCE add, SELL subtracts). Empty → this is the FIRST statement.
     prior_rows = db.execute(_sql(
-        "SELECT security_id, COALESCE(SUM(quantity), 0) AS q FROM transactions "
-        "WHERE account_id = :aid AND transaction_type = 'OPENING_BALANCE' "
-        "AND external_ref LIKE :pat AND transaction_date < :asof GROUP BY security_id"),
+        "SELECT security_id, COALESCE(SUM(CASE "
+        "WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN quantity "
+        "WHEN transaction_type = 'SELL' THEN -ABS(quantity) ELSE 0 END), 0) AS q "
+        "FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat "
+        "AND transaction_date < :asof GROUP BY security_id"),
         {"aid": acct.id, "pat": f"stmt-pos-{acct.id}-%", "asof": as_of}).fetchall()
-    prior = {r[0]: Decimal(str(r[1])) for r in prior_rows}
+    prior = {r[0]: Decimal(str(r[1])) for r in prior_rows if Decimal(str(r[1])) != 0}
+    is_first = len(prior) == 0
     seen_sids: set[int] = set()
 
-    def _set_price(sec, price, price_cad):
+    def _set_price(sec, price):
+        price_cad = (price * fx).quantize(Decimal("0.0001"))
         mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
         if not mp:
             mp = MarketPrice(security_id=sec.id, price=price, currency=ccy); db.add(mp)
@@ -732,29 +741,26 @@ async def import_statement(
             hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency=ccy, source="statement"); db.add(hp)
         hp.close_price = price; hp.close_price_cad = price_cad; hp.currency = ccy
 
-    def _add_delta(sec, code, delta_units, price, name):
-        if delta_units == 0:
-            return
-        price_cad = (price * fx).quantize(Decimal("0.0001"))
-        amt_cad = (delta_units * price * fx).quantize(Decimal("0.01"))
+    def _pos(sec, code, ttype, qty, price, native_amt, label):
+        # quantity always positive; native_amt signed by cash direction (BUY −, SELL +).
         db.add(Transaction(
             account_id=acct.id, security_id=sec.id, transaction_date=as_of,
-            transaction_type="OPENING_BALANCE", quantity=delta_units, price=price,
-            transaction_currency=ccy, transaction_amount=amt_cad, cad_amount=amt_cad,
-            raw_description=f"{institution} statement {iso}: {name} (Δ units)"[:500],
-            external_ref=pos_ref(code),
+            transaction_type=ttype, quantity=qty, price=price, transaction_currency=ccy,
+            transaction_amount=native_amt.quantize(Q2), cad_amount=(native_amt * fx).quantize(Q2),
+            raw_description=f"{institution} statement {iso}: {label}"[:500], external_ref=pos_ref(code),
         ))
 
+    # ── Resolve securities, set NAV prices, gather per-fund unit deltas ──
+    items = []   # (sec, code, name, units, nav, delta)
     for i, h in enumerate(parsed["holdings"]):
         code = (h.get("code") or "").strip() or "".join(c for c in h["name"].upper() if c.isalnum())[:12] or f"H{i}"
         units = h.get("units") or Decimal("0")
         value = h["value"]
-        price = h.get("unit_price")
+        nav = h.get("unit_price")
         if units == 0:                       # value-only line → treat as 1 unit @ value
-            units, price = Decimal("1"), value
-        elif price is None:
-            price = (value / units) if units else value
-        price_cad = (price * fx).quantize(Decimal("0.0001"))
+            units, nav = Decimal("1"), value
+        elif nav is None:
+            nav = (value / units) if units else value
 
         ticker = f"{inst_slug}:{code}"
         sec = db.query(Security).filter(Security.ticker == ticker).first()
@@ -764,42 +770,65 @@ async def import_statement(
         elif h["name"] and not sec.name:
             sec.name = h["name"]
         seen_sids.add(sec.id)
+        _set_price(sec, nav)
+        items.append((sec, code, h["name"], units, nav, units - prior.get(sec.id, Decimal("0"))))
 
-        _set_price(sec, price, price_cad)
-        _add_delta(sec, code, units - prior.get(sec.id, Decimal("0")), price, h["name"])
-
-    # Funds held per earlier statements but absent now → unwind to zero as of this date.
+    # Funds held per earlier statements but absent now → fully sold this period.
     for sid, qty in prior.items():
-        if sid in seen_sids or qty == 0:
+        if sid in seen_sids or qty <= 0:
             continue
         sec = db.query(Security).filter(Security.id == sid).first()
         if not sec:
             continue
-        code = sec.ticker.split(":", 1)[-1]
         _mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
-        last_px = (_mp.price if _mp and _mp.price is not None else Decimal("0"))  # position →0 anyway
-        _add_delta(sec, code, -qty, last_px, sec.name or code)
+        nav = (_mp.price if _mp and _mp.price is not None else Decimal("0"))
+        items.append((sec, sec.ticker.split(":", 1)[-1], sec.name or sec.ticker, Decimal("0"), nav, -qty))
 
-    # ── Period contribution → cash-neutral external flow (for Modified-Dietz returns) ──
-    flows = parsed.get("flows") or {}
-    net_c = ((flows.get("contributions") or Decimal("0"))
-             + (flows.get("transfers_in") or Decimal("0"))
-             - (flows.get("withdrawals") or Decimal("0")))
-    contribution_recorded = None
-    if net_c != 0:
+    deposit_recorded = None
+    if is_first:
+        # First statement → opening balances at NAV (cash-neutral; cost = units × NAV).
+        for sec, code, name, units, nav, _delta in items:
+            if units > 0:
+                _pos(sec, code, "OPENING_BALANCE", units, nav, units * nav, f"{name} (opening balance)")
+    else:
+        # Subsequent statements → real BUY/SELL for the unit change + DEPOSIT/WITHDRAWAL for
+        # external cash. transfers_in are treated as INTERNAL (ignored) per account continuity.
+        flows = parsed.get("flows") or {}
+        C = flows.get("contributions") or Decimal("0")
+        W = flows.get("withdrawals") or Decimal("0")
+        buys  = [(s, c, n, d, nav) for (s, c, n, u, nav, d) in items if d > 0]
+        sells = [(s, c, n, -d, nav) for (s, c, n, u, nav, d) in items if d < 0]
+        S_nav = sum((q * nav for (_, _, _, q, nav) in sells), Decimal("0"))
+        B_nav = sum((q * nav for (_, _, _, q, nav) in buys), Decimal("0"))
+        # Deploy net external cash (contributions − withdrawals + sale proceeds) into the buys, so
+        # the account's cash nets to $0. Cost basis = cash paid; market value still comes from NAV.
+        funding = C - W + S_nav
+        scale = (funding / B_nav) if (B_nav > 0 and funding > 0) else Decimal("1")
+
+        for s, c, n, q, nav in sells:                       # cash IN (+)
+            _pos(s, c, "SELL", q, nav, q * nav, f"{n} (sell)")
+        for s, c, n, q, nav in buys:                        # cash OUT (−)
+            cost = (q * nav * scale)
+            buy_price = (cost / q) if q != 0 else nav
+            _pos(s, c, "BUY", q, buy_price, -cost, f"{n} (buy)")
+
         period_start = parsed.get("period_start")
         flow_date = as_of
         if period_start and period_start < as_of:
-            flow_date = period_start + (as_of - period_start) // 2   # midpoint ≈ evenly-paced contributions
-        net_c_cad = (net_c * fx).quantize(Decimal("0.01"))
-        db.add(Transaction(
-            account_id=acct.id, security_id=None, transaction_date=flow_date,
-            transaction_type="PLAN_CONTRIBUTION", quantity=None, price=None,
-            transaction_currency=ccy, transaction_amount=net_c.quantize(Decimal("0.01")), cad_amount=net_c_cad,
-            raw_description=f"{institution} {iso}: net contribution for period"[:500],
-            external_ref=flow_ref,
-        ))
-        contribution_recorded = str(net_c_cad)
+            flow_date = period_start + (as_of - period_start) // 2   # midpoint ≈ evenly-paced flows
+
+        def _flow(ttype, native_amt, ext, label):
+            db.add(Transaction(
+                account_id=acct.id, security_id=None, transaction_date=flow_date,
+                transaction_type=ttype, quantity=None, price=None, transaction_currency=ccy,
+                transaction_amount=native_amt.quantize(Q2), cad_amount=(native_amt * fx).quantize(Q2),
+                raw_description=f"{institution} {iso}: {label}"[:500], external_ref=ext,
+            ))
+        if C > 0:
+            _flow("DEPOSIT", C, dep_ref, "plan contribution")
+            deposit_recorded = str((C * fx).quantize(Q2))
+        if W > 0:
+            _flow("WITHDRAWAL", -W, wd_ref, "withdrawal")
 
     db.commit()
 
@@ -834,7 +863,7 @@ async def import_statement(
         "institution": institution, "account": acct.name, "as_of": iso,
         "currency": ccy, "holdings": len(parsed["holdings"]),
         "total": str((total * fx).quantize(Decimal("0.01"))),
-        "contribution": contribution_recorded,
+        "contribution": deposit_recorded,
         "engine": "gemini" if gemini_statement.is_configured() else "regex",
     }
 
@@ -996,9 +1025,10 @@ def statement_handoff(payload: dict, db: Session = Depends(get_db)):
     """Freeze an account's statement-sourced positions as of a cutover date so a live
     feed (e.g. Plaid) can take over without double-counting.
 
-    Inserts one unwinding OPENING_BALANCE per statement-held security (qty/cost reversed)
-    dated at the cutover, so the statements drive value/returns BEFORE the cutover and the
-    live feed drives them after. Idempotent + re-runnable (replaces a prior handoff)."""
+    Inserts one cash-neutral TRANSFER_OUT per statement-held security (net position handed
+    to the live feed) dated at the cutover, so the statements drive value/returns BEFORE the
+    cutover and the live feed drives them after. Idempotent + re-runnable (replaces a prior
+    handoff)."""
     from datetime import date as _date, datetime as _dt
     from decimal import Decimal
     from sqlalchemy import text as _sql
@@ -1019,27 +1049,30 @@ def statement_handoff(payload: dict, db: Session = Depends(get_db)):
         cutover = _date.today()
 
     base_ccy = (acct.base_currency or "CAD").upper()
-    # Net statement position per security (sum of all stmt-pos deltas).
+    # Net statement position per security (engine-consistent: BUY/OPENING_BALANCE add, SELL subtracts).
     rows = db.execute(_sql(
-        "SELECT security_id, COALESCE(SUM(quantity),0) q, COALESCE(SUM(cad_amount),0) c "
-        "FROM transactions WHERE account_id = :aid AND transaction_type = 'OPENING_BALANCE' "
-        "AND external_ref LIKE :pat GROUP BY security_id"),
-        {"aid": account_id, "pat": f"stmt-pos-{account_id}-%"}).fetchall()
+        "SELECT security_id, COALESCE(SUM(CASE "
+        "WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN quantity "
+        "WHEN transaction_type = 'SELL' THEN -ABS(quantity) ELSE 0 END), 0) q "
+        "FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat "
+        "AND transaction_date <= :cut GROUP BY security_id"),
+        {"aid": account_id, "pat": f"stmt-pos-{account_id}-%", "cut": cutover}).fetchall()
 
     # Replace any prior handoff so a new cutover date fully supersedes the old one.
     db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
                {"aid": account_id, "pat": f"stmt-handoff-{account_id}-%"})
 
     unwound = 0
-    for sid, q, c in rows:
-        q = Decimal(str(q)); c = Decimal(str(c))
-        if q == 0:
+    for sid, q in rows:
+        q = Decimal(str(q))
+        if q <= 0:
             continue
-        price = (c / q) if q != 0 else Decimal("0")
+        # TRANSFER_OUT reduces the position (qty positive, _QTY_SUB) with zero cash impact,
+        # so the holding leaves statement tracking for the live feed without touching cash.
         db.add(Transaction(
             account_id=account_id, security_id=sid, transaction_date=cutover,
-            transaction_type="OPENING_BALANCE", quantity=-q, price=abs(price),
-            transaction_currency=base_ccy, transaction_amount=-c, cad_amount=-c,
+            transaction_type="TRANSFER_OUT", quantity=q, price=None,
+            transaction_currency=base_ccy, transaction_amount=Decimal("0"), cad_amount=Decimal("0"),
             raw_description=f"Statement → live-feed handoff as of {cutover.isoformat()}"[:500],
             external_ref=f"stmt-handoff-{account_id}-{sid}",
         ))

@@ -24,6 +24,10 @@ _FUND_RE = re.compile(
 # Manulife's PDF text is often whitespace-stripped, so allow optional spaces.
 _TOTAL_RE = re.compile(r"current\s*value\s*of\s*your\s*account\s*is\s*\$([\d,]+\.\d{2})", re.I)
 _PERIOD_RE = re.compile(r"to\s*([A-Z][a-z]+)\s*(\d{1,2}),\s*(\d{4})")
+_START_RE = re.compile(r"from\s*([A-Z][a-z]+)\s*(\d{1,2}),\s*(\d{4})", re.I)
+# "What happened this period" change-summary is a multi-column table; the ROW TOTAL is the
+# LAST dollar figure on the line. Best-effort only — Gemini handles this far more reliably.
+_DOLLARS = re.compile(r"\$([\d,]+\.\d{2})")
 _MONTHS = {m: i for i, m in enumerate(
     ["January", "February", "March", "April", "May", "June", "July",
      "August", "September", "October", "November", "December"], start=1)}
@@ -40,10 +44,20 @@ def _clean_name(raw: str) -> str:
     return re.sub(r"\s+", " ", s).strip()
 
 
+def _date_from(m) -> Optional[date]:
+    if m and m.group(1).capitalize() in _MONTHS:
+        return date(int(m.group(3)), _MONTHS[m.group(1).capitalize()], int(m.group(2)))
+    return None
+
+
 def parse_manulife_pdf(pdf_bytes: bytes) -> dict:
     funds: list[dict] = []
     total: Optional[Decimal] = None
     as_of: Optional[date] = None
+    period_start: Optional[date] = None
+    contributions: Optional[Decimal] = None
+    transfers_in: Optional[Decimal] = None
+    withdrawals: Optional[Decimal] = None
 
     with pdfplumber.open(io.BytesIO(pdf_bytes)) as pdf:
         for page in pdf.pages:
@@ -64,9 +78,19 @@ def parse_manulife_pdf(pdf_bytes: bytes) -> dict:
                     if mt:
                         total = _dec(mt.group(1))
                 if as_of is None:
-                    mp = _PERIOD_RE.search(line)
-                    if mp and mp.group(1) in _MONTHS:
-                        as_of = date(int(mp.group(3)), _MONTHS[mp.group(1)], int(mp.group(2)))
+                    as_of = _date_from(_PERIOD_RE.search(line))
+                if period_start is None:
+                    period_start = _date_from(_START_RE.search(line))
+
+                low = line.lower().replace(" ", "")
+                amts = _DOLLARS.findall(line)
+                if amts:
+                    if contributions is None and low.startswith("pluscontributions"):
+                        contributions = _dec(amts[-1])            # row total = last column
+                    if transfers_in is None and "transferred" in low and "intoyourplan" in low:
+                        transfers_in = _dec(amts[-1])
+                    if withdrawals is None and ("withdrawal" in low or "transferredout" in low):
+                        withdrawals = _dec(amts[-1])
 
     if not funds:
         raise ValueError("No Manulife fund holdings found — is this a Manulife statement PDF?")
@@ -77,6 +101,12 @@ def parse_manulife_pdf(pdf_bytes: bytes) -> dict:
         "account_type": "RRSP",
         "currency": "CAD",
         "as_of": as_of or date.today(),
+        "period_start": period_start,
         "account_total": total or parsed_total,
+        "flows": {
+            "contributions": contributions,
+            "transfers_in": transfers_in,
+            "withdrawals": withdrawals,
+        },
         "holdings": funds,   # each: {code, name, units, unit_price, value}
     }

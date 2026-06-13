@@ -6,7 +6,7 @@ import { importStatement } from '../api/client'
 export default function StatementImportPanel() {
   const [owner, setOwner] = useState('Michelle')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ institution: string; account: string; as_of: string; holdings: number; total: string; currency: string; engine: string } | null>(null)
+  const [result, setResult] = useState<{ institution: string; account: string; as_of: string; holdings: number; total: string; currency: string; contribution: string | null; engine: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
@@ -25,10 +25,12 @@ export default function StatementImportPanel() {
         <h2 className="font-semibold text-gray-800">Statement import (AI-parsed)</h2>
       </div>
       <p className="text-sm text-gray-500">
-        Upload any investment statement PDF (Manulife, Principal, a brokerage…). Gemini reads it
-        and extracts the holdings — institution, account type, each fund's units, unit price and
-        value — and rebuilds the account. No manual entry, no per-format setup. Each upload
-        replaces the account's holdings with the statement's, so just drop in the newest one.
+        Upload any investment statement PDF (Manulife, Principal, a brokerage…). Gemini reads the
+        holdings <em>and</em> the period's contributions/transfers. Each statement is recorded as of
+        its own period-end, so successive statements build a real value history — and the
+        contributions feed the return calc so growth is separated from new money. No manual entry,
+        no per-format setup. Upload each statement as it arrives (oldest first); re-uploading the
+        same one is safe.
       </p>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -61,8 +63,11 @@ export default function StatementImportPanel() {
           <div>
             Imported <strong>{result.holdings}</strong> holdings into <strong>{result.account}</strong>{' '}
             ({result.institution}) as of <strong>{result.as_of}</strong> — total{' '}
-            <strong>{result.currency} ${Number(result.total).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong>.
-            Check it on the Holdings page.
+            <strong>{result.currency} ${Number(result.total).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong>
+            {result.contribution && Number(result.contribution) !== 0 && (
+              <>, period contribution{' '}
+                <strong>${Number(result.contribution).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong></>
+            )}. Check it on the Holdings &amp; Performance pages.
           </div>
         </div>
       )}

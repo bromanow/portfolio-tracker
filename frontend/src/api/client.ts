@@ -1096,7 +1096,7 @@ export const importStatement = (file: File, owner: string) => {
   const fd = new FormData()
   fd.append('file', file)
   fd.append('owner', owner)
-  return api.post<{ institution: string; account: string; as_of: string; currency: string; holdings: number; total: string; engine: string }>(
+  return api.post<{ institution: string; account: string; as_of: string; currency: string; holdings: number; total: string; contribution: string | null; engine: string }>(
     '/imports/statement', fd,
     { headers: { 'Content-Type': 'multipart/form-data' } },
   ).then(r => r.data)

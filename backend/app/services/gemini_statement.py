@@ -27,8 +27,15 @@ Return ONLY valid JSON (no markdown, no code fences) matching exactly this shape
   "institution": string,        // institution / plan provider, e.g. "Manulife", "Principal Financial Group"
   "account_type": string|null,  // registered type if shown: RRSP, TFSA, RESP, RRIF, LIRA, 401K, IRA, ROTH, NON_REG; else null
   "as_of": string,              // statement period END date, formatted YYYY-MM-DD
+  "period_start": string|null,  // statement period START date (YYYY-MM-DD) if shown, else null
   "currency": string,           // ISO currency of the values, e.g. CAD, USD
   "account_total": number|null, // total account market value
+  "flows": {                    // money movements DURING this statement period (from the
+                                //   "summary of changes" / "what happened this period" section)
+    "contributions": number|null, // employee + employer contributions paid in this period
+    "transfers_in": number|null,  // money/assets transferred INTO the plan this period
+    "withdrawals": number|null    // money withdrawn/transferred OUT this period (positive number)
+  },
   "holdings": [
     {
       "name": string,           // fund / security name
@@ -44,7 +51,10 @@ Rules:
 - Numbers must be plain JSON numbers — never include "$", commas, or "%".
 - Include EVERY holding/fund line, even very small ones.
 - If units or unit_price aren't shown but the value is, set the missing one to null.
-- Only extract holdings actually present in the statement; never invent data."""
+- For "flows", read the period's change-summary (opening value + contributions + transfers
+  + growth = closing value). Report only money that moved IN or OUT — NOT investment growth,
+  interest or dividends. If a figure isn't shown, set it to null. Withdrawals are a positive number.
+- Only extract data actually present in the statement; never invent figures."""
 
 
 def is_configured() -> bool:
@@ -89,6 +99,21 @@ def parse_statement(pdf_bytes: bytes) -> dict:
     except Exception:
         as_of = date.today()
 
+    period_start: Optional[date] = None
+    raw_start = (obj.get("period_start") or "").strip()
+    if raw_start:
+        try:
+            period_start = datetime.strptime(raw_start, "%Y-%m-%d").date()
+        except Exception:
+            period_start = None
+
+    raw_flows = obj.get("flows") or {}
+    flows = {
+        "contributions": _dec(raw_flows.get("contributions")),
+        "transfers_in": _dec(raw_flows.get("transfers_in")),
+        "withdrawals": _dec(raw_flows.get("withdrawals")),
+    }
+
     holdings = []
     for h in obj.get("holdings", []) or []:
         value = _dec(h.get("value"))
@@ -109,6 +134,8 @@ def parse_statement(pdf_bytes: bytes) -> dict:
         "account_type": (obj.get("account_type") or None),
         "currency": (obj.get("currency") or "CAD").upper().strip(),
         "as_of": as_of,
+        "period_start": period_start,
         "account_total": _dec(obj.get("account_total")),
+        "flows": flows,
         "holdings": holdings,
     }

@@ -86,6 +86,10 @@ _INCOME_SUB = frozenset({"FEE"})  # fees reduce net income
 #  amount inconsistencies distort the invested-capital figure. Cash balance is unaffected.)
 _CASH_NEUTRAL = frozenset({
     "OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND",
+    # PLAN_CONTRIBUTION is a statement-account contribution: it's an external flow for the
+    # return calc (portfolio.py _FLOW_TYPES), but its value is already reflected in the
+    # holdings snapshot, so it must NOT also add to cash here (would double-count value).
+    "PLAN_CONTRIBUTION",
 })
 # DRIP is handled separately: include only when cad_amount < 0 (iTrade purchase outflow)
 # or cad_amount > 0 with qty == 0 (iTrade DRP cash income). SW reinvestment (qty > 0,

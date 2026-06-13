@@ -620,10 +620,18 @@ async def import_statement(
     owner: str = Form("Michelle"),
     db: Session = Depends(get_db),
 ):
-    """Parse an investment statement PDF into holdings and rebuild the account
-    (one OPENING_BALANCE per holding, valued at the statement's unit price).
+    """Parse an investment statement PDF into a holdings time series.
+
+    Each statement is recorded AS OF its period-end date, as the per-fund unit
+    *delta* since the prior statement (cash-neutral OPENING_BALANCE rows), so the
+    account's value history is preserved across successive statements (the chart
+    shows the real value at each statement date, not just the latest). The period's
+    net contribution is recorded as a PLAN_CONTRIBUTION flow — an external inflow for
+    the Modified-Dietz return calc, but cash-neutral in valuation (its value is
+    already inside the holdings). Re-uploading the same statement is idempotent.
+
     Uses Gemini for institution-agnostic extraction; falls back to the Manulife
-    regex parser when no GEMINI_API_KEY is set. Full-replace each upload."""
+    regex parser when no GEMINI_API_KEY is set."""
     from decimal import Decimal
     from sqlalchemy import text as _sql
     from app.services import gemini_statement
@@ -673,9 +681,48 @@ async def import_statement(
                        account_type=acct_type, base_currency=ccy, owner=owner, active=True)
         db.add(acct); db.flush()
 
-    # Full-replace this account's statement positions
-    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
-               {"aid": acct.id, "pat": f"stmt-pos-{acct.id}-%"})
+    iso = as_of.isoformat()
+    pos_ref = lambda code: f"stmt-pos-{acct.id}-{code}-{iso}"
+    flow_ref = f"stmt-flow-{acct.id}-{iso}"
+
+    # Idempotent re-upload: drop only THIS statement's rows (positions + flow for as_of).
+    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid "
+                    "AND (external_ref LIKE :pos OR external_ref = :flow)"),
+               {"aid": acct.id, "pos": f"stmt-pos-{acct.id}-%-{iso}", "flow": flow_ref})
+
+    # Cumulative units per security from EARLIER statements (running position just before as_of).
+    prior_rows = db.execute(_sql(
+        "SELECT security_id, COALESCE(SUM(quantity), 0) AS q FROM transactions "
+        "WHERE account_id = :aid AND transaction_type = 'OPENING_BALANCE' "
+        "AND external_ref LIKE :pat AND transaction_date < :asof GROUP BY security_id"),
+        {"aid": acct.id, "pat": f"stmt-pos-{acct.id}-%", "asof": as_of}).fetchall()
+    prior = {r[0]: Decimal(str(r[1])) for r in prior_rows}
+    seen_sids: set[int] = set()
+
+    def _set_price(sec, price, price_cad):
+        mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
+        if not mp:
+            mp = MarketPrice(security_id=sec.id, price=price, currency=ccy); db.add(mp)
+        if mp.price_date is None or as_of >= mp.price_date:   # don't regress live price w/ an old statement
+            mp.price = price; mp.currency = ccy; mp.price_cad = price_cad; mp.price_date = as_of; mp.source = "statement"
+        hp = (db.query(HistoricalPrice)
+              .filter(HistoricalPrice.security_id == sec.id, HistoricalPrice.price_date == as_of).first())
+        if not hp:
+            hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency=ccy, source="statement"); db.add(hp)
+        hp.close_price = price; hp.close_price_cad = price_cad; hp.currency = ccy
+
+    def _add_delta(sec, code, delta_units, price, name):
+        if delta_units == 0:
+            return
+        price_cad = (price * fx).quantize(Decimal("0.0001"))
+        amt_cad = (delta_units * price * fx).quantize(Decimal("0.01"))
+        db.add(Transaction(
+            account_id=acct.id, security_id=sec.id, transaction_date=as_of,
+            transaction_type="OPENING_BALANCE", quantity=delta_units, price=price,
+            transaction_currency=ccy, transaction_amount=amt_cad, cad_amount=amt_cad,
+            raw_description=f"{institution} statement {iso}: {name} (Δ units)"[:500],
+            external_ref=pos_ref(code),
+        ))
 
     for i, h in enumerate(parsed["holdings"]):
         code = (h.get("code") or "").strip() or "".join(c for c in h["name"].upper() if c.isalnum())[:12] or f"H{i}"
@@ -686,7 +733,6 @@ async def import_statement(
             units, price = Decimal("1"), value
         elif price is None:
             price = (value / units) if units else value
-        value_cad = (value * fx).quantize(Decimal("0.01"))
         price_cad = (price * fx).quantize(Decimal("0.0001"))
 
         ticker = f"{inst_slug}:{code}"
@@ -696,30 +742,58 @@ async def import_statement(
             db.add(sec); db.flush()
         elif h["name"] and not sec.name:
             sec.name = h["name"]
+        seen_sids.add(sec.id)
 
-        mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
-        if not mp:
-            mp = MarketPrice(security_id=sec.id, price=price, currency=ccy); db.add(mp)
-        mp.price = price; mp.currency = ccy; mp.price_cad = price_cad; mp.price_date = as_of; mp.source = "statement"
-        hp = (db.query(HistoricalPrice)
-              .filter(HistoricalPrice.security_id == sec.id, HistoricalPrice.price_date == as_of).first())
-        if not hp:
-            hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency=ccy, source="statement"); db.add(hp)
-        hp.close_price = price; hp.close_price_cad = price_cad; hp.currency = ccy
+        _set_price(sec, price, price_cad)
+        _add_delta(sec, code, units - prior.get(sec.id, Decimal("0")), price, h["name"])
 
+    # Funds held per earlier statements but absent now → unwind to zero as of this date.
+    for sid, qty in prior.items():
+        if sid in seen_sids or qty == 0:
+            continue
+        sec = db.query(Security).filter(Security.id == sid).first()
+        if not sec:
+            continue
+        code = sec.ticker.split(":", 1)[-1]
+        _mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
+        last_px = (_mp.price if _mp and _mp.price is not None else Decimal("0"))  # position →0 anyway
+        _add_delta(sec, code, -qty, last_px, sec.name or code)
+
+    # ── Period contribution → cash-neutral external flow (for Modified-Dietz returns) ──
+    flows = parsed.get("flows") or {}
+    net_c = ((flows.get("contributions") or Decimal("0"))
+             + (flows.get("transfers_in") or Decimal("0"))
+             - (flows.get("withdrawals") or Decimal("0")))
+    contribution_recorded = None
+    if net_c != 0:
+        period_start = parsed.get("period_start")
+        flow_date = as_of
+        if period_start and period_start < as_of:
+            flow_date = period_start + (as_of - period_start) // 2   # midpoint ≈ evenly-paced contributions
+        net_c_cad = (net_c * fx).quantize(Decimal("0.01"))
         db.add(Transaction(
-            account_id=acct.id, security_id=sec.id, transaction_date=as_of,
-            transaction_type="OPENING_BALANCE", quantity=units, price=price,
-            transaction_currency=ccy, transaction_amount=value_cad, cad_amount=value_cad,
-            raw_description=f"{institution} statement {as_of}: {h['name']}"[:500],
-            external_ref=f"stmt-pos-{acct.id}-{code}",
+            account_id=acct.id, security_id=None, transaction_date=flow_date,
+            transaction_type="PLAN_CONTRIBUTION", quantity=None, price=None,
+            transaction_currency=ccy, transaction_amount=net_c.quantize(Decimal("0.01")), cad_amount=net_c_cad,
+            raw_description=f"{institution} {iso}: net contribution for period"[:500],
+            external_ref=flow_ref,
         ))
+        contribution_recorded = str(net_c_cad)
 
     db.commit()
+
+    # Rebuild this account's snapshots so the Performance chart reflects the new point/flow.
+    try:
+        from app.services.portfolio_history_service import compute_portfolio_snapshots
+        compute_portfolio_snapshots(db, account_ids=[acct.id])
+    except Exception as e:
+        logger.warning("statement import: snapshot recompute failed for acct %s: %s", acct.id, e)
+
     total = sum((h["value"] for h in parsed["holdings"]), Decimal("0"))
     return {
-        "institution": institution, "account": acct.name, "as_of": as_of.isoformat(),
+        "institution": institution, "account": acct.name, "as_of": iso,
         "currency": ccy, "holdings": len(parsed["holdings"]),
         "total": str((total * fx).quantize(Decimal("0.01"))),
+        "contribution": contribution_recorded,
         "engine": "gemini" if gemini_statement.is_configured() else "regex",
     }

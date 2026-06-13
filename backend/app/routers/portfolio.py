@@ -1511,7 +1511,9 @@ def get_performance_returns(
     # Deposits, withdrawals and inter-account transfers are capital movements, not
     # gains/losses. cad_amount is stored signed: inflows +, outflows −.
     from app.models.transactions import Transaction as _Txn
-    _FLOW_TYPES = ("DEPOSIT", "WITHDRAWAL", "TRANSFER_IN", "TRANSFER_OUT", "JOURNAL")
+    # PLAN_CONTRIBUTION: statement-account contribution — an external inflow for the
+    # return calc, but its value is already inside the holdings (cash-neutral in valuation).
+    _FLOW_TYPES = ("DEPOSIT", "WITHDRAWAL", "TRANSFER_IN", "TRANSFER_OUT", "JOURNAL", "PLAN_CONTRIBUTION")
     flows_by_group: dict[tuple, list[tuple[date, float]]] = defaultdict(list)
     _fq = db.query(_Txn).filter(
         _Txn.transaction_type.in_(_FLOW_TYPES),

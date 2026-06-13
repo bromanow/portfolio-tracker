@@ -853,7 +853,8 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
                 _pos(sec, code, "BUY", c_fund, Decimal("1"), -c_fund, f"{name} (contribution)")
                 total_dep += c_fund
                 cb = prior_cb + c_fund
-            _set_price(sec, (value / cb) if cb > 0 else Decimal("1"))   # gain/loss → price
+            gf = ((value / cb) if cb > 0 else Decimal("1")).quantize(Decimal("0.00000001"))
+            _set_price(sec, gf)                                          # gain/loss → price (growth factor)
         if total_dep > 0:
             _flow("DEPOSIT", total_dep, dep_ref, "plan contributions")
             deposit_recorded = str((total_dep * fx).quantize(Q2))
@@ -1007,7 +1008,14 @@ def reprocess_statement(statement_id: int, db: Session = Depends(get_db)):
     sf = db.query(StatementFile).filter(StatementFile.id == statement_id).first()
     if not sf:
         raise HTTPException(404, "Statement not found.")
-    return _reprocess_one(db, sf)
+    try:
+        return _reprocess_one(db, sf)
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.exception("reprocess failed for statement %s", statement_id)
+        raise HTTPException(500, f"Reprocess failed: {type(e).__name__}: {e}")
 
 
 @router.post("/statements/reprocess")

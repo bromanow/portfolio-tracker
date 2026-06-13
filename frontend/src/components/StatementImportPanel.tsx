@@ -86,7 +86,7 @@ export default function StatementImportPanel() {
     try {
       const r = await reprocessStatements(accountId); refresh()
       const failed = r.results.filter(x => x.error)
-      if (failed.length) setError(`${r.reprocessed}/${r.total} done; failed: ${failed.map(x => x.as_of || x.id).join(', ')}`)
+      if (failed.length) setError(`${r.reprocessed}/${r.total} done. Failed: ${failed.map(x => `${x.as_of || x.id} — ${x.error}`).join(' | ')}`)
     } catch (e: any) { setError(e?.response?.data?.detail ?? 'Reprocess failed') }
     finally { setReproc(null) }
   }

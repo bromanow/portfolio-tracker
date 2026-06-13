@@ -79,16 +79,24 @@ export default function StatementImportPanel() {
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Reprocess failed') }
     finally { setReproc(null) }
   }
-  const onReprocessGroup = async (account: string, accountId: number | null) => {
+  const [reprocProgress, setReprocProgress] = useState<string | null>(null)
+  // Reprocess a whole account one statement at a time (each a fast, separate request) so a
+  // pile of slow Gemini calls can't time out the way a single bulk request did.
+  const onReprocessGroup = async (account: string, files: StoredStatement[]) => {
+    const accountId = files[0]?.account_id
     if (!accountId) return
-    if (!confirm(`Reprocess all "${account}" statements (oldest → newest)? Re-parses each PDF via Gemini, so it uses quota.`)) return
+    const ordered = [...files].sort((a, b) => (a.as_of || '').localeCompare(b.as_of || ''))  // oldest first
+    if (!confirm(`Reprocess all ${ordered.length} "${account}" statements oldest → newest? Re-parses each PDF via Gemini (uses quota).`)) return
     setReproc(`g${accountId}`); setError(null)
-    try {
-      const r = await reprocessStatements(accountId); refresh()
-      const failed = r.results.filter(x => x.error)
-      if (failed.length) setError(`${r.reprocessed}/${r.total} done. Failed: ${failed.map(x => `${x.as_of || x.id} — ${x.error}`).join(' | ')}`)
-    } catch (e: any) { setError(e?.response?.data?.detail ?? 'Reprocess failed') }
-    finally { setReproc(null) }
+    let ok = 0; const failed: string[] = []
+    for (let i = 0; i < ordered.length; i++) {
+      setReprocProgress(`${i + 1}/${ordered.length}`)
+      try { await reprocessStatement(ordered[i].id); ok++ }
+      catch (e: any) { failed.push(`${ordered[i].as_of || ordered[i].id} — ${e?.response?.data?.detail ?? 'failed'}`) }
+    }
+    setReprocProgress(null); refresh()
+    if (failed.length) setError(`${ok}/${ordered.length} done. Failed: ${failed.join(' | ')}`)
+    setReproc(null)
   }
 
   // ── Hand off to a live feed (e.g. Plaid) ──
@@ -230,14 +238,14 @@ export default function StatementImportPanel() {
                       <span className="text-xs text-gray-400">{files.length}</span>
                     </button>
                     {files[0].account_id != null && (
-                      <button onClick={() => onReprocessGroup(account, files[0].account_id)}
+                      <button onClick={() => onReprocessGroup(account, files)}
                         disabled={reproc != null}
-                        title="Re-import all statements in this account from the stored PDFs"
+                        title="Re-import all statements in this account from the stored PDFs (one at a time)"
                         className="flex items-center gap-1 px-2 py-1 mr-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40">
                         {reproc === `g${files[0].account_id}`
                           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           : <RefreshCw className="h-3.5 w-3.5" />}
-                        Reprocess all
+                        {reproc === `g${files[0].account_id}` && reprocProgress ? `Reprocessing ${reprocProgress}` : 'Reprocess all'}
                       </button>
                     )}
                   </div>

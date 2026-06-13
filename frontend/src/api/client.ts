@@ -1129,6 +1129,11 @@ export const openStatementFile = async (id: number) => {
 export const deleteStatement = (id: number) =>
   api.delete<{ deleted: number }>(`/imports/statements/${id}`).then(r => r.data)
 
+export const statementHandoff = (accountId: number, cutoverDate: string) =>
+  api.post<{ account: string; cutover_date: string; securities_unwound: number }>(
+    '/imports/statements/handoff', { account_id: accountId, cutover_date: cutoverDate },
+  ).then(r => r.data)
+
 export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
 

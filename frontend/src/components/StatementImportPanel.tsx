@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload } from 'lucide-react'
-import { importStatement, listStatements, openStatementFile, deleteStatement, getAccounts, type StoredStatement, type Account } from '../api/client'
+import { importStatement, listStatements, openStatementFile, deleteStatement, statementHandoff, getAccounts, type StoredStatement, type Account } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
@@ -46,6 +46,23 @@ export default function StatementImportPanel() {
   const onDelete = async (s: StoredStatement) => {
     if (!confirm(`Remove the stored PDF "${s.original_filename}"? (Imported holdings stay.)`)) return
     try { await deleteStatement(s.id); refresh() } catch { /* ignore */ }
+  }
+
+  // ── Hand off to a live feed (e.g. Plaid) ──
+  const [handoffAcct, setHandoffAcct] = useState<number | null>(null)
+  const [handoffDate, setHandoffDate] = useState(() => new Date().toISOString().slice(0, 10))
+  const [handoffMsg, setHandoffMsg] = useState<string | null>(null)
+  const [handoffBusy, setHandoffBusy] = useState(false)
+  const onHandoff = async () => {
+    if (!handoffAcct) return
+    if (!confirm(`Freeze statement history for this account as of ${handoffDate}? A live feed (Plaid) should own it after that date.`)) return
+    setHandoffBusy(true); setHandoffMsg(null)
+    try {
+      const r = await statementHandoff(handoffAcct, handoffDate)
+      setHandoffMsg(`Froze ${r.securities_unwound} holding(s) in ${r.account} as of ${r.cutover_date}.`)
+    } catch (e: any) {
+      setHandoffMsg(e?.response?.data?.detail ?? 'Handoff failed')
+    } finally { setHandoffBusy(false) }
   }
 
   const fmtSize = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`
@@ -165,6 +182,38 @@ export default function StatementImportPanel() {
           </div>
         </div>
       )}
+
+      <details className="pt-2 border-t border-gray-100">
+        <summary className="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">
+          Hand off to a live feed (Plaid)
+        </summary>
+        <p className="text-xs text-gray-400 mt-2">
+          Once a live feed (Plaid) is taking over an account, freeze its statement history as of a
+          cutover date so the two don't double-count. Statements drive value/returns before the
+          date; the live feed drives them after. Safe to re-run with a new date.
+        </p>
+        <div className="flex items-end gap-3 flex-wrap mt-2">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Account</label>
+            <select value={handoffAcct ?? ''} onChange={e => setHandoffAcct(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[16rem]">
+              <option value="">Select account…</option>
+              {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>)}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Cutover date</label>
+            <input type="date" value={handoffDate} onChange={e => setHandoffDate(e.target.value)}
+              className="border border-gray-200 rounded px-2 py-1 text-sm" />
+          </div>
+          <button onClick={onHandoff} disabled={!handoffAcct || handoffBusy}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-800 disabled:opacity-50">
+            {handoffBusy && <Loader2 className="h-4 w-4 animate-spin" />}
+            Freeze &amp; hand off
+          </button>
+        </div>
+        {handoffMsg && <p className="text-xs text-gray-600 mt-2">{handoffMsg}</p>}
+      </details>
     </div>
   )
 }

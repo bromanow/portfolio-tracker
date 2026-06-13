@@ -652,7 +652,10 @@ async def import_statement(
             from app.parsers.manulife_statement import parse_manulife_pdf
             parsed = parse_manulife_pdf(pdf)
     except Exception as e:
-        raise HTTPException(422, f"Could not parse statement: {e}")
+        hint = "" if gemini_statement.is_configured() else (
+            " — No GEMINI_API_KEY is set, so only the no-key fallback ran (it reads just the "
+            "newest Manulife layout). Set GEMINI_API_KEY in the backend to parse any statement format.")
+        raise HTTPException(422, f"Could not parse statement: {e}{hint}")
 
     as_of = parsed["as_of"]
     ccy = (parsed.get("currency") or "CAD").upper()
@@ -888,3 +891,67 @@ def delete_statement_file(statement_id: int, db: Session = Depends(get_db)):
     statement_store.remove(r.stored_filename)
     db.delete(r); db.commit()
     return {"deleted": statement_id}
+
+
+@router.post("/statements/handoff")
+def statement_handoff(payload: dict, db: Session = Depends(get_db)):
+    """Freeze an account's statement-sourced positions as of a cutover date so a live
+    feed (e.g. Plaid) can take over without double-counting.
+
+    Inserts one unwinding OPENING_BALANCE per statement-held security (qty/cost reversed)
+    dated at the cutover, so the statements drive value/returns BEFORE the cutover and the
+    live feed drives them after. Idempotent + re-runnable (replaces a prior handoff)."""
+    from datetime import date as _date, datetime as _dt
+    from decimal import Decimal
+    from sqlalchemy import text as _sql
+    from app.models.master import Account
+    from app.models.transactions import Transaction
+
+    account_id = payload.get("account_id")
+    if not account_id:
+        raise HTTPException(400, "account_id is required.")
+    acct = db.query(Account).filter(Account.id == account_id).first()
+    if not acct:
+        raise HTTPException(404, f"Account {account_id} not found.")
+
+    raw_cut = (payload.get("cutover_date") or "").strip()
+    try:
+        cutover = _dt.strptime(raw_cut, "%Y-%m-%d").date() if raw_cut else _date.today()
+    except Exception:
+        cutover = _date.today()
+
+    base_ccy = (acct.base_currency or "CAD").upper()
+    # Net statement position per security (sum of all stmt-pos deltas).
+    rows = db.execute(_sql(
+        "SELECT security_id, COALESCE(SUM(quantity),0) q, COALESCE(SUM(cad_amount),0) c "
+        "FROM transactions WHERE account_id = :aid AND transaction_type = 'OPENING_BALANCE' "
+        "AND external_ref LIKE :pat GROUP BY security_id"),
+        {"aid": account_id, "pat": f"stmt-pos-{account_id}-%"}).fetchall()
+
+    # Replace any prior handoff so a new cutover date fully supersedes the old one.
+    db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
+               {"aid": account_id, "pat": f"stmt-handoff-{account_id}-%"})
+
+    unwound = 0
+    for sid, q, c in rows:
+        q = Decimal(str(q)); c = Decimal(str(c))
+        if q == 0:
+            continue
+        price = (c / q) if q != 0 else Decimal("0")
+        db.add(Transaction(
+            account_id=account_id, security_id=sid, transaction_date=cutover,
+            transaction_type="OPENING_BALANCE", quantity=-q, price=abs(price),
+            transaction_currency=base_ccy, transaction_amount=-c, cad_amount=-c,
+            raw_description=f"Statement → live-feed handoff as of {cutover.isoformat()}"[:500],
+            external_ref=f"stmt-handoff-{account_id}-{sid}",
+        ))
+        unwound += 1
+    db.commit()
+
+    try:
+        from app.services.portfolio_history_service import compute_portfolio_snapshots
+        compute_portfolio_snapshots(db, account_ids=[account_id])
+    except Exception as e:
+        logger.warning("handoff: snapshot recompute failed for acct %s: %s", account_id, e)
+
+    return {"account": acct.name, "cutover_date": cutover.isoformat(), "securities_unwound": unwound}

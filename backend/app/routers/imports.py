@@ -764,14 +764,28 @@ async def import_statement(
             raw_description=f"{institution} statement {iso}: {label}"[:500], external_ref=pos_ref(code),
         ))
 
+    # A statement is "value-only" when it reports dollar values but no share counts (e.g.
+    # Principal 401k). Real BUY/SELL/DEPOSIT can't be reconstructed from that — recording them
+    # produces unfunded buys + phantom cash — so we track value CASH-NEUTRALLY instead.
+    # Unit-bearing statements (Manulife) keep the true trade model.
+    value_only = not any((h.get("units") or Decimal("0")) for h in parsed["holdings"])
+
+    def _code_for(h, i):
+        c = (h.get("code") or "").strip()
+        if c:
+            return c
+        # No code → normalize the name to a stable key so the same fund matches across
+        # quarters despite minor wording drift from the LLM (kills phantom ghost holdings).
+        return "".join(ch for ch in (h.get("name") or "").upper() if ch.isalnum())[:24] or f"H{i}"
+
     # ── Resolve securities, set NAV prices, gather per-fund unit deltas ──
     items = []   # (sec, code, name, units, nav, delta)
     for i, h in enumerate(parsed["holdings"]):
-        code = (h.get("code") or "").strip() or "".join(c for c in h["name"].upper() if c.isalnum())[:12] or f"H{i}"
+        code = _code_for(h, i)
         units = h.get("units") or Decimal("0")
         value = h["value"]
         nav = h.get("unit_price")
-        if units == 0:                       # value-only line → treat as 1 unit @ value
+        if units == 0:                       # value-only line → 1 unit @ value (price = value)
             units, nav = Decimal("1"), value
         elif nav is None:
             nav = (value / units) if units else value
@@ -787,7 +801,8 @@ async def import_statement(
         _set_price(sec, nav)
         items.append((sec, code, h["name"], units, nav, units - prior.get(sec.id, Decimal("0"))))
 
-    # Funds held per earlier statements but absent now → fully sold this period.
+    # Funds held per earlier statements but absent now (with their last price for a sell).
+    dropped = []   # (sec, code, name, qty, nav)
     for sid, qty in prior.items():
         if sid in seen_sids or qty <= 0:
             continue
@@ -796,17 +811,27 @@ async def import_statement(
             continue
         _mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
         nav = (_mp.price if _mp and _mp.price is not None else Decimal("0"))
-        items.append((sec, sec.ticker.split(":", 1)[-1], sec.name or sec.ticker, Decimal("0"), nav, -qty))
+        dropped.append((sec, sec.ticker.split(":", 1)[-1], sec.name or sec.ticker, qty, nav))
 
     deposit_recorded = None
-    if is_first:
-        # First statement → opening balances at NAV (cash-neutral; cost = units × NAV).
+    if value_only:
+        # Cash-neutral: establish each fund once (OPENING_BALANCE), then its value rides on the
+        # price feed at each statement date. A dropped fund is zeroed via price, not a sell.
+        for sec, code, name, units, nav, delta in items:
+            if delta > 0:        # first time we've seen this fund (prior position was 0)
+                _pos(sec, code, "OPENING_BALANCE", units, nav, units * nav, f"{name} (statement value)")
+        for sec, code, name, _qty, _nav in dropped:
+            _set_price(sec, Decimal("0"))   # fund gone → value 0 from this date, no cash impact
+    elif is_first:
+        # First unit-bearing statement → opening balances at NAV (cash-neutral; cost = units × NAV).
         for sec, code, name, units, nav, _delta in items:
             if units > 0:
                 _pos(sec, code, "OPENING_BALANCE", units, nav, units * nav, f"{name} (opening balance)")
     else:
-        # Subsequent statements → real BUY/SELL for the unit change + DEPOSIT/WITHDRAWAL for
-        # external cash. transfers_in are treated as INTERNAL (ignored) per account continuity.
+        # Subsequent unit-bearing statements → real BUY/SELL for the unit change + DEPOSIT/
+        # WITHDRAWAL for external cash. transfers_in are INTERNAL (ignored) per account continuity.
+        for sec, code, name, qty, nav in dropped:
+            items.append((sec, code, name, Decimal("0"), nav, -qty))
         flows = parsed.get("flows") or {}
         C = flows.get("contributions") or Decimal("0")
         W = flows.get("withdrawals") or Decimal("0")

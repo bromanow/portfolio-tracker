@@ -489,7 +489,7 @@ def get_cash_statement(
         # DRIP with negative amount = iTrade purchase (cash outflow; include).
         from sqlalchemy import or_, and_ as sqland_
         # JOURNAL = in-kind security transfer (book value only, no cash); exclude everywhere.
-        SKIP_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL"}
+        SKIP_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL", "PLAN_CONTRIBUTION"}
         txns = (
             db.query(Transaction)
             .filter(
@@ -562,7 +562,8 @@ def get_cash_statement(
     #     already credited the income → include so the cash outflow is visible.
     from sqlalchemy import or_, and_ as sqland_
     # JOURNAL = in-kind security transfer (book value only, no cash); exclude everywhere.
-    SKIP_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL"}
+    # PLAN_CONTRIBUTION = statement contribution; value already in holdings → not cash.
+    SKIP_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL", "PLAN_CONTRIBUTION"}
 
     # Base query — all transactions for this account, ordered chronologically
     base_q = (

@@ -370,7 +370,9 @@ def get_asset_allocation(db: Session, as_of: Optional[date] = None) -> list[dict
 #   e.g. DLR journalled from USD account to CAD account for Norbert's Gambit; the BUY in the
 #   source account is the real cash outflow — the JOURNAL leg is purely a book entry.
 # Exclude all of these from cash balance calculations.
-CASH_NEUTRAL_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL"}
+# PLAN_CONTRIBUTION (statement-account contribution): its value is already inside the
+# holdings snapshot, so it must NOT add to cash here (would double-count as phantom cash).
+CASH_NEUTRAL_TYPES = {"OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND", "DRIP", "JOURNAL", "PLAN_CONTRIBUTION"}
 
 
 def get_cash_balances(

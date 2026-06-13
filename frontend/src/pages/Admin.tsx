@@ -5,7 +5,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import {
   getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount,
-  getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities,
+  getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities, mergeSecurities,
   fetchSecurityYahooInfo, searchYahooSecurities,
   getBrokerages, createBrokerage, updateBrokerage, deleteBrokerage,
   getTypeMappings, createTypeMapping, updateTypeMapping, deleteTypeMapping,
@@ -881,6 +881,20 @@ function SecuritiesTab() {
     mutationFn: deleteUnusedSecurities,
     onSuccess: () => qc.invalidateQueries({ queryKey: ['securities'] }),
   })
+  // ── Merge securities (e.g. a Plaid mis-named holding into your real fund) ──
+  const [mergeSource, setMergeSource] = useState<number | null>(null)
+  const [mergeTarget, setMergeTarget] = useState<number | null>(null)
+  const [mergeMsg, setMergeMsg] = useState<string | null>(null)
+  const mergeMut = useMutation({
+    mutationFn: () => mergeSecurities(mergeSource!, mergeTarget!),
+    onSuccess: (r) => {
+      qc.invalidateQueries({ queryKey: ['securities'] })
+      setMergeMsg(`Merged ${r.merged} into ${r.into} (${r.transactions_moved} transactions moved).`)
+      setMergeSource(null); setMergeTarget(null)
+    },
+    onError: (err: { response?: { data?: { detail?: string } } }) =>
+      setMergeMsg(err?.response?.data?.detail || 'Merge failed'),
+  })
   // ── Yahoo picker state ──────────────────────────────────────────────────────
   interface YahooPicker {
     secId: number
@@ -1026,6 +1040,45 @@ function SecuritiesTab() {
             Deleted {(cleanupMut.data as { deleted_count: number })?.deleted_count ?? 0} unused
           </span>
         )}
+      </div>
+
+      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+        <h3 className="font-medium text-gray-700 mb-3">Merge securities</h3>
+        <p className="text-xs text-gray-500 mb-3">
+          Move one security's transactions, prices and Plaid mapping onto another, then delete it —
+          e.g. join a Plaid-mis-named holding (“Cluster Group Holdings”/CLUS) onto your real fund.
+          Clear the ticker search above to see all securities.
+        </p>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Merge this (deleted)</label>
+            <select value={mergeSource ?? ''} onChange={e => setMergeSource(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1.5 text-sm min-w-[16rem]">
+              <option value="">Select source…</option>
+              {(securities as Security[]).filter(s => !s.is_option).map(s => (
+                <option key={s.id} value={s.id}>{s.name || s.ticker} — {s.ticker}</option>
+              ))}
+            </select>
+          </div>
+          <span className="pb-2 text-gray-400">→ into →</span>
+          <div className="flex flex-col gap-1">
+            <label className="text-xs text-gray-500">Keep this (target)</label>
+            <select value={mergeTarget ?? ''} onChange={e => setMergeTarget(e.target.value ? Number(e.target.value) : null)}
+              className="border border-gray-200 rounded px-2 py-1.5 text-sm min-w-[16rem]">
+              <option value="">Select target…</option>
+              {(securities as Security[]).filter(s => !s.is_option).map(s => (
+                <option key={s.id} value={s.id}>{s.name || s.ticker} — {s.ticker}</option>
+              ))}
+            </select>
+          </div>
+          <button
+            onClick={() => { if (mergeSource && mergeTarget && confirm('Merge and delete the source security? This moves its transactions/prices to the target.')) { setMergeMsg(null); mergeMut.mutate() } }}
+            disabled={!mergeSource || !mergeTarget || mergeSource === mergeTarget || mergeMut.isPending}
+            className="text-sm bg-gray-700 text-white rounded px-3 py-1.5 hover:bg-gray-800 disabled:opacity-50">
+            {mergeMut.isPending ? 'Merging…' : 'Merge'}
+          </button>
+        </div>
+        {mergeMsg && <p className="text-xs text-gray-600 mt-2">{mergeMsg}</p>}
       </div>
 
       <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">

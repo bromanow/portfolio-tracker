@@ -128,6 +128,9 @@ export const fetchSecurityYahooInfo = (id: number, yahooSymbol?: string) =>
     yahooSymbol ? { yahoo_symbol: yahooSymbol } : undefined,
   ).then(r => r.data)
 export const deleteSecurity = (id: number) => api.delete(`/admin/securities/${id}`).then(r => r.data)
+export const mergeSecurities = (sourceId: number, targetId: number) =>
+  api.post<{ merged: string; into: string; transactions_moved: number }>(
+    '/admin/securities/merge', { source_security_id: sourceId, target_security_id: targetId }).then(r => r.data)
 export const deleteUnusedSecurities = () => api.delete('/admin/bulk/securities').then(r => r.data)
 
 // ─── Transactions ────────────────────────────────────────────────────────────

@@ -138,6 +138,57 @@ def delete_security(security_id: int, db: Session = Depends(get_db)):
     return {"deleted": security_id}
 
 
+class SecurityMerge(BaseModel):
+    source_security_id: int
+    target_security_id: int
+
+
+@router.post("/securities/merge")
+def merge_securities(data: SecurityMerge, db: Session = Depends(get_db)):
+    """Merge a source security into a target: move its transactions + Plaid mapping to the target,
+    carry its current/historical prices over, then delete the source. Use to join a Plaid-mis-named
+    holding (e.g. 'Cluster Group Holdings'/CLUS) onto your real fund so they're one security."""
+    from sqlalchemy import text as _sql
+    from app.models.prices import MarketPrice, HistoricalPrice
+    src_id, tgt_id = data.source_security_id, data.target_security_id
+    if src_id == tgt_id:
+        raise HTTPException(status_code=400, detail="Source and target must be different securities.")
+    src = db.get(Security, src_id)
+    tgt = db.get(Security, tgt_id)
+    if not src or not tgt:
+        raise HTTPException(status_code=404, detail="Security not found")
+
+    moved = db.execute(_sql("UPDATE transactions SET security_id=:t WHERE security_id=:s"),
+                       {"t": tgt_id, "s": src_id}).rowcount
+    try:
+        db.execute(_sql("UPDATE plaid_securities SET security_id=:t WHERE security_id=:s"),
+                   {"t": tgt_id, "s": src_id})
+    except Exception:
+        pass
+
+    # The source is typically the live (Plaid) feed → carry its current price onto the target.
+    smp = db.query(MarketPrice).filter(MarketPrice.security_id == src_id).first()
+    if smp:
+        tmp = db.query(MarketPrice).filter(MarketPrice.security_id == tgt_id).first()
+        if not tmp:
+            tmp = MarketPrice(security_id=tgt_id, price=smp.price, currency=smp.currency); db.add(tmp)
+        tmp.price = smp.price; tmp.price_cad = smp.price_cad
+        tmp.currency = smp.currency; tmp.price_date = smp.price_date; tmp.source = smp.source
+    # Copy the source's historical prices for any dates the target doesn't already have.
+    tdates = {r[0] for r in db.execute(_sql(
+        "SELECT price_date FROM historical_prices WHERE security_id=:t"), {"t": tgt_id}).fetchall()}
+    for hp in db.query(HistoricalPrice).filter(HistoricalPrice.security_id == src_id).all():
+        if hp.price_date not in tdates:
+            db.add(HistoricalPrice(security_id=tgt_id, price_date=hp.price_date,
+                                   close_price=hp.close_price, close_price_cad=hp.close_price_cad,
+                                   currency=hp.currency, source=hp.source))
+
+    _purge_security_dependents(db, src_id)   # remove the source's leftover prices/mappings
+    db.delete(src)
+    db.commit()
+    return {"merged": src.ticker, "into": tgt.ticker, "transactions_moved": moved}
+
+
 # ─── Type Mappings ─────────────────────────────────────────────────────────
 
 @router.get("/type-mappings")

@@ -843,7 +843,19 @@ def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int
         total_dep = Decimal("0")
         for sec, code, name, _u, _nav, _d, value, c_h in items:
             prior_cb = prior.get(sec.id, Decimal("0"))
-            if prior_cb <= 0:                # first appearance → cost baseline = current value
+            if prior_cb <= 0:                # would be a first appearance
+                # If this fund was switched IN (a JOURNAL from the switch tool), it already carries
+                # the cost basis — DON'T open a fresh position (that would double it); just price it
+                # so value = statement value ÷ the journaled-in quantity.
+                jr = db.execute(_sql(
+                    "SELECT COALESCE(SUM(quantity), 0) FROM transactions WHERE account_id = :aid "
+                    "AND security_id = :sid AND transaction_type = 'JOURNAL' AND quantity > 0 "
+                    "AND external_ref LIKE 'stmt-switch-%' AND transaction_date <= :asof"),
+                    {"aid": acct.id, "sid": sec.id, "asof": as_of}).fetchone()
+                jqty = Decimal(str(jr[0])) if jr and jr[0] is not None else Decimal("0")
+                if jqty > 0:
+                    _set_price(sec, (value / jqty).quantize(Decimal("0.00000001")))
+                    continue
                 _pos(sec, code, "OPENING_BALANCE", value, Decimal("1"), value, f"{name} (opening cost)")
                 _set_price(sec, Decimal("1"))
                 continue
@@ -1243,19 +1255,6 @@ def switch_security(payload: dict, db: Session = Depends(get_db)):
     except Exception:
         sdate = _date.today()
 
-    # from-fund's net position + cost basis (native) in this account, up to the switch date.
-    row = db.execute(_sql(
-        "SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE','JOURNAL') THEN quantity "
-        "WHEN transaction_type='SELL' THEN -ABS(quantity) ELSE 0 END),0) qty, "
-        "COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN ABS(transaction_amount) "
-        "WHEN transaction_type='SELL' THEN -ABS(transaction_amount) "
-        "WHEN transaction_type='JOURNAL' THEN transaction_amount ELSE 0 END),0) cost "
-        "FROM transactions WHERE account_id=:aid AND security_id=:sid AND transaction_date <= :d"),
-        {"aid": account_id, "sid": from_id, "d": sdate}).fetchone()
-    qty, cost = Decimal(str(row[0])), Decimal(str(row[1]))
-    if qty <= 0:
-        raise HTTPException(400, f"{from_sec.name or from_sec.ticker} has no position to switch as of {sdate}.")
-
     Q2 = Decimal("0.01")
     ccy = (from_sec.currency or acct.base_currency or "CAD").upper()
     fx = Decimal("1")
@@ -1265,11 +1264,47 @@ def switch_security(payload: dict, db: Session = Depends(get_db)):
             r = get_rate(db, sdate, ccy, "CAD"); fx = Decimal(str(r)) if r else Decimal("1")
         except Exception:
             fx = Decimal("1")
-    cost_cad = (cost * fx).quantize(Q2)
-    ref = f"stmt-switch-{account_id}-{from_id}-{to_id}-{sdate.isoformat()}"
+
+    # Re-runnable: drop any prior switch for this from→to pair before recomputing.
     db.execute(_sql("DELETE FROM transactions WHERE account_id=:aid AND external_ref LIKE :p"),
                {"aid": account_id, "p": f"stmt-switch-{account_id}-{from_id}-{to_id}-%"})
 
+    # from-fund's statement position + cost basis (its OB/BUYs only — exclude switch journals
+    # so the figure is the original holding regardless of prior switches).
+    row = db.execute(_sql(
+        "SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN quantity "
+        "WHEN transaction_type='SELL' THEN -ABS(quantity) ELSE 0 END),0) qty, "
+        "COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN ABS(transaction_amount) "
+        "WHEN transaction_type='SELL' THEN -ABS(transaction_amount) ELSE 0 END),0) cost "
+        "FROM transactions WHERE account_id=:aid AND security_id=:sid "
+        "AND external_ref LIKE 'stmt-pos-%' AND transaction_date <= :d"),
+        {"aid": account_id, "sid": from_id, "d": sdate}).fetchone()
+    qty, cost = Decimal(str(row[0])), Decimal(str(row[1]))
+    if qty <= 0:
+        raise HTTPException(400, f"{from_sec.name or from_sec.ticker} has no position to switch as of {sdate}.")
+    cost_cad = (cost * fx).quantize(Q2)
+
+    # to-fund's current statement value (the duplicate opening the importer created) — captured
+    # BEFORE we remove it, so the switched-in position keeps the right market value.
+    from_mp = db.query(MarketPrice).filter(MarketPrice.security_id == from_id).first()
+    from_price = (from_mp.price if from_mp and from_mp.price is not None else Decimal("1"))
+    to_stmt = db.execute(_sql(
+        "SELECT COALESCE(SUM(CASE WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN quantity "
+        "WHEN transaction_type='SELL' THEN -ABS(quantity) ELSE 0 END),0) "
+        "FROM transactions WHERE account_id=:aid AND security_id=:sid AND external_ref LIKE 'stmt-pos-%'"),
+        {"aid": account_id, "sid": to_id}).fetchone()
+    to_qty_stmt = Decimal(str(to_stmt[0])) if to_stmt and to_stmt[0] is not None else Decimal("0")
+    to_mp = db.query(MarketPrice).filter(MarketPrice.security_id == to_id).first()
+    # The cost-basis OB is qty=value @ $1, so the OB quantity already IS the statement value —
+    # use it directly (robust even if the market price was polluted by an earlier buggy switch).
+    v_to = to_qty_stmt if to_qty_stmt > 0 else (qty * from_price)
+
+    # Remove the to-fund's duplicate statement opening balance — the switch supersedes it.
+    db.execute(_sql("DELETE FROM transactions WHERE account_id=:aid AND security_id=:sid "
+                    "AND transaction_type='OPENING_BALANCE' AND external_ref LIKE 'stmt-pos-%'"),
+               {"aid": account_id, "sid": to_id})
+
+    ref = f"stmt-switch-{account_id}-{from_id}-{to_id}-{sdate.isoformat()}"
     # In-kind transfer at book value: JOURNAL out of `from`, JOURNAL in to `to` (cash & gain neutral).
     db.add(Transaction(account_id=account_id, security_id=from_id, transaction_date=sdate,
         transaction_type="JOURNAL", quantity=-qty, price=None, transaction_currency=ccy,
@@ -1280,19 +1315,18 @@ def switch_security(payload: dict, db: Session = Depends(get_db)):
         transaction_amount=cost.quantize(Q2), cad_amount=cost_cad,
         raw_description=f"Switch ← {from_sec.name or from_sec.ticker}"[:500], external_ref=ref + "-in"))
 
-    # to-fund inherits from-fund's current price → market value + unrealized gain are preserved.
-    from_mp = db.query(MarketPrice).filter(MarketPrice.security_id == from_id).first()
-    if from_mp and from_mp.price is not None:
-        to_mp = db.query(MarketPrice).filter(MarketPrice.security_id == to_id).first()
-        if not to_mp:
-            to_mp = MarketPrice(security_id=to_id, price=from_mp.price, currency=ccy); db.add(to_mp)
-        to_mp.price = from_mp.price; to_mp.price_cad = from_mp.price_cad
-        to_mp.currency = ccy; to_mp.price_date = sdate; to_mp.source = "switch"
-        hp = (db.query(HistoricalPrice)
-              .filter(HistoricalPrice.security_id == to_id, HistoricalPrice.price_date == sdate).first())
-        if not hp:
-            hp = HistoricalPrice(security_id=to_id, price_date=sdate, currency=ccy, source="switch"); db.add(hp)
-        hp.close_price = from_mp.price; hp.close_price_cad = from_mp.price_cad; hp.currency = ccy
+    # Price the switched-in fund so value = its statement value (v_to) on the carried cost basis.
+    to_price = (v_to / qty).quantize(Decimal("0.00000001")) if qty > 0 else Decimal("1")
+    to_price_cad = (to_price * fx).quantize(Decimal("0.0001"))
+    if not to_mp:
+        to_mp = MarketPrice(security_id=to_id, price=to_price, currency=ccy); db.add(to_mp)
+    to_mp.price = to_price; to_mp.price_cad = to_price_cad
+    to_mp.currency = ccy; to_mp.price_date = sdate; to_mp.source = "switch"
+    hp = (db.query(HistoricalPrice)
+          .filter(HistoricalPrice.security_id == to_id, HistoricalPrice.price_date == sdate).first())
+    if not hp:
+        hp = HistoricalPrice(security_id=to_id, price_date=sdate, currency=ccy, source="switch"); db.add(hp)
+    hp.close_price = to_price; hp.close_price_cad = to_price_cad; hp.currency = ccy
     db.commit()
 
     try:

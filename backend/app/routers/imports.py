@@ -613,82 +613,113 @@ def update_raw_row(
     return {"id": rt.id, "status": rt.status, "raw_data": rt.raw_data}
 
 
-# ── Manulife statement import (PDF → holdings snapshot) ───────────────────────
-@router.post("/manulife-statement")
-async def import_manulife_statement(
+# ── Statement import (PDF → holdings snapshot) ───────────────────────────────
+@router.post("/statement")
+async def import_statement(
     file: UploadFile = File(...),
     owner: str = Form("Michelle"),
     db: Session = Depends(get_db),
 ):
-    """Parse a Manulife group-retirement statement PDF and rebuild the account's
-    holdings (one OPENING_BALANCE per fund, valued at the statement's unit price).
-    Holdings-snapshot model like the Plaid connector; full-replace each upload."""
+    """Parse an investment statement PDF into holdings and rebuild the account
+    (one OPENING_BALANCE per holding, valued at the statement's unit price).
+    Uses Gemini for institution-agnostic extraction; falls back to the Manulife
+    regex parser when no GEMINI_API_KEY is set. Full-replace each upload."""
     from decimal import Decimal
     from sqlalchemy import text as _sql
-    from app.parsers.manulife_statement import parse_manulife_pdf
+    from app.services import gemini_statement
     from app.models.master import Brokerage, Account, Security
     from app.models.transactions import Transaction
     from app.models.prices import MarketPrice, HistoricalPrice
 
     if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "Please upload a Manulife statement PDF.")
+        raise HTTPException(400, "Please upload a statement PDF.")
+    pdf = await file.read()
     try:
-        parsed = parse_manulife_pdf(await file.read())
+        if gemini_statement.is_configured():
+            parsed = gemini_statement.parse_statement(pdf)
+        else:
+            from app.parsers.manulife_statement import parse_manulife_pdf
+            parsed = parse_manulife_pdf(pdf)
     except Exception as e:
         raise HTTPException(422, f"Could not parse statement: {e}")
 
     as_of = parsed["as_of"]
+    ccy = (parsed.get("currency") or "CAD").upper()
+    institution = parsed["institution"]
+    inst_slug = "".join(c for c in institution.upper() if c.isalnum())[:14] or "STMT"
+    acct_type = (parsed.get("account_type") or "NON_REG").upper().replace("(", "").replace(")", "").replace("-", "_")
 
-    # Brokerage + account
-    brk = db.query(Brokerage).filter(Brokerage.code == "MANULIFE").first()
+    def _fx(d):
+        if ccy == "CAD":
+            return Decimal("1")
+        try:
+            from app.services.fx_service import get_rate
+            r = get_rate(db, d, ccy, "CAD")
+            return Decimal(str(r)) if r else Decimal("1")
+        except Exception:
+            return Decimal("1")
+    fx = _fx(as_of)
+
+    # Brokerage + account (one per institution + owner + account_type)
+    brk = db.query(Brokerage).filter(Brokerage.code == f"STMT_{inst_slug}").first()
     if not brk:
-        brk = Brokerage(name="Manulife", code="MANULIFE", active=True)
+        brk = Brokerage(name=institution[:100], code=f"STMT_{inst_slug}", active=True)
         db.add(brk); db.flush()
     acct = (db.query(Account)
             .filter(Account.brokerage_id == brk.id, Account.owner == owner,
-                    Account.account_type == "RRSP").first())
+                    Account.account_type == acct_type).first())
     if not acct:
-        acct = Account(brokerage_id=brk.id, name=f"Manulife RRSP — {owner}",
-                       account_type="RRSP", base_currency="CAD", owner=owner, active=True)
+        acct = Account(brokerage_id=brk.id, name=f"{institution} {acct_type} — {owner}"[:100],
+                       account_type=acct_type, base_currency=ccy, owner=owner, active=True)
         db.add(acct); db.flush()
 
     # Full-replace this account's statement positions
     db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
-               {"aid": acct.id, "pat": "manulife-pos-%"})
+               {"aid": acct.id, "pat": f"stmt-pos-{acct.id}-%"})
 
-    for f in parsed["funds"]:
-        ticker = f"MUL:{f['code']}"
+    for i, h in enumerate(parsed["holdings"]):
+        code = (h.get("code") or "").strip() or "".join(c for c in h["name"].upper() if c.isalnum())[:12] or f"H{i}"
+        units = h.get("units") or Decimal("0")
+        value = h["value"]
+        price = h.get("unit_price")
+        if units == 0:                       # value-only line → treat as 1 unit @ value
+            units, price = Decimal("1"), value
+        elif price is None:
+            price = (value / units) if units else value
+        value_cad = (value * fx).quantize(Decimal("0.01"))
+        price_cad = (price * fx).quantize(Decimal("0.0001"))
+
+        ticker = f"{inst_slug}:{code}"
         sec = db.query(Security).filter(Security.ticker == ticker).first()
         if not sec:
-            sec = Security(ticker=ticker, name=f["name"], asset_class="FUND", currency="CAD")
+            sec = Security(ticker=ticker, name=h["name"], asset_class="FUND", currency=ccy)
             db.add(sec); db.flush()
-        elif f["name"] and not sec.name:
-            sec.name = f["name"]
+        elif h["name"] and not sec.name:
+            sec.name = h["name"]
 
-        # Price (native = CAD) at the statement date
-        px = f["unit_price"]
         mp = db.query(MarketPrice).filter(MarketPrice.security_id == sec.id).first()
         if not mp:
-            mp = MarketPrice(security_id=sec.id, price=px, currency="CAD"); db.add(mp)
-        mp.price = px; mp.currency = "CAD"; mp.price_cad = px; mp.price_date = as_of; mp.source = "manulife"
+            mp = MarketPrice(security_id=sec.id, price=price, currency=ccy); db.add(mp)
+        mp.price = price; mp.currency = ccy; mp.price_cad = price_cad; mp.price_date = as_of; mp.source = "statement"
         hp = (db.query(HistoricalPrice)
               .filter(HistoricalPrice.security_id == sec.id, HistoricalPrice.price_date == as_of).first())
         if not hp:
-            hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency="CAD", source="manulife"); db.add(hp)
-        hp.close_price = px; hp.close_price_cad = px; hp.currency = "CAD"
+            hp = HistoricalPrice(security_id=sec.id, price_date=as_of, currency=ccy, source="statement"); db.add(hp)
+        hp.close_price = price; hp.close_price_cad = price_cad; hp.currency = ccy
 
         db.add(Transaction(
             account_id=acct.id, security_id=sec.id, transaction_date=as_of,
-            transaction_type="OPENING_BALANCE", quantity=f["units"], price=px,
-            transaction_currency="CAD", transaction_amount=f["value"], cad_amount=f["value"],
-            raw_description=f"Manulife statement {as_of}: {f['name']}"[:500],
-            external_ref=f"manulife-pos-{acct.id}-{f['code']}",
+            transaction_type="OPENING_BALANCE", quantity=units, price=price,
+            transaction_currency=ccy, transaction_amount=value_cad, cad_amount=value_cad,
+            raw_description=f"{institution} statement {as_of}: {h['name']}"[:500],
+            external_ref=f"stmt-pos-{acct.id}-{code}",
         ))
 
     db.commit()
+    total = sum((h["value"] for h in parsed["holdings"]), Decimal("0"))
     return {
-        "account": acct.name, "as_of": as_of.isoformat(),
-        "funds": len(parsed["funds"]),
-        "total": str(parsed["holdings_total"]),
-        "statement_total": str(parsed["statement_total"]) if parsed["statement_total"] else None,
+        "institution": institution, "account": acct.name, "as_of": as_of.isoformat(),
+        "currency": ccy, "holdings": len(parsed["holdings"]),
+        "total": str((total * fx).quantize(Decimal("0.01"))),
+        "engine": "gemini" if gemini_statement.is_configured() else "regex",
     }

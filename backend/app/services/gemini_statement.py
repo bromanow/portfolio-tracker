@@ -1,0 +1,114 @@
+"""Extract investment holdings from any statement PDF using Google Gemini.
+
+Mirrors the CRE app's parser: @google/generative-ai → gemini-2.5-flash with
+responseMimeType=application/json, temperature 0, native inline PDF input. Here it's
+the Python `google-generativeai` SDK. Generalises across institutions (Manulife,
+Principal, brokerage statements) — Gemini reads the PDF and returns structured JSON,
+so there's no per-format regex to maintain.
+
+Config: GEMINI_API_KEY (required), GEMINI_MODEL (default gemini-2.5-flash).
+"""
+from __future__ import annotations
+
+import json
+import logging
+import os
+from datetime import date, datetime
+from decimal import Decimal, InvalidOperation
+from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+_PROMPT = """You are a precise financial-data extractor. The attached PDF is an investment \
+account statement. Extract the account's holdings and metadata.
+
+Return ONLY valid JSON (no markdown, no code fences) matching exactly this shape:
+{
+  "institution": string,        // institution / plan provider, e.g. "Manulife", "Principal Financial Group"
+  "account_type": string|null,  // registered type if shown: RRSP, TFSA, RESP, RRIF, LIRA, 401K, IRA, ROTH, NON_REG; else null
+  "as_of": string,              // statement period END date, formatted YYYY-MM-DD
+  "currency": string,           // ISO currency of the values, e.g. CAD, USD
+  "account_total": number|null, // total account market value
+  "holdings": [
+    {
+      "name": string,           // fund / security name
+      "code": string|null,      // fund code or ticker symbol if shown, else null
+      "units": number|null,     // units / shares held
+      "unit_price": number|null,// price per unit
+      "value": number           // market value of the holding
+    }
+  ]
+}
+
+Rules:
+- Numbers must be plain JSON numbers — never include "$", commas, or "%".
+- Include EVERY holding/fund line, even very small ones.
+- If units or unit_price aren't shown but the value is, set the missing one to null.
+- Only extract holdings actually present in the statement; never invent data."""
+
+
+def is_configured() -> bool:
+    return bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
+
+def _dec(v) -> Optional[Decimal]:
+    if v is None:
+        return None
+    try:
+        return Decimal(str(v))
+    except (InvalidOperation, ValueError, TypeError):
+        return None
+
+
+def parse_statement(pdf_bytes: bytes) -> dict:
+    import google.generativeai as genai
+
+    genai.configure(api_key=os.environ["GEMINI_API_KEY"].strip())
+    model = genai.GenerativeModel(
+        os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        generation_config={
+            "response_mime_type": "application/json",
+            "max_output_tokens": 65536,
+            "temperature": 0,
+        },
+    )
+    resp = model.generate_content([
+        {"mime_type": "application/pdf", "data": pdf_bytes},
+        _PROMPT,
+    ])
+    try:
+        obj = json.loads(resp.text)
+    except Exception as e:
+        raise ValueError(f"Gemini returned non-JSON output: {e}")
+
+    # ── Normalize to the importer's shape ────────────────────────────────────
+    as_of: Optional[date] = None
+    raw_date = (obj.get("as_of") or "").strip()
+    try:
+        as_of = datetime.strptime(raw_date, "%Y-%m-%d").date()
+    except Exception:
+        as_of = date.today()
+
+    holdings = []
+    for h in obj.get("holdings", []) or []:
+        value = _dec(h.get("value"))
+        if value is None:
+            continue
+        holdings.append({
+            "name": (h.get("name") or "Holding").strip(),
+            "code": (str(h.get("code")).strip() if h.get("code") else None),
+            "units": _dec(h.get("units")) or Decimal("0"),
+            "unit_price": _dec(h.get("unit_price")),
+            "value": value,
+        })
+    if not holdings:
+        raise ValueError("Gemini found no holdings in this PDF — is it an investment statement?")
+
+    return {
+        "institution": (obj.get("institution") or "Statement").strip(),
+        "account_type": (obj.get("account_type") or None),
+        "currency": (obj.get("currency") or "CAD").upper().strip(),
+        "as_of": as_of,
+        "account_total": _dec(obj.get("account_total")),
+        "holdings": holdings,
+    }

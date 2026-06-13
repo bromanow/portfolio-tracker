@@ -1,19 +1,19 @@
 import { useState, useRef } from 'react'
-import { FileText, Loader2, CheckCircle, AlertTriangle } from 'lucide-react'
-import { importManulifeStatement } from '../api/client'
+import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react'
+import { importStatement } from '../api/client'
 
-// Parse an institution statement PDF into holdings (Manulife for now).
+// Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
   const [owner, setOwner] = useState('Michelle')
   const [busy, setBusy] = useState(false)
-  const [result, setResult] = useState<{ account: string; as_of: string; funds: number; total: string } | null>(null)
+  const [result, setResult] = useState<{ institution: string; account: string; as_of: string; holdings: number; total: string; currency: string; engine: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
   const onFile = async (file?: File) => {
     if (!file) return
     setBusy(true); setError(null); setResult(null)
-    try { setResult(await importManulifeStatement(file, owner)) }
+    try { setResult(await importStatement(file, owner)) }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Import failed') }
     finally { setBusy(false); if (inputRef.current) inputRef.current.value = '' }
   }
@@ -21,13 +21,14 @@ export default function StatementImportPanel() {
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4 max-w-2xl">
       <div className="flex items-center gap-2">
-        <FileText className="h-4 w-4 text-blue-600" />
-        <h2 className="font-semibold text-gray-800">Statement import — Manulife</h2>
+        <Sparkles className="h-4 w-4 text-blue-600" />
+        <h2 className="font-semibold text-gray-800">Statement import (AI-parsed)</h2>
       </div>
       <p className="text-sm text-gray-500">
-        Upload a Manulife group-retirement statement PDF. We parse the fund holdings (units,
-        unit price, value) and rebuild the account — no manual entry. Each upload replaces the
-        account's holdings with the statement's, so just drop in the newest statement.
+        Upload any investment statement PDF (Manulife, Principal, a brokerage…). Gemini reads it
+        and extracts the holdings — institution, account type, each fund's units, unit price and
+        value — and rebuilds the account. No manual entry, no per-format setup. Each upload
+        replaces the account's holdings with the statement's, so just drop in the newest one.
       </p>
 
       <div className="flex items-center gap-3 flex-wrap">
@@ -43,7 +44,7 @@ export default function StatementImportPanel() {
           className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileText className="h-4 w-4" />}
-          Choose statement PDF
+          {busy ? 'Reading statement…' : 'Choose statement PDF'}
         </button>
         <input ref={inputRef} type="file" accept="application/pdf,.pdf" className="hidden"
           onChange={e => onFile(e.target.files?.[0])} />
@@ -58,9 +59,9 @@ export default function StatementImportPanel() {
         <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-3 flex items-start gap-2">
           <CheckCircle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <div>
-            Imported <strong>{result.funds}</strong> funds into <strong>{result.account}</strong> as of{' '}
-            <strong>{result.as_of}</strong> — total{' '}
-            <strong>${Number(result.total).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong>.
+            Imported <strong>{result.holdings}</strong> holdings into <strong>{result.account}</strong>{' '}
+            ({result.institution}) as of <strong>{result.as_of}</strong> — total{' '}
+            <strong>{result.currency} ${Number(result.total).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong>.
             Check it on the Holdings page.
           </div>
         </div>

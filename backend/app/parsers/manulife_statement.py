@@ -74,9 +74,9 @@ def parse_manulife_pdf(pdf_bytes: bytes) -> dict:
     parsed_total = sum((f["value"] for f in funds), Decimal("0"))
     return {
         "institution": "Manulife",
+        "account_type": "RRSP",
         "currency": "CAD",
         "as_of": as_of or date.today(),
-        "statement_total": total,
-        "holdings_total": parsed_total,
-        "funds": funds,
+        "account_total": total or parsed_total,
+        "holdings": funds,   # each: {code, name, units, unit_price, value}
     }

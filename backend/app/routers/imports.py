@@ -652,6 +652,12 @@ async def import_statement(
             from app.parsers.manulife_statement import parse_manulife_pdf
             parsed = parse_manulife_pdf(pdf)
     except Exception as e:
+        msg = str(e)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            raise HTTPException(429,
+                "Gemini quota reached. The free tier allows only ~20 requests/day per model and "
+                "resets at midnight Pacific time. Enable billing on the API key's Google Cloud "
+                "project for much higher limits, or retry after the reset.")
         hint = "" if gemini_statement.is_configured() else (
             " — No GEMINI_API_KEY is set, so only the no-key fallback ran (it reads just the "
             "newest Manulife layout). Set GEMINI_API_KEY in the backend to parse any statement format.")

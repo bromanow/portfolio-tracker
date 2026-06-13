@@ -1184,14 +1184,19 @@ def statement_handoff(payload: dict, db: Session = Depends(get_db)):
         cutover = _date.today()
 
     base_ccy = (acct.base_currency or "CAD").upper()
-    # Net statement position per security (engine-consistent: BUY/OPENING_BALANCE add, SELL subtracts).
+    # Net statement position per security — include BOTH the statement rows (stmt-pos) AND switch
+    # journals (stmt-switch), so a fund switched IN (whose position lives in a JOURNAL, not an
+    # opening balance) is also zeroed. (engine-consistent: BUY/OPENING_BALANCE/JOURNAL signed,
+    # SELL subtracts.)
     rows = db.execute(_sql(
         "SELECT security_id, COALESCE(SUM(CASE "
-        "WHEN transaction_type IN ('BUY','OPENING_BALANCE') THEN quantity "
+        "WHEN transaction_type IN ('BUY','OPENING_BALANCE','JOURNAL') THEN quantity "
         "WHEN transaction_type = 'SELL' THEN -ABS(quantity) ELSE 0 END), 0) q "
-        "FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat "
+        "FROM transactions WHERE account_id = :aid "
+        "AND (external_ref LIKE :pos OR external_ref LIKE :sw) "
         "AND transaction_date <= :cut GROUP BY security_id"),
-        {"aid": account_id, "pat": f"stmt-pos-{account_id}-%", "cut": cutover}).fetchall()
+        {"aid": account_id, "pos": f"stmt-pos-{account_id}-%",
+         "sw": f"stmt-switch-{account_id}-%", "cut": cutover}).fetchall()
 
     # Replace any prior handoff so a new cutover date fully supersedes the old one.
     db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),

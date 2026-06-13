@@ -654,10 +654,18 @@ async def import_statement(
     except Exception as e:
         msg = str(e)
         if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
-            raise HTTPException(429,
-                "Gemini quota reached. The free tier allows only ~20 requests/day per model and "
-                "resets at midnight Pacific time. Enable billing on the API key's Google Cloud "
-                "project for much higher limits, or retry after the reset.")
+            import re as _re
+            secs_m = _re.search(r"(?:retry[_ ]?delay\D{0,15}|retry in\s*)(\d+(?:\.\d+)?)\s*s", msg, _re.I)
+            secs = round(float(secs_m.group(1))) if secs_m else None
+            if "PerDay" in msg or "per day" in msg.lower():
+                detail = ("Gemini DAILY quota reached — the free tier allows only ~20 requests/day "
+                          "per model and resets at midnight Pacific. Point GEMINI_API_KEY at a "
+                          "billed project for much higher limits, or retry after the reset.")
+            else:
+                wait = f"~{secs}s" if secs else "about a minute"
+                detail = (f"Gemini per-minute rate limit hit — wait {wait} and retry. The free tier "
+                          "allows only a few requests per minute; enable billing to remove the throttle.")
+            raise HTTPException(429, detail)
         hint = "" if gemini_statement.is_configured() else (
             " — No GEMINI_API_KEY is set, so only the no-key fallback ran (it reads just the "
             "newest Manulife layout). Set GEMINI_API_KEY in the backend to parse any statement format.")

@@ -40,6 +40,33 @@ def _run_nightly_ibkr_sync():
         db.close()
 
 
+def _run_plaid_sync():
+    """Re-sync every connected Plaid Item's holdings. Runs in the scheduler thread."""
+    from app.database import SessionLocal
+    from app.services import plaid_service as plaid
+    from app.models.plaid import PlaidItem
+
+    if not plaid.is_configured():
+        logger.info("Plaid sync skipped — Plaid not configured")
+        return
+    db = SessionLocal()
+    try:
+        items = db.query(PlaidItem).all()
+        ok = err = 0
+        for item in items:
+            try:
+                plaid.sync_item(db, item)
+                ok += 1
+            except Exception as e:
+                err += 1
+                logger.warning("Plaid sync failed (item=%s): %s", item.item_id, e)
+        logger.info("Plaid sync complete: %d item(s) ok, %d error(s)", ok, err)
+    except Exception:
+        logger.exception("Plaid sync crashed")
+    finally:
+        db.close()
+
+
 def _run_nightly_snapshot_refresh():
     """Refresh mv_snapshot_monthly after the IBKR sync populates new transactions."""
     from app.database import SessionLocal
@@ -83,9 +110,25 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
+    # Plaid holdings sync — cadence via PLAID_SYNC_FREQUENCY (nightly|weekly|monthly|off).
+    import os
+    freq = os.environ.get("PLAID_SYNC_FREQUENCY", "nightly").strip().lower()
+    plaid_trigger = {
+        "nightly": CronTrigger(hour=5, minute=0, timezone="UTC"),              # 00:00 ET nightly
+        "weekly":  CronTrigger(day_of_week="mon", hour=6, minute=0, timezone="UTC"),  # Monday
+        "monthly": CronTrigger(day=1, hour=6, minute=0, timezone="UTC"),       # 1st of month
+    }.get(freq)
+    if plaid_trigger is not None:
+        _scheduler.add_job(
+            _run_plaid_sync, plaid_trigger,
+            id="plaid_sync", name=f"Plaid holdings sync ({freq})",
+            replace_existing=True, misfire_grace_time=3600,
+        )
+
     _scheduler.start()
     logger.info(
-        "Scheduler started — IBKR sync at 00:15 ET, snapshot view refresh at 00:45 ET"
+        "Scheduler started — IBKR sync 00:15 ET, snapshot refresh 00:45 ET, Plaid sync: %s",
+        freq if plaid_trigger is not None else "off (manual only)",
     )
 
 

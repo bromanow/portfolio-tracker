@@ -1129,6 +1129,23 @@ export const openStatementFile = async (id: number) => {
 export const deleteStatement = (id: number) =>
   api.delete<{ deleted: number }>(`/imports/statements/${id}`).then(r => r.data)
 
+export interface ImportStatusRow {
+  account_id: number
+  brokerage: string
+  account: string
+  owner: string
+  account_type: string
+  source: string
+  last_loaded: string | null
+  latest_txn: string | null
+  days_since_load: number | null
+  stale: boolean
+  note: string | null
+}
+
+export const getImportStatus = () =>
+  api.get<ImportStatusRow[]>('/imports/status').then(r => r.data)
+
 export const statementHandoff = (accountId: number, cutoverDate: string) =>
   api.post<{ account: string; cutover_date: string; securities_unwound: number }>(
     '/imports/statements/handoff', { account_id: accountId, cutover_date: cutoverDate },

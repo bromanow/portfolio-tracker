@@ -893,6 +893,82 @@ def delete_statement_file(statement_id: int, db: Session = Depends(get_db)):
     return {"deleted": statement_id}
 
 
+@router.get("/status")
+def import_status(db: Session = Depends(get_db)):
+    """Per-account data-freshness overview for the Import → Status tab: last load + latest
+    transaction date per account, grouped by brokerage, with a per-source staleness flag."""
+    from datetime import date as _date, datetime as _dt
+    from sqlalchemy import text as _sql
+    from app.models.master import Account, Brokerage
+
+    def _maxmap(q: str) -> dict:
+        return {r[0]: r[1] for r in db.execute(_sql(q)).fetchall() if r[0] is not None}
+
+    latest_txn = _maxmap("SELECT account_id, MAX(transaction_date) FROM transactions GROUP BY account_id")
+    csv_load   = _maxmap("SELECT account_id, MAX(import_date) FROM import_batches GROUP BY account_id")
+    stmt_load  = _maxmap("SELECT account_id, MAX(uploaded_at) FROM statement_files GROUP BY account_id")
+    plaid_load = _maxmap("SELECT pa.account_id, MAX(pi.last_synced_at) FROM plaid_accounts pa "
+                         "JOIN plaid_items pi ON pa.plaid_item_id = pi.id GROUP BY pa.account_id")
+    stmt_accts = set(_maxmap("SELECT account_id, COUNT(*) FROM transactions "
+                             "WHERE external_ref LIKE 'stmt-pos-%' GROUP BY account_id").keys())
+
+    ibkr_row = db.execute(_sql("SELECT MAX(last_sync_at) FROM ibkr_flex_configs WHERE enabled = true")).fetchone()
+    ibkr_load = ibkr_row[0] if ibkr_row else None
+    st_row = db.execute(_sql("SELECT last_sync_status, last_sync_message FROM ibkr_flex_configs "
+                             "WHERE last_sync_at IS NOT NULL ORDER BY last_sync_at DESC LIMIT 1")).fetchone()
+    ibkr_status, ibkr_msg = (st_row[0], st_row[1]) if st_row else (None, None)
+
+    # Days-old thresholds before a source is "stale" (None = never auto-flag).
+    THRESH = {"Plaid": 3, "IBKR Flex": 4, "Statement": 130, "CSV": 45, "Manual": None}
+
+    def _as_date(v):
+        if v is None:
+            return None
+        return v.date() if isinstance(v, _dt) else v
+
+    today = _date.today()
+    brks = {b.id: b for b in db.query(Brokerage).all()}
+    rows = []
+    for a in db.query(Account).filter(Account.active == True).all():  # noqa: E712
+        aid = a.id
+        if aid in plaid_load:
+            source, loaded = "Plaid", plaid_load.get(aid)
+        elif aid in stmt_accts or aid in stmt_load:
+            source, loaded = "Statement", stmt_load.get(aid)
+        elif a.ibkr_alias:
+            source, loaded = "IBKR Flex", ibkr_load
+        elif aid in csv_load:
+            source, loaded = "CSV", csv_load.get(aid)
+        else:
+            source, loaded = "Manual", latest_txn.get(aid)
+
+        loaded_d = _as_date(loaded)
+        last_d = _as_date(latest_txn.get(aid))
+        days = (today - loaded_d).days if loaded_d else None
+        thr = THRESH.get(source)
+        stale = (loaded_d is None) or (thr is not None and days is not None and days > thr)
+        note = None
+        if source == "IBKR Flex" and ibkr_status and ibkr_status != "ok":
+            note = (ibkr_msg or ibkr_status)[:160]
+
+        rows.append({
+            "account_id": aid,
+            "brokerage": (brks[a.brokerage_id].name if a.brokerage_id in brks else "—"),
+            "account": a.name,
+            "owner": a.owner,
+            "account_type": a.account_type,
+            "source": source,
+            "last_loaded": loaded_d.isoformat() if loaded_d else None,
+            "latest_txn": last_d.isoformat() if last_d else None,
+            "days_since_load": days,
+            "stale": bool(stale),
+            "note": note,
+        })
+
+    rows.sort(key=lambda r: (not r["stale"], r["brokerage"] or "", r["account"] or ""))
+    return rows
+
+
 @router.post("/statements/handoff")
 def statement_handoff(payload: dict, db: Session = Depends(get_db)):
     """Freeze an account's statement-sourced positions as of a cutover date so a live

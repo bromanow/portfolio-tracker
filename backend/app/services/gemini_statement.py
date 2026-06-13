@@ -70,6 +70,27 @@ def _dec(v) -> Optional[Decimal]:
         return None
 
 
+def _loads_lenient(text: str) -> dict:
+    """Parse Gemini's JSON, tolerating the occasional code fence or trailing comma
+    it emits even in JSON mode."""
+    import re
+    raw = (text or "").strip()
+    if raw.startswith("```"):                       # strip ```json … ``` fences
+        raw = re.sub(r"^```[A-Za-z]*\n?", "", raw)
+        raw = re.sub(r"\n?```\s*$", "", raw).strip()
+    i, j = raw.find("{"), raw.rfind("}")            # narrow to the outermost object
+    if i != -1 and j > i:
+        raw = raw[i:j + 1]
+    try:
+        return json.loads(raw)
+    except Exception:
+        cleaned = re.sub(r",(\s*[}\]])", r"\1", raw)  # drop trailing commas before } or ]
+        try:
+            return json.loads(cleaned)
+        except Exception as e:
+            raise ValueError(f"Gemini returned non-JSON output: {e}")
+
+
 def parse_statement(pdf_bytes: bytes) -> dict:
     import google.generativeai as genai
 
@@ -86,10 +107,7 @@ def parse_statement(pdf_bytes: bytes) -> dict:
         {"mime_type": "application/pdf", "data": pdf_bytes},
         _PROMPT,
     ])
-    try:
-        obj = json.loads(resp.text)
-    except Exception as e:
-        raise ValueError(f"Gemini returned non-JSON output: {e}")
+    obj = _loads_lenient(resp.text)
 
     # ── Normalize to the importer's shape ────────────────────────────────────
     as_of: Optional[date] = None

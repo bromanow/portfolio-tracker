@@ -1036,9 +1036,12 @@ def reprocess_statements(account_id: Optional[int] = None, db: Session = Depends
             r = _reprocess_one(db, sf)
             results.append({"id": sf.id, "as_of": r["as_of"], "account": r["account"], "holdings": r["holdings"]})
         except HTTPException as e:
+            logger.warning("bulk reprocess: statement %s (%s) failed: %s", sf.id, iso, e.detail)
             results.append({"id": sf.id, "as_of": iso, "error": str(e.detail)})
         except Exception as e:
-            results.append({"id": sf.id, "as_of": iso, "error": str(e)[:200]})
+            db.rollback()
+            logger.exception("bulk reprocess: statement %s (%s) crashed", sf.id, iso)
+            results.append({"id": sf.id, "as_of": iso, "error": f"{type(e).__name__}: {e}"[:200]})
     return {"reprocessed": sum(1 for r in results if "error" not in r), "total": len(files), "results": results}
 
 

@@ -296,7 +296,11 @@ function AccountsTab() {
                     <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-28"
                       placeholder="IB alias"
                       value={editData.ibkr_alias ?? (a.ibkr_alias || '')} onChange={e => setEditData(d => ({ ...d, ibkr_alias: e.target.value }))} /></td>
-                    <td className="px-3 py-2">—</td>
+                    <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs"
+                      value={(editData.active ?? a.active) ? 'true' : 'false'}
+                      onChange={e => setEditData(d => ({ ...d, active: e.target.value === 'true' }))}>
+                      <option value="true">Yes</option><option value="false">No</option>
+                    </select></td>
                     <td className="px-3 py-2 text-right flex gap-2 justify-end">
                       <button onClick={() => updateMut.mutate({ id: a.id, data: editData })}
                         className="text-green-600 hover:text-green-800"><Check className="h-4 w-4" /></button>

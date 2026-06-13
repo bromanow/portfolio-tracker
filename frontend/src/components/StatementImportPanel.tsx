@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload } from 'lucide-react'
+import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload, ChevronRight, ChevronDown } from 'lucide-react'
 import { importStatement, listStatements, openStatementFile, deleteStatement, statementHandoff, getAccounts, type StoredStatement, type Account } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
@@ -25,6 +25,22 @@ export default function StatementImportPanel() {
   }, [])
 
   const owners = useMemo(() => [...new Set(accounts.map(a => a.owner).filter(Boolean))], [accounts])
+
+  // Stored statements grouped by account (newest first within each group).
+  const groupedStored = useMemo(() => {
+    const m = new Map<string, StoredStatement[]>()
+    for (const s of stored) {
+      const k = s.account || s.institution || 'Unassigned'
+      if (!m.has(k)) m.set(k, [])
+      m.get(k)!.push(s)
+    }
+    for (const arr of m.values()) arr.sort((a, b) => (b.as_of || '').localeCompare(a.as_of || ''))
+    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [stored])
+  const [collapsed, setCollapsed] = useState<Set<string>>(new Set())
+  const toggleGroup = (k: string) => setCollapsed(prev => {
+    const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n
+  })
 
   const onFile = async (file?: File) => {
     if (!file) return
@@ -155,30 +171,48 @@ export default function StatementImportPanel() {
       {stored.length > 0 && (
         <div className="pt-2 border-t border-gray-100">
           <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Stored statements</h3>
-          <div className="divide-y divide-gray-100">
-            {stored.map(s => (
-              <div key={s.id} className="flex items-center gap-3 py-2 text-sm">
-                <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-gray-800">
-                    {s.account || s.institution || s.original_filename}
-                    {s.as_of && <span className="text-gray-400"> · {s.as_of}</span>}
-                  </div>
-                  <div className="text-xs text-gray-400 truncate">
-                    {s.original_filename} · {fmtSize(s.byte_size)}
-                    {s.engine && <> · {s.engine}</>}
-                  </div>
+          <div className="space-y-1">
+            {groupedStored.map(([account, files]) => {
+              const open = !collapsed.has(account)
+              return (
+                <div key={account} className="border border-gray-100 rounded">
+                  <button onClick={() => toggleGroup(account)}
+                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-gray-50 rounded">
+                    {open ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
+                    <span className="font-medium text-gray-700 truncate">{account}</span>
+                    <span className="text-xs text-gray-400">{files.length}</span>
+                  </button>
+                  {open && (
+                    <div className="divide-y divide-gray-50 border-t border-gray-100">
+                      {files.map(s => (
+                        <div key={s.id} className="flex items-center gap-3 py-2 pl-7 pr-2 text-sm">
+                          <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-gray-800">
+                              {s.as_of || s.original_filename}
+                              {s.owner && <span className="text-gray-400"> · {s.owner}</span>}
+                            </div>
+                            <div className="text-xs text-gray-400 truncate">
+                              {s.original_filename} · {fmtSize(s.byte_size)}
+                              {s.engine && <> · {s.engine}</>}
+                            </div>
+                          </div>
+                          <button onClick={() => openStatementFile(s.id)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">
+                            <Eye className="h-3.5 w-3.5" /> View
+                          </button>
+                          <button onClick={() => onDelete(s)}
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <button onClick={() => openStatementFile(s.id)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">
-                  <Eye className="h-3.5 w-3.5" /> View
-                </button>
-                <button onClick={() => onDelete(s)}
-                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}

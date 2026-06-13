@@ -928,7 +928,10 @@ def import_status(db: Session = Depends(get_db)):
 
     today = _date.today()
     brks = {b.id: b for b in db.query(Brokerage).all()}
-    rows = []
+
+    # Active accounts only; CAD+USD sub-accounts (iTrade, Scotia Wealth, …) collapse into one
+    # logical row by stripping " (USD)" — mirrors the Performance "logical account" grouping.
+    merged: dict[tuple, dict] = {}
     for a in db.query(Account).filter(Account.active == True).all():  # noqa: E712
         aid = a.id
         if aid in plaid_load:
@@ -944,25 +947,44 @@ def import_status(db: Session = Depends(get_db)):
 
         loaded_d = _as_date(loaded)
         last_d = _as_date(latest_txn.get(aid))
-        days = (today - loaded_d).days if loaded_d else None
-        thr = THRESH.get(source)
-        stale = (loaded_d is None) or (thr is not None and days is not None and days > thr)
         note = None
         if source == "IBKR Flex" and ibkr_status and ibkr_status != "ok":
             note = (ibkr_msg or ibkr_status)[:160]
 
+        logical = a.name.replace(" (USD)", "").strip()
+        is_usd = a.name != logical
+        brokerage = brks[a.brokerage_id].name if a.brokerage_id in brks else "—"
+        key = (brokerage, a.owner, a.account_type, logical)
+
+        m = merged.get(key)
+        if m is None:
+            merged[key] = {
+                "account_id": aid, "primary_is_usd": is_usd, "brokerage": brokerage,
+                "account": logical, "owner": a.owner, "account_type": a.account_type,
+                "source": source, "loaded_d": loaded_d, "last_d": last_d, "note": note,
+            }
+        else:
+            if m["primary_is_usd"] and not is_usd:   # prefer the CAD sub as the row's primary
+                m["account_id"], m["primary_is_usd"], m["source"] = aid, False, source
+            if loaded_d and (m["loaded_d"] is None or loaded_d > m["loaded_d"]):
+                m["loaded_d"] = loaded_d
+            if last_d and (m["last_d"] is None or last_d > m["last_d"]):
+                m["last_d"] = last_d
+            if note and not m["note"]:
+                m["note"] = note
+
+    rows = []
+    for m in merged.values():
+        loaded_d, source = m["loaded_d"], m["source"]
+        days = (today - loaded_d).days if loaded_d else None
+        thr = THRESH.get(source)
+        stale = (loaded_d is None) or (thr is not None and days is not None and days > thr)
         rows.append({
-            "account_id": aid,
-            "brokerage": (brks[a.brokerage_id].name if a.brokerage_id in brks else "—"),
-            "account": a.name,
-            "owner": a.owner,
-            "account_type": a.account_type,
-            "source": source,
+            "account_id": m["account_id"], "brokerage": m["brokerage"], "account": m["account"],
+            "owner": m["owner"], "account_type": m["account_type"], "source": source,
             "last_loaded": loaded_d.isoformat() if loaded_d else None,
-            "latest_txn": last_d.isoformat() if last_d else None,
-            "days_since_load": days,
-            "stale": bool(stale),
-            "note": note,
+            "latest_txn": m["last_d"].isoformat() if m["last_d"] else None,
+            "days_since_load": days, "stale": bool(stale), "note": m["note"],
         })
 
     rows.sort(key=lambda r: (not r["stale"], r["brokerage"] or "", r["account"] or ""))

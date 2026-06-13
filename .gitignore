@@ -43,3 +43,6 @@ logs/
 .idea/
 *.swp
 *.swo
+
+# Uploaded statement PDFs (stored on a persistent volume in prod)
+backend/uploads/

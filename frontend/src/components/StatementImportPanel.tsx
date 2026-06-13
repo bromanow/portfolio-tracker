@@ -1,6 +1,6 @@
-import { useState, useRef } from 'react'
-import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles } from 'lucide-react'
-import { importStatement } from '../api/client'
+import { useState, useRef, useEffect } from 'react'
+import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2 } from 'lucide-react'
+import { importStatement, listStatements, openStatementFile, deleteStatement, type StoredStatement } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
@@ -8,15 +8,26 @@ export default function StatementImportPanel() {
   const [busy, setBusy] = useState(false)
   const [result, setResult] = useState<{ institution: string; account: string; as_of: string; holdings: number; total: string; currency: string; contribution: string | null; engine: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [stored, setStored] = useState<StoredStatement[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
+
+  const refresh = () => listStatements().then(setStored).catch(() => {})
+  useEffect(() => { refresh() }, [])
 
   const onFile = async (file?: File) => {
     if (!file) return
     setBusy(true); setError(null); setResult(null)
-    try { setResult(await importStatement(file, owner)) }
+    try { setResult(await importStatement(file, owner)); refresh() }
     catch (e: any) { setError(e?.response?.data?.detail ?? 'Import failed') }
     finally { setBusy(false); if (inputRef.current) inputRef.current.value = '' }
   }
+
+  const onDelete = async (s: StoredStatement) => {
+    if (!confirm(`Remove the stored PDF "${s.original_filename}"? (Imported holdings stay.)`)) return
+    try { await deleteStatement(s.id); refresh() } catch { /* ignore */ }
+  }
+
+  const fmtSize = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`
 
   return (
     <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4 max-w-2xl">
@@ -68,6 +79,37 @@ export default function StatementImportPanel() {
               <>, period contribution{' '}
                 <strong>${Number(result.contribution).toLocaleString('en-CA', { minimumFractionDigits: 2 })}</strong></>
             )}. Check it on the Holdings &amp; Performance pages.
+          </div>
+        </div>
+      )}
+
+      {stored.length > 0 && (
+        <div className="pt-2 border-t border-gray-100">
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Stored statements</h3>
+          <div className="divide-y divide-gray-100">
+            {stored.map(s => (
+              <div key={s.id} className="flex items-center gap-3 py-2 text-sm">
+                <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <div className="truncate text-gray-800">
+                    {s.account || s.institution || s.original_filename}
+                    {s.as_of && <span className="text-gray-400"> · {s.as_of}</span>}
+                  </div>
+                  <div className="text-xs text-gray-400 truncate">
+                    {s.original_filename} · {fmtSize(s.byte_size)}
+                    {s.engine && <> · {s.engine}</>}
+                  </div>
+                </div>
+                <button onClick={() => openStatementFile(s.id)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">
+                  <Eye className="h-3.5 w-3.5" /> View
+                </button>
+                <button onClick={() => onDelete(s)}
+                  className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
           </div>
         </div>
       )}

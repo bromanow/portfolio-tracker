@@ -39,5 +39,25 @@ class RawTransaction(Base):
     transaction: Mapped[Optional["Transaction"]] = relationship("Transaction", back_populates="raw_import", foreign_keys=[transaction_id])  # type: ignore
 
 
+class StatementFile(Base):
+    """A stored source statement PDF (Activity → Import → Statements), kept on disk on
+    a persistent volume with metadata here — mirrors the CRE app's brokerage_uploads."""
+    __tablename__ = "statement_files"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    account_id: Mapped[Optional[int]] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=True)
+    institution: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    owner: Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    as_of: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    stored_filename: Mapped[str] = mapped_column(String(255), nullable=False)   # name on disk
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content_type: Mapped[str] = mapped_column(String(80), default="application/pdf")
+    byte_size: Mapped[int] = mapped_column(Integer, default=0)
+    engine: Mapped[Optional[str]] = mapped_column(String(20), nullable=True)  # gemini | regex
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    account: Mapped[Optional["Account"]] = relationship("Account")  # type: ignore
+
+
 from app.models.master import Brokerage, Account  # noqa: E402
 from app.models.transactions import Transaction  # noqa: E402

@@ -1102,6 +1102,32 @@ export const importStatement = (file: File, owner: string) => {
   ).then(r => r.data)
 }
 
+export interface StoredStatement {
+  id: number
+  account_id: number | null
+  account: string | null
+  institution: string | null
+  owner: string | null
+  as_of: string | null
+  original_filename: string | null
+  byte_size: number
+  engine: string | null
+  uploaded_at: string | null
+}
+
+export const listStatements = () =>
+  api.get<StoredStatement[]>('/imports/statements').then(r => r.data)
+
+export const openStatementFile = async (id: number) => {
+  const r = await api.get(`/imports/statements/${id}/file`, { responseType: 'blob' })
+  const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+export const deleteStatement = (id: number) =>
+  api.delete<{ deleted: number }>(`/imports/statements/${id}`).then(r => r.data)
+
 export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
 

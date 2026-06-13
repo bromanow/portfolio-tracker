@@ -634,14 +634,16 @@ async def import_statement(
     regex parser when no GEMINI_API_KEY is set."""
     from decimal import Decimal
     from sqlalchemy import text as _sql
-    from app.services import gemini_statement
+    from app.services import gemini_statement, statement_store
     from app.models.master import Brokerage, Account, Security
     from app.models.transactions import Transaction
     from app.models.prices import MarketPrice, HistoricalPrice
+    from app.models.imports import StatementFile
 
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(400, "Please upload a statement PDF.")
     pdf = await file.read()
+    original_filename = file.filename or "statement.pdf"
     try:
         if gemini_statement.is_configured():
             parsed = gemini_statement.parse_statement(pdf)
@@ -789,6 +791,25 @@ async def import_statement(
     except Exception as e:
         logger.warning("statement import: snapshot recompute failed for acct %s: %s", acct.id, e)
 
+    # Store the source PDF on disk + a metadata row (replaces a prior file for same acct+date).
+    try:
+        for old in db.query(StatementFile).filter(
+                StatementFile.account_id == acct.id, StatementFile.as_of == as_of).all():
+            statement_store.remove(old.stored_filename)
+            db.delete(old)
+        stored = statement_store.stored_name(original_filename)
+        statement_store.save(stored, pdf)
+        db.add(StatementFile(
+            account_id=acct.id, institution=institution[:120], owner=owner, as_of=as_of,
+            stored_filename=stored, original_filename=original_filename[:255],
+            content_type="application/pdf", byte_size=len(pdf),
+            engine=("gemini" if gemini_statement.is_configured() else "regex"),
+        ))
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        logger.warning("statement import: storing PDF failed for acct %s: %s", acct.id, e)
+
     total = sum((h["value"] for h in parsed["holdings"]), Decimal("0"))
     return {
         "institution": institution, "account": acct.name, "as_of": iso,
@@ -797,3 +818,57 @@ async def import_statement(
         "contribution": contribution_recorded,
         "engine": "gemini" if gemini_statement.is_configured() else "regex",
     }
+
+
+@router.get("/statements")
+def list_statements(db: Session = Depends(get_db)):
+    """Stored statement PDFs, newest first (for the Statements import panel)."""
+    from app.models.imports import StatementFile
+    from app.models.master import Account
+    rows = (db.query(StatementFile)
+            .order_by(StatementFile.uploaded_at.desc(), StatementFile.id.desc()).all())
+    acct_names = {a.id: a.name for a in db.query(Account).all()}
+    return [{
+        "id": r.id,
+        "account_id": r.account_id,
+        "account": acct_names.get(r.account_id),
+        "institution": r.institution,
+        "owner": r.owner,
+        "as_of": r.as_of.isoformat() if r.as_of else None,
+        "original_filename": r.original_filename,
+        "byte_size": r.byte_size,
+        "engine": r.engine,
+        "uploaded_at": r.uploaded_at.isoformat() if r.uploaded_at else None,
+    } for r in rows]
+
+
+@router.get("/statements/{statement_id}/file")
+def view_statement_file(statement_id: int, db: Session = Depends(get_db)):
+    """Stream a stored statement PDF inline (frontend fetches as a blob and opens it)."""
+    import os
+    from fastapi.responses import FileResponse
+    from app.models.imports import StatementFile
+    from app.services import statement_store
+    r = db.query(StatementFile).filter(StatementFile.id == statement_id).first()
+    if not r:
+        raise HTTPException(404, "Statement not found.")
+    fp = statement_store.path_for(r.stored_filename)
+    if not os.path.exists(fp):
+        raise HTTPException(404, "File missing on disk (was the storage volume reset?).")
+    return FileResponse(
+        fp, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{r.original_filename or "statement.pdf"}"'},
+    )
+
+
+@router.delete("/statements/{statement_id}")
+def delete_statement_file(statement_id: int, db: Session = Depends(get_db)):
+    """Remove a stored statement PDF (does not touch the imported holdings/flows)."""
+    from app.models.imports import StatementFile
+    from app.services import statement_store
+    r = db.query(StatementFile).filter(StatementFile.id == statement_id).first()
+    if not r:
+        raise HTTPException(404, "Statement not found.")
+    statement_store.remove(r.stored_filename)
+    db.delete(r); db.commit()
+    return {"deleted": statement_id}

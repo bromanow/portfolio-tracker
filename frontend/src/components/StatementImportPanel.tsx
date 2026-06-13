@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
-import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload, ChevronRight, ChevronDown } from 'lucide-react'
-import { importStatement, listStatements, openStatementFile, deleteStatement, statementHandoff, getAccounts, type StoredStatement, type Account } from '../api/client'
+import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react'
+import { importStatement, listStatements, openStatementFile, deleteStatement, reprocessStatement, reprocessStatements, statementHandoff, getAccounts, type StoredStatement, type Account } from '../api/client'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
@@ -62,6 +62,26 @@ export default function StatementImportPanel() {
   const onDelete = async (s: StoredStatement) => {
     if (!confirm(`Remove the stored PDF "${s.original_filename}"? (Imported holdings stay.)`)) return
     try { await deleteStatement(s.id); refresh() } catch { /* ignore */ }
+  }
+
+  // Reprocess (re-import) from the already-stored PDFs — no re-upload needed.
+  const [reproc, setReproc] = useState<string | null>(null)
+  const onReprocess = async (s: StoredStatement) => {
+    setReproc(`s${s.id}`); setError(null)
+    try { await reprocessStatement(s.id); refresh() }
+    catch (e: any) { setError(e?.response?.data?.detail ?? 'Reprocess failed') }
+    finally { setReproc(null) }
+  }
+  const onReprocessGroup = async (account: string, accountId: number | null) => {
+    if (!accountId) return
+    if (!confirm(`Reprocess all "${account}" statements (oldest → newest)? Re-parses each PDF via Gemini, so it uses quota.`)) return
+    setReproc(`g${accountId}`); setError(null)
+    try {
+      const r = await reprocessStatements(accountId); refresh()
+      const failed = r.results.filter(x => x.error)
+      if (failed.length) setError(`${r.reprocessed}/${r.total} done; failed: ${failed.map(x => x.as_of || x.id).join(', ')}`)
+    } catch (e: any) { setError(e?.response?.data?.detail ?? 'Reprocess failed') }
+    finally { setReproc(null) }
   }
 
   // ── Hand off to a live feed (e.g. Plaid) ──
@@ -176,13 +196,26 @@ export default function StatementImportPanel() {
               const open = !collapsed.has(account)
               return (
                 <div key={account} className="border border-gray-100 rounded">
-                  <button onClick={() => toggleGroup(account)}
-                    className="w-full flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-gray-50 rounded">
-                    {open ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                          : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
-                    <span className="font-medium text-gray-700 truncate">{account}</span>
-                    <span className="text-xs text-gray-400">{files.length}</span>
-                  </button>
+                  <div className="flex items-center">
+                    <button onClick={() => toggleGroup(account)}
+                      className="flex-1 flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-gray-50 rounded">
+                      {open ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
+                      <span className="font-medium text-gray-700 truncate">{account}</span>
+                      <span className="text-xs text-gray-400">{files.length}</span>
+                    </button>
+                    {files[0].account_id != null && (
+                      <button onClick={() => onReprocessGroup(account, files[0].account_id)}
+                        disabled={reproc != null}
+                        title="Re-import all statements in this account from the stored PDFs"
+                        className="flex items-center gap-1 px-2 py-1 mr-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40">
+                        {reproc === `g${files[0].account_id}`
+                          ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          : <RefreshCw className="h-3.5 w-3.5" />}
+                        Reprocess all
+                      </button>
+                    )}
+                  </div>
                   {open && (
                     <div className="divide-y divide-gray-50 border-t border-gray-100">
                       {files.map(s => (
@@ -198,6 +231,13 @@ export default function StatementImportPanel() {
                               {s.engine && <> · {s.engine}</>}
                             </div>
                           </div>
+                          <button onClick={() => onReprocess(s)} disabled={reproc != null}
+                            title="Re-import this statement from the stored PDF"
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40">
+                            {reproc === `s${s.id}`
+                              ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              : <RefreshCw className="h-3.5 w-3.5" />}
+                          </button>
                           <button onClick={() => openStatementFile(s.id)}
                             className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">
                             <Eye className="h-3.5 w-3.5" /> View

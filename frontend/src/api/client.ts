@@ -1129,6 +1129,13 @@ export const openStatementFile = async (id: number) => {
 export const deleteStatement = (id: number) =>
   api.delete<{ deleted: number }>(`/imports/statements/${id}`).then(r => r.data)
 
+export const reprocessStatement = (id: number) =>
+  api.post<{ account: string; as_of: string; holdings: number }>(`/imports/statements/${id}/reprocess`).then(r => r.data)
+
+export const reprocessStatements = (accountId?: number) =>
+  api.post<{ reprocessed: number; total: number; results: { id: number; as_of: string | null; account?: string; holdings?: number; error?: string }[] }>(
+    `/imports/statements/reprocess${accountId ? `?account_id=${accountId}` : ''}`).then(r => r.data)
+
 export interface ImportStatusRow {
   account_id: number
   brokerage: string

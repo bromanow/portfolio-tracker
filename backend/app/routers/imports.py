@@ -621,18 +621,19 @@ async def import_statement(
     account_id: Optional[int] = Form(None),
     db: Session = Depends(get_db),
 ):
-    """Parse an investment statement PDF into a holdings time series.
+    """Upload, parse, import and store an investment statement PDF."""
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(400, "Please upload a statement PDF.")
+    pdf = await file.read()
+    return process_statement_bytes(db, pdf, owner, account_id, file.filename or "statement.pdf")
 
-    Each statement is recorded AS OF its period-end date, as the per-fund unit
-    *delta* since the prior statement (cash-neutral OPENING_BALANCE rows), so the
-    account's value history is preserved across successive statements (the chart
-    shows the real value at each statement date, not just the latest). The period's
-    net contribution is recorded as a PLAN_CONTRIBUTION flow — an external inflow for
-    the Modified-Dietz return calc, but cash-neutral in valuation (its value is
-    already inside the holdings). Re-uploading the same statement is idempotent.
 
-    Uses Gemini for institution-agnostic extraction; falls back to the Manulife
-    regex parser when no GEMINI_API_KEY is set."""
+def process_statement_bytes(db, pdf: bytes, owner: str, account_id: Optional[int],
+                            original_filename: str, store: bool = True) -> dict:
+    """Parse a statement PDF and import it. Value-only statements (no share counts, e.g.
+    Principal) are tracked cash-neutrally; unit-bearing statements (Manulife) use true
+    BUY/SELL/DEPOSIT. Shared by the upload endpoint and reprocess-from-storage. `store`
+    saves the PDF + a StatementFile row (off when reprocessing an already-stored file)."""
     from decimal import Decimal
     from sqlalchemy import text as _sql
     from app.services import gemini_statement, statement_store
@@ -641,10 +642,6 @@ async def import_statement(
     from app.models.prices import MarketPrice, HistoricalPrice
     from app.models.imports import StatementFile
 
-    if not (file.filename or "").lower().endswith(".pdf"):
-        raise HTTPException(400, "Please upload a statement PDF.")
-    pdf = await file.read()
-    original_filename = file.filename or "statement.pdf"
     try:
         if gemini_statement.is_configured():
             parsed = gemini_statement.parse_statement(pdf)
@@ -879,23 +876,25 @@ async def import_statement(
         logger.warning("statement import: snapshot recompute failed for acct %s: %s", acct.id, e)
 
     # Store the source PDF on disk + a metadata row (replaces a prior file for same acct+date).
-    try:
-        for old in db.query(StatementFile).filter(
-                StatementFile.account_id == acct.id, StatementFile.as_of == as_of).all():
-            statement_store.remove(old.stored_filename)
-            db.delete(old)
-        stored = statement_store.stored_name(original_filename)
-        statement_store.save(stored, pdf)
-        db.add(StatementFile(
-            account_id=acct.id, institution=institution[:120], owner=owner, as_of=as_of,
-            stored_filename=stored, original_filename=original_filename[:255],
-            content_type="application/pdf", byte_size=len(pdf),
-            engine=("gemini" if gemini_statement.is_configured() else "regex"),
-        ))
-        db.commit()
-    except Exception as e:
-        db.rollback()
-        logger.warning("statement import: storing PDF failed for acct %s: %s", acct.id, e)
+    # Skipped when reprocessing an already-stored file (store=False).
+    if store:
+        try:
+            for old in db.query(StatementFile).filter(
+                    StatementFile.account_id == acct.id, StatementFile.as_of == as_of).all():
+                statement_store.remove(old.stored_filename)
+                db.delete(old)
+            stored = statement_store.stored_name(original_filename)
+            statement_store.save(stored, pdf)
+            db.add(StatementFile(
+                account_id=acct.id, institution=institution[:120], owner=owner, as_of=as_of,
+                stored_filename=stored, original_filename=original_filename[:255],
+                content_type="application/pdf", byte_size=len(pdf),
+                engine=("gemini" if gemini_statement.is_configured() else "regex"),
+            ))
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            logger.warning("statement import: storing PDF failed for acct %s: %s", acct.id, e)
 
     total = sum((h["value"] for h in parsed["holdings"]), Decimal("0"))
     return {
@@ -959,6 +958,51 @@ def delete_statement_file(statement_id: int, db: Session = Depends(get_db)):
     statement_store.remove(r.stored_filename)
     db.delete(r); db.commit()
     return {"deleted": statement_id}
+
+
+def _reprocess_one(db, sf) -> dict:
+    import os
+    from app.services import statement_store
+    fp = statement_store.path_for(sf.stored_filename)
+    if not os.path.exists(fp):
+        raise HTTPException(404, "File missing on disk (was the storage volume reset?).")
+    with open(fp, "rb") as f:
+        pdf = f.read()
+    return process_statement_bytes(db, pdf, sf.owner or "", sf.account_id,
+                                   sf.original_filename or "statement.pdf", store=False)
+
+
+@router.post("/statements/{statement_id}/reprocess")
+def reprocess_statement(statement_id: int, db: Session = Depends(get_db)):
+    """Re-run the import on an already-stored statement PDF, into its same account — e.g.
+    after a parser/model change, with no re-upload needed."""
+    from app.models.imports import StatementFile
+    sf = db.query(StatementFile).filter(StatementFile.id == statement_id).first()
+    if not sf:
+        raise HTTPException(404, "Statement not found.")
+    return _reprocess_one(db, sf)
+
+
+@router.post("/statements/reprocess")
+def reprocess_statements(account_id: Optional[int] = None, db: Session = Depends(get_db)):
+    """Reprocess all stored statements (optionally only one account), oldest→newest so the
+    delta/matching stays consistent. Re-parses each PDF via Gemini, so it consumes quota."""
+    from app.models.imports import StatementFile
+    q = db.query(StatementFile)
+    if account_id:
+        q = q.filter(StatementFile.account_id == account_id)
+    files = q.order_by(StatementFile.as_of.asc(), StatementFile.id.asc()).all()
+    results = []
+    for sf in files:
+        iso = sf.as_of.isoformat() if sf.as_of else None
+        try:
+            r = _reprocess_one(db, sf)
+            results.append({"id": sf.id, "as_of": r["as_of"], "account": r["account"], "holdings": r["holdings"]})
+        except HTTPException as e:
+            results.append({"id": sf.id, "as_of": iso, "error": str(e.detail)})
+        except Exception as e:
+            results.append({"id": sf.id, "as_of": iso, "error": str(e)[:200]})
+    return {"reprocessed": sum(1 for r in results if "error" not in r), "total": len(files), "results": results}
 
 
 @router.get("/status")

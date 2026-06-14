@@ -114,6 +114,16 @@ const FLOW_LABEL: Record<ChartEventItem['type'], string> = {
   DEPOSIT: 'Deposit', WITHDRAWAL: 'Withdrawal',
   TRANSFER_IN: 'Transfer in', TRANSFER_OUT: 'Transfer out', JOURNAL: 'Transfer',
 }
+// Cash-flow dot categories (which event dots to show on the chart).
+const FLOW_OPTIONS = [
+  { value: 'deposit', label: 'Deposits' },
+  { value: 'withdrawal', label: 'Withdrawals' },
+  { value: 'transfer', label: 'Transfers' },
+]
+const FLOW_CAT: Record<ChartEventItem['type'], string> = {
+  DEPOSIT: 'deposit', WITHDRAWAL: 'withdrawal',
+  TRANSFER_IN: 'transfer', TRANSFER_OUT: 'transfer', JOURNAL: 'transfer',
+}
 
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
@@ -339,6 +349,7 @@ function PerformanceInner() {
   const [groupBy, setGroupBy]         = useState<GroupBy>('account_type')
   const [period, setPeriod]           = useState<Period>('ALL')
   const [showInvested, setShowInvested] = useState(false)
+  const [flowFilter, setFlowFilter] = useState<string[]>([])   // [] = show all cash-flow dots
   // 'value' = dollar axis auto-fitted to the data; 'indexed' = every series rebased
   // to its first visible point and shown as % change, so different-sized accounts
   // become directly comparable on one scale.
@@ -448,7 +459,15 @@ function PerformanceInner() {
   const timeline = timelineQ.data
   const labels   = timeline?.series_labels ?? []
   const points   = timeline?.points ?? []
-  const events   = timeline?.events ?? []
+  const allEvents = timeline?.events ?? []
+  // Only the cash-flow types the user has chosen to see (empty filter = all).
+  const events = useMemo(() => {
+    if (!flowFilter.length) return allEvents
+    const sel = new Set(flowFilter)
+    return allEvents
+      .map(e => ({ ...e, items: e.items.filter(it => sel.has(FLOW_CAT[it.type])) }))
+      .filter(e => e.items.length > 0)
+  }, [allEvents, flowFilter])
   const returns  = returnsQ.data ?? []
 
   // Map date → event (for tooltip)
@@ -874,6 +893,12 @@ function PerformanceInner() {
             selected={filterAccounts}
             onChange={setFilterAccounts}
             disabled={accountOptions.length === 0}
+          />
+          <MultiSelectDropdown
+            placeholder="All cash flows"
+            options={FLOW_OPTIONS}
+            selected={flowFilter}
+            onChange={setFlowFilter}
           />
           {hasFilters && (
             <button

@@ -7,6 +7,7 @@ import {
 import type { Account } from '../api/client'
 import { RefreshCw, Clock, X, SlidersHorizontal, LogOut } from 'lucide-react'
 import MultiSelectDropdown from './MultiSelectDropdown'
+import DatePicker from './DatePicker'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
@@ -190,11 +191,13 @@ export default function Header() {
                 ))}
               </div>
               <div className="flex items-center gap-1">
-                <input type="date" value={displayFrom} onChange={e => setCustomFrom(e.target.value)}
-                  className={`border rounded px-2 py-1 text-xs text-gray-600 w-30 ${timeRange === 'CUSTOM' ? 'border-blue-400' : 'border-gray-200'}`} />
+                <DatePicker value={displayFrom || ''} onChange={setCustomFrom}
+                  min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+                  placeholder="From" highlight={timeRange === 'CUSTOM'} />
                 <span className="text-gray-400 text-xs">→</span>
-                <input type="date" value={displayTo} onChange={e => setCustomTo(e.target.value)}
-                  className={`border rounded px-2 py-1 text-xs text-gray-600 w-30 ${timeRange === 'CUSTOM' ? 'border-blue-400' : 'border-gray-200'}`} />
+                <DatePicker value={displayTo || ''} onChange={setCustomTo}
+                  min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+                  placeholder="To" highlight={timeRange === 'CUSTOM'} />
               </div>
             </div>
           </>
@@ -344,11 +347,13 @@ export default function Header() {
                   ))}
                 </div>
                 <div className="flex items-center gap-2 mt-2">
-                  <input type="date" value={displayFrom} onChange={e => setCustomFrom(e.target.value)}
-                    className={`flex-1 border rounded-lg px-3 py-2 text-sm text-gray-600 ${timeRange === 'CUSTOM' ? 'border-blue-400' : 'border-gray-200'}`} />
+                  <DatePicker value={displayFrom || ''} onChange={setCustomFrom}
+                    min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+                    placeholder="From" highlight={timeRange === 'CUSTOM'} />
                   <span className="text-gray-400 text-sm">→</span>
-                  <input type="date" value={displayTo} onChange={e => setCustomTo(e.target.value)}
-                    className={`flex-1 border rounded-lg px-3 py-2 text-sm text-gray-600 ${timeRange === 'CUSTOM' ? 'border-blue-400' : 'border-gray-200'}`} />
+                  <DatePicker value={displayTo || ''} onChange={setCustomTo}
+                    min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+                    placeholder="To" highlight={timeRange === 'CUSTOM'} />
                 </div>
               </div>
             )}

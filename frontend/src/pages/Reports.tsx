@@ -19,6 +19,7 @@ import {
 import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import Transactions from './Transactions'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
+import DatePicker from '../components/DatePicker'
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -257,11 +258,11 @@ function RealizedGainsReport() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">From Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <DatePicker value={dateFrom || ''} onChange={setDateFrom} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">To Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          <DatePicker value={dateTo || ''} onChange={setDateTo} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
         </div>
       </div>
 
@@ -645,11 +646,11 @@ function IncomeReport() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">From Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => setDateFrom(e.target.value)} />
+          <DatePicker value={dateFrom || ''} onChange={setDateFrom} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">To Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => setDateTo(e.target.value)} />
+          <DatePicker value={dateTo || ''} onChange={setDateTo} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
         </div>
       </div>
 
@@ -1573,22 +1574,14 @@ function CashStatementReport() {
 
         <div>
           <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input
-            type="date"
-            value={fromDate}
-            onChange={e => { setFromDate(e.target.value); setPage(1) }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <DatePicker value={fromDate || ''} onChange={v => { setFromDate(v); setPage(1) }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!fromDate} className="w-36" />
         </div>
 
         <div>
           <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input
-            type="date"
-            value={toDate}
-            onChange={e => { setToDate(e.target.value); setPage(1) }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-          />
+          <DatePicker value={toDate || ''} onChange={v => { setToDate(v); setPage(1) }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!toDate} className="w-36" />
         </div>
 
         {(fromDate || toDate) && (
@@ -2237,13 +2230,13 @@ function ReturnDetailReport() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">From</label>
-          <input type="date" value={fromDate} onChange={e => { setFromDate(e.target.value); setPreset('custom') }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <DatePicker value={fromDate || ''} onChange={v => { setFromDate(v); setPreset('custom') }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!fromDate} className="w-36" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">To</label>
-          <input type="date" value={toDate} onChange={e => { setToDate(e.target.value); setPreset('custom') }}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+          <DatePicker value={toDate || ''} onChange={v => { setToDate(v); setPreset('custom') }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!toDate} className="w-36" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">Brokerage</label>
@@ -2529,11 +2522,11 @@ function FxRatesReport() {
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">From Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setYearFilter('') }} />
+          <DatePicker value={dateFrom || ''} onChange={v => { setDateFrom(v); setYearFilter('') }} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
         </div>
         <div>
           <label className="block text-xs text-gray-500 mb-1">To Date</label>
-          <input type="date" className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={dateTo} onChange={e => { setDateTo(e.target.value); setYearFilter('') }} />
+          <DatePicker value={dateTo || ''} onChange={v => { setDateTo(v); setYearFilter('') }} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
         </div>
         {(yearFilter || dateFrom || dateTo) && (
           <button className="text-xs text-blue-600 hover:underline" onClick={() => { setYearFilter(''); setDateFrom(''); setDateTo('') }}>Clear filters</button>

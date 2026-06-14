@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { getTransactions, getAccounts, getSecurities, createTransaction, createTransferPair, deleteTransaction, updateTransaction, deleteAllTransactions, getFxRateLookup, bulkUpdateTransactions, bulkDeleteTransactions } from '../api/client'
 import type { Transaction, Security, Account, TransferPairCreate } from '../api/client'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, Plus, Download, RefreshCw } from 'lucide-react'
+import DatePicker from '../components/DatePicker'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 
@@ -830,19 +831,11 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
         />
 
         <div className="flex items-center gap-1 text-xs text-gray-500">
-          <input
-            type="date"
-            className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600"
-            value={dateFrom}
-            onChange={e => { setDateFrom(e.target.value); setPage(1) }}
-          />
+          <DatePicker value={dateFrom || ''} onChange={v => { setDateFrom(v); setPage(1) }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} />
           <span className="text-gray-400">→</span>
-          <input
-            type="date"
-            className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600"
-            value={dateTo}
-            onChange={e => { setDateTo(e.target.value); setPage(1) }}
-          />
+          <DatePicker value={dateTo || ''} onChange={v => { setDateTo(v); setPage(1) }}
+            max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} />
         </div>
 
         {(txTypes.length > 0 || ticker || dateFrom || dateTo) && (

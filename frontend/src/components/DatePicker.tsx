@@ -22,7 +22,7 @@ const fmtDisplay = (s: string) => {
 }
 
 export default function DatePicker({
-  value, onChange, min, max, placeholder = 'Pick date', highlight = false,
+  value, onChange, min, max, placeholder = 'Pick date', highlight = false, className = 'w-32',
 }: {
   value: string
   onChange: (v: string) => void
@@ -30,6 +30,7 @@ export default function DatePicker({
   max?: string
   placeholder?: string
   highlight?: boolean
+  className?: string
 }) {
   const [open, setOpen] = useState(false)
   const wrapRef = useRef<HTMLDivElement>(null)
@@ -84,7 +85,7 @@ export default function DatePicker({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 border rounded px-2 py-1 text-xs w-32 focus:outline-none focus:ring-1 focus:ring-blue-400 ${
+        className={`flex items-center gap-1.5 border rounded px-2 py-1 text-xs ${className} focus:outline-none focus:ring-1 focus:ring-blue-400 ${
           highlight ? 'border-blue-400 text-blue-700' : 'border-gray-200 text-gray-600'
         }`}
       >

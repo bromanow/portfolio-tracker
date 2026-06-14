@@ -280,13 +280,14 @@ def _upsert_security(db: Session, psec: dict, on: date):
 
 def _write_price(db: Session, security_id: int, native_price: Decimal, ccy: str, on: date):
     from app.models.prices import MarketPrice, HistoricalPrice
+    from sqlalchemy.dialects.postgresql import insert as _pg_insert
     fx = _fx_to_cad(db, ccy, on)
     price_cad = (native_price * fx).quantize(Decimal("0.0001"))
 
     mp = db.query(MarketPrice).filter(MarketPrice.security_id == security_id).first()
     if not mp:
         mp = MarketPrice(security_id=security_id, price=native_price, currency=ccy)
-        db.add(mp)
+        db.add(mp); db.flush()   # flush so a second write of the same security finds it (autoflush-safe)
     mp.price = native_price
     mp.currency = ccy
     mp.price_cad = price_cad
@@ -294,15 +295,16 @@ def _write_price(db: Session, security_id: int, native_price: Decimal, ccy: str,
     mp.fetched_at = datetime.utcnow()
     mp.source = "plaid"
 
-    hp = (db.query(HistoricalPrice)
-          .filter(HistoricalPrice.security_id == security_id, HistoricalPrice.price_date == on)
-          .first())
-    if not hp:
-        hp = HistoricalPrice(security_id=security_id, price_date=on, currency=ccy, source="plaid")
-        db.add(hp)
-    hp.close_price = native_price
-    hp.close_price_cad = price_cad
-    hp.currency = ccy
+    # Idempotent historical price — upsert on the (security_id, price_date) unique constraint, so a
+    # security written more than once in a sync (e.g. two Plaid records resolving to one merged fund)
+    # updates instead of inserting a duplicate and crashing the whole sync.
+    db.execute(
+        _pg_insert(HistoricalPrice.__table__)
+        .values(security_id=security_id, price_date=on, close_price=native_price,
+                close_price_cad=price_cad, currency=ccy, source="plaid")
+        .on_conflict_do_update(
+            index_elements=["security_id", "price_date"],
+            set_={"close_price": native_price, "close_price_cad": price_cad, "currency": ccy}))
 
 
 def _get_or_create_account(db: Session, item, pacct: dict, owner: str):

@@ -2060,16 +2060,18 @@ function SystemTab() {
             <h3 className="font-semibold text-gray-800">Restart Backend</h3>
           </div>
           <p className="text-sm text-gray-500">
-            Use the <strong>Render dashboard</strong> to restart or redeploy the backend service. In-process restarts are not supported in cloud deployments.
+            Restart the backend service — it will be back online in a few seconds. Useful
+            after changing environment variables or if the server is misbehaving.
           </p>
-          <a
-            href="https://dashboard.render.com"
-            target="_blank"
-            rel="noopener noreferrer"
-            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-100 text-gray-700 text-sm font-medium hover:bg-gray-200 transition-colors"
+          <button
+            onClick={handleRestart}
+            disabled={restartStatus === 'restarting'}
+            className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-lg bg-gray-700 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
-            <Power className="h-4 w-4" /> Open Render Dashboard
-          </a>
+            {restartStatus === 'restarting'
+              ? <><Loader2 className="h-4 w-4 animate-spin" /> Restarting…</>
+              : <><Power className="h-4 w-4" /> Restart Backend</>}
+          </button>
         </div>
 
         {/* Reload page */}

@@ -85,8 +85,22 @@ def db_optimize(db: Session = Depends(get_db)):
 
 @router.post("/restart")
 def restart():
-    """No-op on cloud deployments — use the Render dashboard 'Manual Deploy' instead."""
-    return {"message": "Restart not supported in cloud deployment. Use the Render dashboard."}
+    """Restart the backend by terminating the process. uvicorn runs as the container's
+    main process under a Coolify/Docker `unless-stopped` restart policy, so a graceful
+    SIGTERM exits uvicorn → the container stops → the restart policy brings it straight
+    back up. The frontend polls /system/health until it returns. The SIGTERM is sent from
+    a background thread after a short delay so this response is flushed first."""
+    import os
+    import signal
+    import threading
+    import time
+
+    def _terminate():
+        time.sleep(0.5)
+        os.kill(os.getpid(), signal.SIGTERM)
+
+    threading.Thread(target=_terminate, daemon=True).start()
+    return {"message": "Backend restarting — it will be back online in a few seconds."}
 
 
 @router.post("/fix-ibkr-fx-trades")

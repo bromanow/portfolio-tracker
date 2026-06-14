@@ -1202,15 +1202,21 @@ def statement_handoff(payload: dict, db: Session = Depends(get_db)):
     db.execute(_sql("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
                {"aid": account_id, "pat": f"stmt-handoff-{account_id}-%"})
 
+    from datetime import timedelta as _td
+    # Date the transfer-out one day before the cutover so the ACB/snapshot engines (sorted by
+    # date, id) process it BEFORE the live feed's same-day opening balance. Otherwise the statement
+    # cost and the Plaid cost pool first and the transfer removes shares at the blended ACB,
+    # corrupting the handed-off fund's cost basis. (Snapshots are sparse, so no chart dip.)
+    handoff_date = cutover - _td(days=1)
     unwound = 0
     for sid, q in rows:
         q = Decimal(str(q))
         if q <= 0:
             continue
-        # TRANSFER_OUT reduces the position (qty positive, _QTY_SUB) with zero cash impact,
-        # so the holding leaves statement tracking for the live feed without touching cash.
+        # TRANSFER_OUT reduces the position (qty positive, _QTY_SUB) at the existing ACB with zero
+        # cash impact — the holding leaves statement tracking for the live feed cleanly.
         db.add(Transaction(
-            account_id=account_id, security_id=sid, transaction_date=cutover,
+            account_id=account_id, security_id=sid, transaction_date=handoff_date,
             transaction_type="TRANSFER_OUT", quantity=q, price=None,
             transaction_currency=base_ccy, transaction_amount=Decimal("0"), cad_amount=Decimal("0"),
             raw_description=f"Statement → live-feed handoff as of {cutover.isoformat()}"[:500],

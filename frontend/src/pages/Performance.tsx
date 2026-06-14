@@ -467,15 +467,32 @@ function PerformanceInner() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // True from the moment Recompute is clicked until the BACKGROUND job actually
+  // finishes — not just while the POST is in flight. compute-snapshots returns a
+  // job_id in ~1s but the real work runs in a background thread, so without this the
+  // button would stop spinning long before the snapshots are rebuilt (looks "too fast").
+  const [isComputing, setIsComputing] = useState(false)
   const computeMut = useMutation({
     mutationFn: () => api.post<{ job_id: string }>('/portfolio/compute-snapshots').then(r => r.data),
+    onMutate: () => setIsComputing(true),
+    onError: () => setIsComputing(false),
     onSuccess: (data) => {
       const poll = setInterval(async () => {
-        const res = await api.get(`/portfolio/jobs/${data.job_id}`)
-        if (res.data.status === 'done' || res.data.status === 'failed') {
+        try {
+          const res = await api.get(`/portfolio/jobs/${data.job_id}`)
+          if (res.data.status === 'done' || res.data.status === 'failed') {
+            clearInterval(poll)
+            setIsComputing(false)
+            // Drop every cached timeline/returns variant (all filter combinations) so the
+            // chart can't show pre-recompute data when you switch grouping or filters.
+            queryClient.invalidateQueries({ queryKey: ['perf-timeline'] })
+            queryClient.invalidateQueries({ queryKey: ['perf-returns'] })
+            timelineQ.refetch()
+            returnsQ.refetch()
+          }
+        } catch {
           clearInterval(poll)
-          timelineQ.refetch()
-          returnsQ.refetch()
+          setIsComputing(false)
         }
       }, 2000)
     },
@@ -825,11 +842,11 @@ function PerformanceInner() {
           {/* Desktop: full button label; mobile: icon only */}
           <button
             onClick={() => computeMut.mutate()}
-            disabled={computeMut.isPending}
+            disabled={isComputing}
             className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
           >
-            <RefreshCw className={`h-4 w-4 ${computeMut.isPending ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">{computeMut.isPending ? 'Computing…' : 'Recompute Snapshots'}</span>
+            <RefreshCw className={`h-4 w-4 ${isComputing ? 'animate-spin' : ''}`} />
+            <span className="hidden md:inline">{isComputing ? 'Computing…' : 'Recompute Snapshots'}</span>
           </button>
         </div>
       </div>

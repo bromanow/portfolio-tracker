@@ -281,6 +281,11 @@ def _upsert_security(db: Session, psec: dict, on: date):
 def _write_price(db: Session, security_id: int, native_price: Decimal, ccy: str, on: date):
     from app.models.prices import MarketPrice, HistoricalPrice
     from sqlalchemy.dialects.postgresql import insert as _pg_insert
+    # Never store a future-dated price (mirrors the before_flush guard in database.py; this
+    # path's historical write uses core insert, which bypasses that ORM-level guard).
+    if on > date.today():
+        logger.warning("Plaid: skipping future-dated price for security_id=%s date=%s", security_id, on)
+        return
     fx = _fx_to_cad(db, ccy, on)
     price_cad = (native_price * fx).quantize(Decimal("0.0001"))
 

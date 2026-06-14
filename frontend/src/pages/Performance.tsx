@@ -562,27 +562,39 @@ function PerformanceInner() {
     })
   }, [chartData, indexSeries])
 
-  // In 'indexed' mode, rebase every numeric series to its first visible value and
-  // express it as % change (so all lines start at 0% and relative moves line up).
-  // A series whose first value is 0 (e.g. an account opened mid-window) is rebased
-  // from its first non-zero point.
+  // In 'indexed' mode, rebase every numeric series to its starting value as % change.
+  // Two guards keep the math sane for accounts that open mid-window:
+  //   • the baseline is the first value that's a meaningful fraction of the series' peak,
+  //     so a tiny early seed (e.g. a $1 opening before real funding) doesn't blow up the % ;
+  //   • the line is drawn only from that baseline date onward, so a type reads as "no line"
+  //     before it opens instead of a spurious −100% (value 0 ÷ baseline − 1).
   const displayData = useMemo(() => {
     if (axisMode === 'value') return chartDataWithIndices
+    const peak: Record<string, number> = {}
+    for (const row of chartDataWithIndices)
+      for (const k of Object.keys(row)) {
+        if (k === 'date') continue
+        const v = row[k]
+        if (typeof v === 'number' && isFinite(v)) peak[k] = Math.max(peak[k] ?? 0, Math.abs(v))
+      }
     const base: Record<string, number> = {}
-    for (const row of chartDataWithIndices) {
+    const baseDate: Record<string, string> = {}
+    for (const row of chartDataWithIndices)
       for (const k of Object.keys(row)) {
         if (k === 'date' || k in base) continue
         const v = row[k]
-        if (typeof v === 'number' && isFinite(v) && v !== 0) base[k] = v
+        if (typeof v === 'number' && isFinite(v) && v !== 0 && Math.abs(v) >= (peak[k] ?? 0) * 0.01) {
+          base[k] = v; baseDate[k] = row.date as string
+        }
       }
-    }
     return chartDataWithIndices.map(row => {
       const next: Record<string, string | number> = { date: row.date as string }
       for (const k of Object.keys(row)) {
         if (k === 'date') continue
         const v = row[k]
         const b = base[k]
-        if (typeof v === 'number' && isFinite(v) && b) next[k] = (v / b - 1) * 100
+        if (b && (row.date as string) >= baseDate[k] && typeof v === 'number' && isFinite(v))
+          next[k] = (v / b - 1) * 100
       }
       return next
     })

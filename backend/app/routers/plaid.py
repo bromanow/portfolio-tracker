@@ -144,6 +144,10 @@ def sync_all(db: Session = Depends(get_db)):
             results.append({"item_id": item.item_id, **plaid.sync_item(db, item)})
         except plaid.PlaidError as e:
             results.append({"item_id": item.item_id, "error": f"{e.code}: {e.message}"})
+        except Exception as e:
+            db.rollback()
+            logger.exception("Plaid sync crashed for item %s", item.item_id)
+            results.append({"item_id": item.item_id, "error": f"{type(e).__name__}: {e}"[:300]})
     return {"items": results}
 
 

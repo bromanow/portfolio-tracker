@@ -1238,9 +1238,21 @@ def snapshots_freshness(
     from app.models.prices import HistoricalPrice
     from sqlalchemy import func as _f
 
+    # Cap at today: snapshots only build up to today, so a future-dated price/transaction
+    # (e.g. a bad option-price row dated next week) can never be "reflected" and must NOT
+    # count as staleness — otherwise the page would auto-recompute forever.
+    _today = date.today()
     latest_snap = db.query(_f.max(PortfolioSnapshot.snapshot_date)).scalar()
-    latest_price = db.query(_f.max(HistoricalPrice.price_date)).scalar()
-    latest_txn = db.query(_f.max(Transaction.transaction_date)).scalar()
+    latest_price = (
+        db.query(_f.max(HistoricalPrice.price_date))
+        .filter(HistoricalPrice.price_date <= _today)
+        .scalar()
+    )
+    latest_txn = (
+        db.query(_f.max(Transaction.transaction_date))
+        .filter(Transaction.transaction_date <= _today)
+        .scalar()
+    )
 
     def _d(v):
         return v.date() if hasattr(v, "date") else v

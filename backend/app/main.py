@@ -29,6 +29,7 @@ from app.routers import ibkr as ibkr_router
 from app.routers import clients as clients_router
 from app.routers import scanner as scanner_router
 from app.routers import plaid as plaid_router
+from app.routers import data_health as data_health_router
 
 log = logging.getLogger(__name__)
 
@@ -248,6 +249,7 @@ app.include_router(ibkr_router.router,    dependencies=_auth)
 app.include_router(clients_router.router, dependencies=_auth)
 app.include_router(scanner_router.router, dependencies=_auth)
 app.include_router(plaid_router.router,   dependencies=_auth)
+app.include_router(data_health_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

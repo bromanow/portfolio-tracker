@@ -1031,6 +1031,26 @@ export const getSnapshotFreshness = () =>
 export const getPortfolioJob = (jobId: string) =>
   api.get<{ id: string; name: string; status: string; result?: unknown; error?: string }>(`/portfolio/jobs/${jobId}`).then(r => r.data)
 
+export interface DataHealthCheck {
+  key: string
+  title: string
+  severity: 'warning' | 'danger'
+  status: 'pass' | 'warning' | 'danger'
+  count: number
+  items: Record<string, unknown>[]
+  hint: string
+  action: { label: string; route: string }
+}
+export interface DataHealthReport {
+  generated_at: string
+  issue_count: number
+  checks_passing: number
+  checks_total: number
+  checks: DataHealthCheck[]
+}
+export const getDataHealth = () =>
+  api.get<DataHealthReport>('/portfolio/data-health').then(r => r.data)
+
 export const purgeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

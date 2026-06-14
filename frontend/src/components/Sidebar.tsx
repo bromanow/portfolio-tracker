@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { NavLink, useSearchParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   LayoutDashboard,
   List,
@@ -8,11 +9,13 @@ import {
   TrendingUp,
   ScanSearch,
   Tag,
+  HeartPulse,
   ChevronLeft,
   ChevronRight,
   LogOut,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
+import { getDataHealth } from '../api/client'
 
 const nav = [
   { to: '/dashboard',   label: 'Overview',     icon: LayoutDashboard },
@@ -21,6 +24,7 @@ const nav = [
   { to: '/activity',    label: 'Activity',     icon: List },
   { to: '/prices',      label: 'Prices',       icon: Tag },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },
+  { to: '/data-health', label: 'Data Health',  icon: HeartPulse },
   { to: '/admin',       label: 'Admin',        icon: Settings },
 ]
 
@@ -31,6 +35,16 @@ export default function Sidebar() {
   })
   const [searchParams] = useSearchParams()
   const search = searchParams.toString()
+
+  // Badge: number of open data-health issues. Cached for a few minutes so the checks
+  // (which scan positions/prices) don't run on every navigation.
+  const { data: health } = useQuery({
+    queryKey: ['data-health'],
+    queryFn: getDataHealth,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+  const issueCount = health?.issue_count ?? 0
 
   const toggle = () => {
     setCollapsed(c => {
@@ -73,7 +87,7 @@ export default function Sidebar() {
             to={search ? `${to}?${search}` : to}
             title={collapsed ? label : undefined}
             className={({ isActive }) =>
-              `flex items-center rounded-md text-sm font-medium transition-colors
+              `relative flex items-center rounded-md text-sm font-medium transition-colors
                ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-3 py-2.5'}
                ${isActive
                  ? 'bg-blue-50 text-blue-700'
@@ -82,7 +96,17 @@ export default function Sidebar() {
             }
           >
             <Icon className="h-4 w-4 flex-shrink-0" />
-            {!collapsed && label}
+            {!collapsed && <span className="flex-1">{label}</span>}
+            {to === '/data-health' && issueCount > 0 && (
+              <span
+                title={`${issueCount} data issue${issueCount > 1 ? 's' : ''}`}
+                className={`flex-shrink-0 inline-flex items-center justify-center rounded-full bg-amber-500 text-white text-[10px] font-semibold ${
+                  collapsed ? 'absolute top-1.5 right-1.5 h-2 w-2 p-0' : 'min-w-[18px] h-[18px] px-1'
+                }`}
+              >
+                {collapsed ? '' : issueCount}
+              </span>
+            )}
           </NavLink>
         ))}
       </nav>

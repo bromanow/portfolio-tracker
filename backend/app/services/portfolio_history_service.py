@@ -482,14 +482,12 @@ def compute_portfolio_snapshots(
                 amount = ct.account_currency_amount if ct.account_currency_amount is not None else ct.cad_amount
             base_cash[ct_acct] += _d(amount)
 
-        # ── Pass 1: market value + raw (pre-zeroing) cash per account ──────────
-        acct_mv: dict[int, Decimal] = {}
-        acct_cash: dict[int, Decimal] = {}
-        acct_pf: dict[int, Optional[float]] = {}
+        # ── Compute market value per account ──────────────────────────────────
         for acct_id in accounts:
             holdings = positions.get(acct_id, {})
             total_val = ZERO
             priced_val = ZERO
+            unpriced_val = ZERO
 
             for sec_id, qty in holdings.items():
                 # Skip flat positions.
@@ -509,9 +507,18 @@ def compute_portfolio_snapshots(
                     total_val += val
                     priced_val += val
                 # Unpriced positions: skip for now (they'll show as gaps)
+                # Could fallback to manual/ACB but keep it clean
 
-            acct_mv[acct_id] = total_val
-            acct_pf[acct_id] = float(priced_val / total_val) if total_val > ZERO else None
+            priced_frac = float(priced_val / total_val) if total_val > ZERO else None
+
+            # Upsert
+            key = (snap_date, acct_id)
+            snap = existing_snaps.get(key)
+            if snap is None:
+                snap = PortfolioSnapshot(snapshot_date=snap_date, account_id=acct_id)
+                db.add(snap)
+                existing_snaps[key] = snap
+            snap.market_value_cad = total_val
             # Convert base-currency cash to CAD at the snapshot-date rate (matches the
             # dashboard), plus any foreign-currency cash held inside the account.
             _acct = accounts.get(acct_id)
@@ -520,49 +527,30 @@ def compute_portfolio_snapshots(
             for _fccy, _famt in foreign_cash.get(acct_id, {}).items():
                 if _famt != ZERO:
                     cash_cad_val += _famt * _fx_to_cad(_fccy, snap_date)
-            acct_cash[acct_id] = cash_cad_val
-
-        # ── Pass 2: dormancy zeroing + write ──────────────────────────────────
-        for acct_id in accounts:
-            total_val = acct_mv[acct_id]
-            cash_cad_val = acct_cash[acct_id]
-            # Dormant/closed account: no positions AND idle for a while. Judged across the
-            # LOGICAL account (all CAD/USD siblings) so an idle sub isn't zeroed while a
-            # sibling is still active. Leftover cash on a truly closed account is transfer /
-            # FX / Norbert's-Gambit reconstruction drift, not real money — zero it.
+            # Dormant/closed account: no positions AND no transactions for >12 months —
+            # judged across the LOGICAL account (all CAD/USD siblings) so an idle sub isn't
+            # zeroed while a sibling is active. Any leftover cash on a truly closed account is
+            # an FX / Norbert's-Gambit spread residual, not real money (e.g. a closed RRSP
+            # whose CAD/USD legs net to a small non-zero figure). Zero it.
             _sibs = account_siblings.get(acct_id, [acct_id])
             _ltx = max((last_txn_date[s] for s in _sibs if s in last_txn_date), default=None)
             if total_val == ZERO and _ltx is not None:
                 _days_idle = (snap_date - _ltx).days
-                # Closed-shell test: when EVERY sub of the logical account holds no
-                # securities and ANY sub shows negative reconstructed cash (which a
-                # non-margin cash account can never really have), the account was fully
-                # transferred/journaled out and the residual is split drift — e.g. iTrade
-                # Brian RRSP, moved to Scotia Wealth in 2023, left −$146,865 on its CAD sub
-                # and +$147,839 USD on its USD sub. The old per-sub rule cleared the
-                # negative side at 30 days but held the positive USD side for 365, breaking
-                # the offset and leaving a phantom ~$150k line for a year. Now both subs of
-                # such a shell clear together once idle.
-                _grp_all_closed = all(acct_mv.get(s, ZERO) == ZERO for s in _sibs)
-                _grp_has_negative = any(acct_cash.get(s, ZERO) < ZERO for s in _sibs)
-                # Negative reconstructed cash on a holding-less account clears after a short
-                # window; lone positive residuals (FX / Gambit spreads, no negative sibling)
-                # keep the conservative 365-day window.
-                if (cash_cad_val < ZERO and _days_idle > 30) or _days_idle > 365 \
-                        or (_grp_all_closed and _grp_has_negative and _days_idle > 30):
+                # Negative reconstructed cash on a holding-less account is always an
+                # artifact: a non-margin cash account can't owe money with no positions,
+                # so it's reconstruction drift on a closed / transferred-out account (e.g.
+                # an iTrade RRSP fully journaled to Scotia Wealth, whose cash sweep leaves
+                # the rebuilt balance off zero). Clear it after a short idle window so it
+                # doesn't drag the line for a year. Positive residuals (FX / Norbert's-
+                # Gambit spreads) keep the conservative 365-day window. Dormancy is judged
+                # across the LOGICAL account (siblings), so an idle sub paired with an
+                # active sibling is never zeroed.
+                if (cash_cad_val < ZERO and _days_idle > 30) or _days_idle > 365:
                     cash_cad_val = ZERO
-
-            key = (snap_date, acct_id)
-            snap = existing_snaps.get(key)
-            if snap is None:
-                snap = PortfolioSnapshot(snapshot_date=snap_date, account_id=acct_id)
-                db.add(snap)
-                existing_snaps[key] = snap
-            snap.market_value_cad = total_val
             snap.cash_balance_cad = cash_cad_val.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
             snap.invested_cad = invested.get(acct_id, ZERO)
             snap.income_cad = income.get(acct_id, ZERO)
-            snap.priced_fraction = acct_pf[acct_id]
+            snap.priced_fraction = priced_frac
             total_written += 1
 
         batch_count += 1

@@ -15,6 +15,7 @@ import {
   getPrices, refreshAllPrices, refreshOnePrice, deletePrice,
   getCashOpenings, createCashOpening, deleteCashOpening,
   getSystemHealth, restartBackend, getDbStats, optimizeDb,
+  computeSnapshots, getSnapshotFreshness, getPortfolioJob,
   fetchPriceHistory, getPriceJob,
   getAccountCurrencySummary, splitCurrencyTransactions,
   changePassword,
@@ -1923,6 +1924,45 @@ function SystemTab() {
   const [optimizing, setOptimizing] = useState(false)
   const [optimizeMsg, setOptimizeMsg] = useState<string | null>(null)
 
+  // Manual snapshot recompute (post-deploy / ops). Day-to-day this happens automatically
+  // (nightly job + on-load when the Performance page detects stale data); this button is
+  // the escape hatch for forcing a full rebuild after a code change that alters snapshot
+  // output without new transactions/prices.
+  const [recomputing, setRecomputing] = useState(false)
+  const [recomputeMsg, setRecomputeMsg] = useState<string | null>(null)
+  const { data: freshness, refetch: refetchFreshness } = useQuery({
+    queryKey: ['snapshot-freshness'],
+    queryFn: getSnapshotFreshness,
+    refetchInterval: 60_000,
+  })
+  const handleRecomputeSnapshots = async () => {
+    setRecomputing(true)
+    setRecomputeMsg(null)
+    try {
+      const { job_id } = await computeSnapshots()
+      await new Promise<void>((resolve, reject) => {
+        const poll = setInterval(async () => {
+          try {
+            const job = await getPortfolioJob(job_id)
+            if (job.status === 'done' || job.status === 'failed') {
+              clearInterval(poll)
+              if (job.status === 'failed') reject(new Error(job.error || 'recompute failed'))
+              else resolve()
+            }
+          } catch (e) { clearInterval(poll); reject(e) }
+        }, 2000)
+      })
+      setRecomputeMsg('Snapshots rebuilt.')
+      refetchFreshness()
+      queryClient.invalidateQueries({ queryKey: ['perf-timeline'] })
+      queryClient.invalidateQueries({ queryKey: ['perf-returns'] })
+    } catch (e: any) {
+      setRecomputeMsg(e?.message || 'Recompute failed.')
+    } finally {
+      setRecomputing(false)
+    }
+  }
+
   const { data: health, refetch: recheckHealth } = useQuery({
     queryKey: ['system-health'],
     queryFn: getSystemHealth,
@@ -2049,6 +2089,41 @@ function SystemTab() {
           </button>
         </div>
 
+      </div>
+
+      {/* Portfolio snapshots section */}
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-gray-500" />
+          <h3 className="font-semibold text-gray-800">Portfolio Snapshots</h3>
+        </div>
+        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+          <p className="text-sm text-gray-500">
+            Snapshots rebuild automatically — nightly, and on-demand when the Performance page
+            detects new data. Use this only to force a full rebuild after a code change that
+            alters snapshot output without new transactions or prices.
+          </p>
+          {freshness && (
+            <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
+              <span>Latest snapshot: <strong className="text-gray-700">{freshness.latest_snapshot_date ?? '—'}</strong></span>
+              <span>Latest price: <strong className="text-gray-700">{freshness.latest_price_date ?? '—'}</strong></span>
+              <span className={freshness.stale ? 'text-amber-600' : 'text-emerald-600'}>
+                {freshness.stale ? 'Stale — rebuild recommended' : 'Up to date'}
+              </span>
+            </div>
+          )}
+          {recomputeMsg && (
+            <p className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">{recomputeMsg}</p>
+          )}
+          <button
+            onClick={handleRecomputeSnapshots}
+            disabled={recomputing}
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+          >
+            <RefreshCw className={`h-4 w-4 ${recomputing ? 'animate-spin' : ''}`} />
+            {recomputing ? 'Recomputing…' : 'Recompute All Snapshots'}
+          </button>
+        </div>
       </div>
 
       {/* Database section */}

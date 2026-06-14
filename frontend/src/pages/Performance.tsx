@@ -1,5 +1,5 @@
 import Reports from './Reports'
-import { useState, useMemo, useRef } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
@@ -11,7 +11,7 @@ import {
   Download, Printer,
 } from 'lucide-react'
 import api from '../api/client'
-import { getAccounts } from '../api/client'
+import { getAccounts, getSnapshotFreshness } from '../api/client'
 import type { Account } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import DatePicker from '../components/DatePicker'
@@ -498,6 +498,26 @@ function PerformanceInner() {
     },
   })
 
+  // Auto-recompute on load when snapshots are stale (new prices/transactions not yet
+  // reflected), so users never need a manual button. Fires at most once per mount, only
+  // if a rebuild isn't already running. Nightly recompute is the backbone; this catches
+  // same-day changes. (Can't detect code-only output changes — that's the Admin button.)
+  const autoTriggered = useRef(false)
+  const freshnessQ = useQuery({
+    queryKey: ['snapshot-freshness'],
+    queryFn: getSnapshotFreshness,
+    staleTime: 5 * 60_000,
+    refetchOnWindowFocus: false,
+  })
+  useEffect(() => {
+    const f = freshnessQ.data
+    if (!f || autoTriggered.current) return
+    if (f.stale && !f.computing && !isComputing) {
+      autoTriggered.current = true
+      computeMut.mutate()
+    }
+  }, [freshnessQ.data, isComputing])
+
   const timeline = timelineQ.data
   const labels   = timeline?.series_labels ?? []
   const points   = timeline?.points ?? []
@@ -839,15 +859,15 @@ function PerformanceInner() {
             <Printer className="h-4 w-4" />
             <span className="hidden md:inline">Print / PDF</span>
           </button>
-          {/* Desktop: full button label; mobile: icon only */}
-          <button
-            onClick={() => computeMut.mutate()}
-            disabled={isComputing}
-            className="flex items-center gap-2 px-3 md:px-4 py-2 bg-blue-600 text-white text-sm rounded-lg hover:bg-blue-700 disabled:opacity-60 transition-colors"
-          >
-            <RefreshCw className={`h-4 w-4 ${isComputing ? 'animate-spin' : ''}`} />
-            <span className="hidden md:inline">{isComputing ? 'Computing…' : 'Recompute Snapshots'}</span>
-          </button>
+          {/* Snapshots refresh automatically (nightly + on-load when stale); this only
+              surfaces while a background rebuild is running. The manual recompute lives
+              in Admin → System for post-deploy/ops use. */}
+          {isComputing && (
+            <span className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 text-gray-400 text-sm" title="Refreshing portfolio snapshots in the background">
+              <RefreshCw className="h-4 w-4 animate-spin" />
+              <span className="hidden md:inline">Updating…</span>
+            </span>
+          )}
         </div>
       </div>
 

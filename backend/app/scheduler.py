@@ -67,8 +67,26 @@ def _run_plaid_sync():
         db.close()
 
 
+def _run_nightly_snapshot_recompute():
+    """Rebuild the portfolio_snapshots table for ALL accounts so the Performance chart
+    and returns reflect the latest transactions/prices without anyone clicking the manual
+    Recompute button. Runs after the IBKR sync (new transactions) and before the view
+    refresh (which aggregates this table)."""
+    from app.database import SessionLocal
+    from app.services.portfolio_history_service import compute_portfolio_snapshots
+
+    db = SessionLocal()
+    try:
+        result = compute_portfolio_snapshots(db)
+        logger.info("Nightly snapshot recompute: %s", result)
+    except Exception:
+        logger.exception("Nightly snapshot recompute crashed")
+    finally:
+        db.close()
+
+
 def _run_nightly_snapshot_refresh():
-    """Refresh mv_snapshot_monthly after the IBKR sync populates new transactions."""
+    """Refresh mv_snapshot_monthly after the snapshot recompute populates new rows."""
     from app.database import SessionLocal
     from app.services.snapshot_view_service import refresh_snapshot_views
 
@@ -99,11 +117,22 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
-    # Refresh the materialized view 30 min after the IBKR sync finishes
-    # so report queries always see current data.
+    # Rebuild the snapshot table 20 min after the IBKR sync, so the Performance chart picks
+    # up the night's new transactions/prices automatically (no manual Recompute needed).
+    _scheduler.add_job(
+        _run_nightly_snapshot_recompute,
+        CronTrigger(hour=5, minute=35, timezone="UTC"),
+        id="snapshot_recompute",
+        name="Nightly portfolio_snapshots recompute",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    # Refresh the materialized view after the recompute finishes so report queries
+    # (monthly returns, returns-detail) always see the freshly-rebuilt snapshots.
     _scheduler.add_job(
         _run_nightly_snapshot_refresh,
-        CronTrigger(hour=5, minute=45, timezone="UTC"),
+        CronTrigger(hour=6, minute=0, timezone="UTC"),
         id="snapshot_view_refresh",
         name="Nightly mv_snapshot_monthly refresh",
         replace_existing=True,
@@ -127,7 +156,8 @@ def start_scheduler():
 
     _scheduler.start()
     logger.info(
-        "Scheduler started — IBKR sync 00:15 ET, snapshot refresh 00:45 ET, Plaid sync: %s",
+        "Scheduler started — IBKR sync 00:15 ET, snapshot recompute 00:35 ET, "
+        "view refresh 01:00 ET, Plaid sync: %s",
         freq if plaid_trigger is not None else "off (manual only)",
     )
 

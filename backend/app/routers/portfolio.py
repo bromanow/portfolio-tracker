@@ -1220,6 +1220,48 @@ def compute_snapshots(
     )
 
 
+@router.get("/snapshots/freshness")
+def snapshots_freshness(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Lightweight staleness check for the snapshot table, used by the Performance page to
+    auto-trigger a background recompute when needed (so users don't reach for the manual
+    Recompute button). Snapshots are "stale" when newer price dates or transactions exist
+    than the latest snapshot reflects. NOTE: this is data-freshness only — it can't detect
+    a code change that alters snapshot *output* without new data (those still need the
+    manual recompute in Admin → System after a deploy).
+    """
+    from app.models.master import PortfolioSnapshot
+    from app.models.transactions import Transaction
+    from app.models.prices import HistoricalPrice
+    from sqlalchemy import func as _f
+
+    latest_snap = db.query(_f.max(PortfolioSnapshot.snapshot_date)).scalar()
+    latest_price = db.query(_f.max(HistoricalPrice.price_date)).scalar()
+    latest_txn = db.query(_f.max(Transaction.transaction_date)).scalar()
+
+    def _d(v):
+        return v.date() if hasattr(v, "date") else v
+
+    latest_snap = _d(latest_snap)
+    latest_price = _d(latest_price)
+    latest_txn = _d(latest_txn)
+
+    stale = latest_snap is None or (
+        (latest_price is not None and latest_price > latest_snap)
+        or (latest_txn is not None and latest_txn > latest_snap)
+    )
+    return {
+        "stale": bool(stale),
+        "latest_snapshot_date": latest_snap.isoformat() if latest_snap else None,
+        "latest_price_date": latest_price.isoformat() if latest_price else None,
+        "latest_transaction_date": latest_txn.isoformat() if latest_txn else None,
+        "computing": background_jobs.is_running("compute_snapshots"),
+    }
+
+
 @router.delete("/purge-snapshots")
 def purge_snapshots(
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs; omit for all"),

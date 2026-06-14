@@ -1018,6 +1018,19 @@ export const computeSnapshots = (params?: {
   from_date?:   string
 }) => api.post<{ job_id: string; status: string }>('/portfolio/compute-snapshots', null, { params }).then(r => r.data)
 
+export interface SnapshotFreshness {
+  stale: boolean
+  latest_snapshot_date: string | null
+  latest_price_date: string | null
+  latest_transaction_date: string | null
+  computing: boolean
+}
+export const getSnapshotFreshness = () =>
+  api.get<SnapshotFreshness>('/portfolio/snapshots/freshness').then(r => r.data)
+
+export const getPortfolioJob = (jobId: string) =>
+  api.get<{ id: string; name: string; status: string; result?: unknown; error?: string }>(`/portfolio/jobs/${jobId}`).then(r => r.data)
+
 export const purgeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

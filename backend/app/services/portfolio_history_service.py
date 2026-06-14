@@ -86,6 +86,15 @@ _INCOME_SUB = frozenset({"FEE"})  # fees reduce net income
 #  amount inconsistencies distort the invested-capital figure. Cash balance is unaffected.)
 _CASH_NEUTRAL = frozenset({
     "OPENING_BALANCE", "REVERSE_SPLIT", "FORWARD_SPLIT", "STOCK_DIVIDEND",
+    # JOURNAL is an in-kind security move (Norbert's-Gambit currency conversion, fund
+    # switch, cross-sleeve transfer) — it carries NO cash. The cash statement
+    # (routers/portfolio.py SKIP_TYPES) and dashboard (services/portfolio.py
+    # CASH_NEUTRAL_TYPES) both exclude it; this set must too. Omitting it double-counted
+    # the CAD leg of NG journals as cash out — e.g. iTrade Brian RRSP's three NG journals
+    # (55,435.67 + 20,735.11 + 70,694.90) reconstructed as a phantom −$146,865 CAD balance
+    # on a closed account, with the matching USD journal legs as a phantom +cash on the USD
+    # sub. The BUY/SELL legs of the gambit already move the cash correctly.
+    "JOURNAL",
     # PLAN_CONTRIBUTION is a statement-account contribution: it's an external flow for the
     # return calc (portfolio.py _FLOW_TYPES), but its value is already reflected in the
     # holdings snapshot, so it must NOT also add to cash here (would double-count value).

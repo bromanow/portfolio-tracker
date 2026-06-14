@@ -52,13 +52,15 @@ interface AccountReturn {
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 type GroupBy = 'total' | 'brokerage' | 'account_type' | 'account'
-type Period  = '1Y' | '3Y' | '5Y' | 'ALL'
+type Period  = '1M' | '3M' | 'YTD' | '1Y' | '3Y' | '5Y' | 'ALL'
 type TableGroup = 'none' | 'brokerage' | 'account_type'
 type SortDir = 'asc' | 'desc'
 
+// null = special-cased in fromDate (YTD = Jan 1 this year; ALL = 2020-01-01 floor).
 const PERIOD_DAYS: Record<Period, number | null> = {
-  '1Y': 365, '3Y': 1095, '5Y': 1825, 'ALL': null,
+  '1M': 30, '3M': 90, 'YTD': null, '1Y': 365, '3Y': 1095, '5Y': 1825, 'ALL': null,
 }
+const DEFAULT_START = '2020-01-01'   // meaningful start for the combined (multi-account) data
 const RETURN_PERIODS = ['1M', '3M', '6M', 'YTD', '1Y', '3Y', 'inception'] as const
 const PALETTE = [
   '#2563eb','#16a34a','#dc2626','#d97706','#7c3aed',
@@ -400,8 +402,10 @@ function PerformanceInner() {
 
   const fromDate = useMemo(() => {
     if (customFromDate) return customFromDate
+    if (period === 'YTD') return `${new Date().getFullYear()}-01-01`
+    if (period === 'ALL') return DEFAULT_START   // floor "ALL" at the meaningful combined-data start
     const days = PERIOD_DAYS[period]
-    if (days == null) return undefined
+    if (days == null) return DEFAULT_START
     const d = new Date(); d.setDate(d.getDate() - days)
     return d.toISOString().slice(0, 10)
   }, [period, customFromDate])
@@ -593,7 +597,10 @@ function PerformanceInner() {
         if (k === 'date') continue
         const v = row[k]
         const b = base[k]
-        if (b && (row.date as string) >= baseDate[k] && typeof v === 'number' && isFinite(v))
+        // Skip zeros entirely (not just before open): a value of 0 means the account is empty
+        // — e.g. the 1-day gap during a statement→live-feed handoff — and should read as a gap,
+        // not a −100% crash.
+        if (b && (row.date as string) >= baseDate[k] && typeof v === 'number' && isFinite(v) && v !== 0)
           next[k] = (v / b - 1) * 100
       }
       return next
@@ -801,19 +808,21 @@ function PerformanceInner() {
           </div>
           {/* Period pills */}
           <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
-            {(['1Y','3Y','5Y','ALL'] as Period[]).map(p => (
+            {(['1M','3M','YTD','1Y','3Y','5Y','ALL'] as Period[]).map(p => (
               <button key={p} onClick={() => { setPeriod(p); setCustomFromDate(''); setCustomToDate('') }}
-                className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${period === p && !customFromDate ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded-md font-medium transition-colors ${period === p && !customFromDate ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
                 {p}
               </button>
             ))}
           </div>
           {/* Custom date range — desktop only */}
           <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
-            <input type="date" value={customFromDate} onChange={e => setCustomFromDate(e.target.value)}
+            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+              value={customFromDate} onChange={e => setCustomFromDate(e.target.value)}
               className={`border rounded px-2 py-1 w-30 focus:outline-none focus:ring-1 focus:ring-blue-400 ${customFromDate ? 'border-blue-400' : 'border-gray-200'}`} />
             <span className="text-gray-400">→</span>
-            <input type="date" value={customToDate} onChange={e => setCustomToDate(e.target.value)}
+            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+              value={customToDate} onChange={e => setCustomToDate(e.target.value)}
               className={`border rounded px-2 py-1 w-30 focus:outline-none focus:ring-1 focus:ring-blue-400 ${customToDate ? 'border-blue-400' : 'border-gray-200'}`} />
             {(customFromDate || customToDate) && (
               <button onClick={() => { setCustomFromDate(''); setCustomToDate('') }}
@@ -922,7 +931,7 @@ function PerformanceInner() {
                 return (
                   <Line
                     key={lbl} type="monotone" dataKey={lbl}
-                    stroke={color} strokeWidth={2} name={lbl}
+                    stroke={color} strokeWidth={2} name={lbl} connectNulls
                     dot={eventDates
                       ? (dotProps: any) => {
                           const { cx, cy, payload } = dotProps

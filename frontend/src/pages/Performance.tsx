@@ -14,6 +14,7 @@ import api from '../api/client'
 import { getAccounts } from '../api/client'
 import type { Account } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
+import DatePicker from '../components/DatePicker'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -349,6 +350,7 @@ function PerformanceInner() {
   const [groupBy, setGroupBy]         = useState<GroupBy>('account_type')
   const [period, setPeriod]           = useState<Period>('ALL')
   const [showInvested, setShowInvested] = useState(false)
+  const [showFlows, setShowFlows] = useState(true)             // master on/off for cash-flow dots
   const [flowFilter, setFlowFilter] = useState<string[]>([])   // [] = show all cash-flow dots
   // 'value' = dollar axis auto-fitted to the data; 'indexed' = every series rebased
   // to its first visible point and shown as % change, so different-sized accounts
@@ -460,14 +462,16 @@ function PerformanceInner() {
   const labels   = timeline?.series_labels ?? []
   const points   = timeline?.points ?? []
   const allEvents = timeline?.events ?? []
-  // Only the cash-flow types the user has chosen to see (empty filter = all).
+  // Cash-flow dots: master toggle (showFlows) gates them entirely; the filter then
+  // narrows to the chosen types (empty filter = all types).
   const events = useMemo(() => {
+    if (!showFlows) return []
     if (!flowFilter.length) return allEvents
     const sel = new Set(flowFilter)
     return allEvents
       .map(e => ({ ...e, items: e.items.filter(it => sel.has(FLOW_CAT[it.type])) }))
       .filter(e => e.items.length > 0)
-  }, [allEvents, flowFilter])
+  }, [allEvents, flowFilter, showFlows])
   const returns  = returnsQ.data ?? []
 
   // Map date → event (for tooltip)
@@ -836,17 +840,15 @@ function PerformanceInner() {
           </div>
           {/* Custom date range — desktop only */}
           <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
-            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
-              value={customFromDate} onChange={e => setCustomFromDate(e.target.value)}
-              className={`border rounded px-2 py-1 w-30 focus:outline-none focus:ring-1 focus:ring-blue-400 ${customFromDate ? 'border-blue-400' : 'border-gray-200'}`} />
+            <DatePicker
+              value={customFromDate} onChange={setCustomFromDate}
+              min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+              placeholder="From" highlight={!!customFromDate} />
             <span className="text-gray-400">→</span>
-            <input type="date" min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
-              value={customToDate} onChange={e => setCustomToDate(e.target.value)}
-              className={`border rounded px-2 py-1 w-30 focus:outline-none focus:ring-1 focus:ring-blue-400 ${customToDate ? 'border-blue-400' : 'border-gray-200'}`} />
-            {(customFromDate || customToDate) && (
-              <button onClick={() => { setCustomFromDate(''); setCustomToDate('') }}
-                className="text-gray-400 hover:text-red-500 ml-0.5"><X className="h-3 w-3" /></button>
-            )}
+            <DatePicker
+              value={customToDate} onChange={setCustomToDate}
+              min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
+              placeholder="To" highlight={!!customToDate} />
           </div>
           <div className="ml-auto flex items-center gap-3">
             {/* Y-axis mode: dollar value vs. indexed (% change from window start) */}
@@ -869,6 +871,10 @@ function PerformanceInner() {
             <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
               <input type="checkbox" checked={showInvested} onChange={e => setShowInvested(e.target.checked)} className="rounded" />
               Show invested
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
+              <input type="checkbox" checked={showFlows} onChange={e => setShowFlows(e.target.checked)} className="rounded" />
+              Show cash flows
             </label>
           </div>
         </div>
@@ -899,6 +905,7 @@ function PerformanceInner() {
             options={FLOW_OPTIONS}
             selected={flowFilter}
             onChange={setFlowFilter}
+            disabled={!showFlows}
           />
           {hasFilters && (
             <button

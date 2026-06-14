@@ -90,10 +90,30 @@ def calculate_acb_for_security(
     realized_gains: list[dict] = []
 
     for txn in transactions:
-        t_type = txn.transaction_type
-        qty = txn.quantity or ZERO
-        cad_amount = txn.cad_amount or ZERO
+        _apply_txn(lot, txn, db, security_id, realized_gains, _txn_pool)
 
+    return {
+        "security_id": security_id,
+        "account_id": account_id,
+        "quantity": lot.quantity,
+        "total_acb_cad": lot.total_acb,
+        "acb_per_share_cad": lot.acb_per_share,
+        "realized_gains": realized_gains,
+    }
+
+
+def _apply_txn(lot: "ACBLot", txn, db, security_id, realized_gains: list, _txn_pool):
+    """Apply ONE transaction to the running ACB lot, appending any realized gains.
+
+    This is the single source of truth for how each transaction type moves quantity and
+    cost basis. Both calculate_acb_for_security() (final state) and position_acb_timeline()
+    (per-date series, used by the snapshot service) drive off it, so the Performance chart
+    and Holdings can never diverge on position quantities."""
+    t_type = txn.transaction_type
+    qty = txn.quantity or ZERO
+    cad_amount = txn.cad_amount or ZERO
+
+    if True:
         # ── Regular buy / opening balance ──────────────────────────────────────
         if t_type in ("BUY", "OPENING_BALANCE"):
             cost = abs(cad_amount)
@@ -377,14 +397,44 @@ def calculate_acb_for_security(
         elif t_type == "RETURN_OF_CAPITAL":
             lot.adjust_for_return_of_capital(abs(cad_amount))
 
-    return {
-        "security_id": security_id,
-        "account_id": account_id,
-        "quantity": lot.quantity,
-        "total_acb_cad": lot.total_acb,
-        "acb_per_share_cad": lot.acb_per_share,
-        "realized_gains": realized_gains,
-    }
+
+def position_acb_timeline(
+    db: Session,
+    security_id: int,
+    account_id: int,
+    _txns: Optional[list] = None,
+    _txn_pool: Optional[dict] = None,
+    as_of: Optional[date] = None,
+) -> list[tuple]:
+    """Return the running (date, quantity, total_acb_cad) after each transaction for one
+    (security, account), collapsed to the LAST state on each date. Drives off the same
+    _apply_txn() core as calculate_acb_for_security, so the snapshot engine's quantities
+    are identical to Holdings/ACB. The caller carry-forwards: the position on any snapshot
+    date is the last entry with date <= that snapshot."""
+    if _txns is not None:
+        transactions = _txns
+    else:
+        query = db.query(Transaction).filter(
+            Transaction.security_id == security_id,
+            Transaction.account_id == account_id,
+        ).order_by(Transaction.transaction_date, Transaction.id)
+        if as_of:
+            query = query.filter(Transaction.transaction_date <= as_of)
+        transactions = query.all()
+
+    lot = ACBLot()
+    realized_gains: list[dict] = []
+    timeline: list[tuple] = []
+    for txn in transactions:
+        _apply_txn(lot, txn, db, security_id, realized_gains, _txn_pool)
+        d = txn.transaction_date
+        if hasattr(d, "date") and not isinstance(d, date):
+            d = d.date()
+        if timeline and timeline[-1][0] == d:
+            timeline[-1] = (d, lot.quantity, lot.total_acb)
+        else:
+            timeline.append((d, lot.quantity, lot.total_acb))
+    return timeline
 
 
 def check_superficial_loss(

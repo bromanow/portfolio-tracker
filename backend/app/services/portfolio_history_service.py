@@ -212,6 +212,34 @@ def compute_portfolio_snapshots(
     if not all_txns:
         return {"snapshots": 0, "accounts": len(accounts), "dates": 0}
 
+    # ── 2a-i. ACB position timelines (THE source of truth for quantity) ──────────
+    # Replay each (account, security) through the exact ACB lot engine ONCE and keep a
+    # per-date (qty, cost) series. Valuation samples these so the Performance chart's
+    # positions are identical to Holdings (which also uses the ACB engine) — no separate,
+    # drifting reconstruction. _txn_pool feeds the engine's cross-security split logic.
+    from app.services.acb_service import position_acb_timeline as _acb_timeline
+    _txn_pool: dict = defaultdict(list)
+    for _t in all_txns:
+        _txn_pool[(_t.security_id, _t.account_id)].append(_t)
+    pair_timelines: dict = {}
+    for (_sid, _aid), _txns in _txn_pool.items():
+        pair_timelines[(_aid, _sid)] = _acb_timeline(db, _sid, _aid, _txns=_txns, _txn_pool=_txn_pool)
+    pair_cursor: dict = {k: 0 for k in pair_timelines}
+    pair_state: dict = {k: (ZERO, ZERO) for k in pair_timelines}   # (qty, total_acb) as-of cursor
+
+    # Supplement OptionContract expiries with ticker-parsed expiries so expired options are
+    # excluded exactly as get_positions does (it parses the ticker, not OptionContract).
+    from app.services.price_service import parse_option_ticker as _parse_opt
+    _sec_objs = {s.id: s for s in db.query(Security).filter(Security.id.in_(option_sec_ids)).all()} if option_sec_ids else {}
+    for _sid, _s in _sec_objs.items():
+        if _sid not in option_expiry:
+            try:
+                _po = _parse_opt(_s.ticker, security=_s)
+            except Exception:
+                _po = None
+            if _po and _po.get("expiry"):
+                option_expiry[_sid] = _po["expiry"]
+
     earliest_txn_date = all_txns[0].transaction_date
     if isinstance(earliest_txn_date, datetime):
         earliest_txn_date = earliest_txn_date.date()
@@ -293,6 +321,18 @@ def compute_portfolio_snapshots(
                 return p
         # Fallback: constant manual price (mortgages, savings accounts, etc.)
         return manual_prices.get(sec_id)
+
+    def _val_price(sec_id: int, snap_date: date) -> Optional[Decimal]:
+        """Price used for snapshot valuation — mirrors get_positions EXACTLY so the chart
+        equals Holdings: live MarketPrice for today, historical close as-of for past dates,
+        and None (→ ACB-cost fallback in the caller) when neither exists. Unlike _get_price
+        it does NOT carry a historical price forward onto today or use the manual-price
+        fallback, both of which Holdings ignores."""
+        if snap_date >= today:
+            return live_price_map.get(sec_id)
+        if sec_id in price_series:
+            return _price_at(price_series[sec_id], snap_date)
+        return None
 
     # ── 4. Snapshot dates: every trading day in historical_prices in range ────
     snap_dates_raw = (
@@ -491,32 +531,47 @@ def compute_portfolio_snapshots(
                 amount = ct.account_currency_amount if ct.account_currency_amount is not None else ct.cad_amount
             base_cash[ct_acct] += _d(amount)
 
+        # ── Sample ACB position timelines as-of this date (carry-forward) ──────
+        for _k, _tl in pair_timelines.items():
+            _i = pair_cursor[_k]
+            while _i < len(_tl) and _tl[_i][0] <= snap_date:
+                pair_state[_k] = (_tl[_i][1], _tl[_i][2])
+                _i += 1
+            pair_cursor[_k] = _i
+        acb_pos: dict[int, dict[int, tuple]] = defaultdict(dict)
+        for (_aid, _sid), (_q, _acb) in pair_state.items():
+            if _q != ZERO:
+                acb_pos[_aid][_sid] = (_q, _acb)
+
         # ── Compute market value per account ──────────────────────────────────
+        # Values exactly as Holdings does: ACB quantities, expired options excluded,
+        # priced at market (live today / historical as-of past), and ACB cost as the
+        # fallback when a long position has no market price.
         for acct_id in accounts:
-            holdings = positions.get(acct_id, {})
+            holdings = acb_pos.get(acct_id, {})
             total_val = ZERO
             priced_val = ZERO
-            unpriced_val = ZERO
 
-            for sec_id, qty in holdings.items():
-                # Skip flat positions.
+            for sec_id, (qty, acb_cost) in holdings.items():
                 if qty == ZERO:
                     continue
-                # A negative running balance is never a real holding — it's a disposal
-                # recorded before its matching acquisition (e.g. same-day or out-of-order
-                # trades) or a genuine over-disposal data error. Skip it (value $0), which
-                # makes net-zero securities correctly worth nothing regardless of order.
-                # (Short options are left at $0 here too, preserving prior behaviour.)
-                if qty < ZERO:
+                # Expired options have no holding value and are excluded entirely
+                # (matches get_positions) — never fall back to their cost.
+                expiry = option_expiry.get(sec_id)
+                if expiry is not None and snap_date > expiry:
                     continue
-                price = _get_price(sec_id, snap_date)
+                price = _val_price(sec_id, snap_date)
+                multiplier = 100 if sec_id in option_sec_ids else 1
                 if price is not None:
-                    multiplier = 100 if sec_id in option_sec_ids else 1
                     val = (qty * price * multiplier).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
                     total_val += val
-                    priced_val += val
-                # Unpriced positions: skip for now (they'll show as gaps)
-                # Could fallback to manual/ACB but keep it clean
+                    if val > ZERO:
+                        priced_val += val
+                elif qty > ZERO:
+                    # Unpriced long → carry at ACB cost, mirroring Holdings' cost fallback
+                    # (e.g. delisted/acquired names, or freshly-bought tickers not yet priced).
+                    total_val += acb_cost
+                # Unpriced short option: no value (matches Holdings).
 
             priced_frac = float(priced_val / total_val) if total_val > ZERO else None
 

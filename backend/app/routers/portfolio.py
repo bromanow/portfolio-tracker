@@ -1358,16 +1358,75 @@ def get_performance_timeline(
         inv_agg[row.snapshot_date][label] += iv
 
     labels_sorted = sorted(all_labels)
+
+    # ── Contributed-capital baseline (the dashed "invested" line) ────────────────
+    # "Total capital put in" = cumulative deposits + transfers-in − withdrawals −
+    # transfers-out, plus the starting cost basis (OPENING_BALANCE) and starting cash
+    # (CASH_OPENING). This is deliberately NOT invested_cad (which is the cost basis of
+    # securities currently held, kept unchanged for the Modified-Dietz returns math):
+    # cost basis churns on every buy/sell and drops when you liquidate to cash, which is
+    # confusing on a chart whose value line already includes cash. Contributed capital
+    # stays flat through internal buy/sell churn and net-zero inter-account transfers, so
+    # (value − invested) reads cleanly as your gain.
+    from app.models.transactions import Transaction as _Txn0
+    from datetime import datetime as _dt0
+    contrib_q = db.query(_Txn0).filter(
+        _Txn0.transaction_type.in_(
+            ('DEPOSIT', 'WITHDRAWAL', 'TRANSFER_IN', 'TRANSFER_OUT', 'JOURNAL',
+             'PLAN_CONTRIBUTION', 'OPENING_BALANCE', 'CASH_OPENING')
+        ),
+    )
+    if parsed_ids:
+        contrib_q = contrib_q.filter(_Txn0.account_id.in_(parsed_ids))
+    else:
+        contrib_q = contrib_q.filter(_Txn0.account_id.in_(accounts.keys()))
+    if to_date:
+        contrib_q = contrib_q.filter(_Txn0.transaction_date <= to_date)
+    # NOTE: deliberately NO from_date filter — the baseline must include all capital
+    # contributed before the visible window so the line starts at the right level.
+    contrib_deltas: dict[str, list[tuple[date, D]]] = defaultdict(list)
+    for t in contrib_q.all():
+        acct = accounts.get(t.account_id)
+        if acct is None:
+            continue
+        td = t.transaction_date
+        if isinstance(td, _dt0):
+            td = td.date()
+        ttype = t.transaction_type
+        if ttype == 'OPENING_BALANCE':
+            amt = abs(D(str(t.cad_amount or 0)))            # starting cost basis of held units
+        elif ttype == 'CASH_OPENING':
+            raw = t.cad_amount if t.cad_amount is not None else (t.transaction_amount or 0)
+            amt = abs(D(str(raw)))                          # starting cash
+        else:
+            # DEPOSIT/WITHDRAWAL/TRANSFER_IN/TRANSFER_OUT/JOURNAL/PLAN_CONTRIBUTION:
+            # cad_amount is stored signed (inflows +, outflows −). Internal transfers and
+            # Norbert's-Gambit / fund-switch journal pairs net to zero within a label.
+            amt = D(str(t.cad_amount or 0))
+        if amt == 0:
+            continue
+        contrib_deltas[_group_label(acct)].append((td, amt))
+    for _lbl in contrib_deltas:
+        contrib_deltas[_lbl].sort(key=lambda x: x[0])
+
+    contrib_running: dict[str, D] = defaultdict(D)
+    contrib_ptr: dict[str, int] = defaultdict(int)
     points = []
     for snap_date in sorted(agg.keys()):
+        # Advance each label's cumulative contributed capital up to this snapshot date.
+        for _lbl, _deltas in contrib_deltas.items():
+            _i = contrib_ptr[_lbl]
+            while _i < len(_deltas) and _deltas[_i][0] <= snap_date:
+                contrib_running[_lbl] += _deltas[_i][1]
+                _i += 1
+            contrib_ptr[_lbl] = _i
         point: dict = {"date": snap_date.isoformat(), "values": {}, "invested": {}}
         for label in labels_sorted:
             # Clamp the aggregated group total to zero — after CAD+USD sub-accounts
             # have been summed, any remaining negative is a genuine data artifact.
             mv = max(agg[snap_date].get(label, D(0)), D(0))
-            iv = inv_agg[snap_date].get(label, D(0))
             point["values"][label] = float(mv)
-            point["invested"][label] = float(iv)
+            point["invested"][label] = float(contrib_running.get(label, D(0)))
         points.append(point)
 
     # ── Cash-flow events (deposits, withdrawals, transfers) ───────────────────

@@ -181,25 +181,48 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
           ))}
         </div>
       )}
-      {ev && ev.items.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-          <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
-          {ev.items.map((item, i) => (
-            <div key={i} className={`flex justify-between gap-3 font-medium ${isInflowEvent(item) ? 'text-emerald-600' : 'text-red-500'}`}>
-              <span className="truncate max-w-[150px]">
-                {isInflowEvent(item) ? '↑' : '↓'} {FLOW_LABEL[item.type]} · {item.account}
-              </span>
-              <span className="whitespace-nowrap">{fmtCAD(item.amount_cad)}</span>
-            </div>
-          ))}
-          {ev.items.length > 1 && (
-            <div className={`flex justify-between gap-3 font-bold border-t border-gray-100 pt-0.5 ${ev.net_cad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
-              <span>Net</span>
-              <span>{fmtCAD(ev.net_cad)}</span>
-            </div>
-          )}
-        </div>
-      )}
+      {ev && ev.items.length > 0 && (() => {
+        // Net-rollup display: with many legs (e.g. a multi-account transfer that nets to
+        // ~$0) listing each one makes a huge, unreadable tooltip. Roll up by flow type
+        // once there are more than 4 — one line per type with a count and summed amount —
+        // and keep the per-leg detail for small clusters where it's actually useful.
+        const rollup = ev.items.length > 4
+        const groups = rollup
+          ? Object.values(ev.items.reduce((acc, it) => {
+              const k = it.type
+              if (!acc[k]) acc[k] = { type: it.type, label: FLOW_LABEL[it.type], count: 0, sum: 0 }
+              acc[k].count++; acc[k].sum += it.amount_cad
+              return acc
+            }, {} as Record<string, { type: ChartEventItem['type']; label: string; count: number; sum: number }>))
+            .sort((a, b) => b.sum - a.sum)
+          : []
+        return (
+          <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
+            <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
+            {rollup
+              ? groups.map(g => (
+                  <div key={g.type} className={`flex justify-between gap-3 font-medium ${g.sum >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                    <span>{g.sum >= 0 ? '↑' : '↓'} {g.count}× {g.label}</span>
+                    <span className="whitespace-nowrap">{fmtCAD(g.sum)}</span>
+                  </div>
+                ))
+              : ev.items.map((item, i) => (
+                  <div key={i} className={`flex justify-between gap-3 font-medium ${isInflowEvent(item) ? 'text-emerald-600' : 'text-red-500'}`}>
+                    <span className="truncate max-w-[150px]">
+                      {isInflowEvent(item) ? '↑' : '↓'} {FLOW_LABEL[item.type]} · {item.account}
+                    </span>
+                    <span className="whitespace-nowrap">{fmtCAD(item.amount_cad)}</span>
+                  </div>
+                ))}
+            {ev.items.length > 1 && (
+              <div className={`flex justify-between gap-3 font-bold border-t border-gray-100 pt-0.5 ${ev.net_cad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+                <span>Net{rollup ? ` · ${ev.items.length} legs` : ''}</span>
+                <span>{fmtCAD(ev.net_cad)}</span>
+              </div>
+            )}
+          </div>
+        )
+      })()}
     </div>
   )
 }

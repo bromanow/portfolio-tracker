@@ -7,6 +7,7 @@ import {
 } from '../api/client'
 import type { PriceReportRow, PriceRecord } from '../api/client'
 import { formatOptionTicker } from '../utils/optionFormat'
+import DatePicker from '../components/DatePicker'
 import { RefreshCw, Pencil, Check, X, ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -387,8 +388,8 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
           </button>
         ) : (
           <div className="flex items-center gap-2">
-            <input type="date" value={addDate} onChange={e => setAddDate(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-0.5 text-xs" />
+            <DatePicker value={addDate || ''} onChange={setAddDate}
+              max={new Date().toISOString().slice(0, 10)} placeholder="Date" />
             <input type="number" step="0.0001" min="0" placeholder="Price" value={addPrice}
               onChange={e => setAddPrice(e.target.value)}
               className="border border-gray-300 rounded px-2 py-0.5 text-xs w-24" />

@@ -3,6 +3,7 @@ import { useDropzone } from 'react-dropzone'
 import PlaidSyncPanel from '../components/PlaidSyncPanel'
 import StatementImportPanel from '../components/StatementImportPanel'
 import ImportStatusPanel from '../components/ImportStatusPanel'
+import DatePicker from '../components/DatePicker'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getImports, getAccounts, getSecurities, uploadFile, getImportPreview,
@@ -625,12 +626,9 @@ function ManualEntryPanel() {
 
           <div>
             <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-400">*</span></label>
-            <input
-              type="date"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+            <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
               value={(form.transaction_date as string) || ''}
-              onChange={e => setForm(f => ({ ...f, transaction_date: e.target.value }))}
-            />
+              onChange={v => setForm(f => ({ ...f, transaction_date: v }))} />
           </div>
 
           <div>
@@ -1398,9 +1396,9 @@ export default function Import() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Transaction Date</label>
-                    <input type="date" className="border rounded px-3 py-1.5 text-sm w-full"
-                      value={editFields.transaction_date}
-                      onChange={e => setEditFields(f => f && ({ ...f, transaction_date: e.target.value }))} />
+                    <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
+                      value={editFields.transaction_date || ''}
+                      onChange={v => setEditFields(f => f && ({ ...f, transaction_date: v }))} />
                   </div>
                   <div>
                     <label className="block text-xs text-gray-500 mb-1">Transaction Type</label>

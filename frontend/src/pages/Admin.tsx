@@ -3,6 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import PlaidConnect from '../components/PlaidConnect'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
+import DatePicker from '../components/DatePicker'
 import {
   getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount,
   getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities, mergeSecurities,
@@ -476,9 +477,9 @@ function OpeningBalancesTab() {
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Balance Date</label>
-                <input type="date" className="border rounded px-3 py-1.5 text-sm w-full"
-                  value={editing.balance_date}
-                  onChange={e => setEditing(v => v && ({ ...v, balance_date: e.target.value }))} />
+                <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
+                  value={editing.balance_date || ''}
+                  onChange={v => setEditing(p => p && ({ ...p, balance_date: v }))} />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 mb-1">Ticker</label>
@@ -570,8 +571,8 @@ function OpeningBalancesTab() {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Balance Date</label>
-            <input type="date" className="border rounded px-3 py-1.5 text-sm w-full" value={form.balance_date}
-              onChange={e => setForm(f => ({ ...f, balance_date: e.target.value }))} />
+            <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)} value={form.balance_date || ''}
+              onChange={v => setForm(f => ({ ...f, balance_date: v }))} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Ticker</label>
@@ -753,8 +754,8 @@ function CashOpeningsSection() {
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Date</label>
-            <input type="date" className="border rounded px-3 py-1.5 text-sm" value={form.balance_date}
-              onChange={e => setForm(f => ({ ...f, balance_date: e.target.value }))} />
+            <DatePicker max={new Date().toISOString().slice(0, 10)} value={form.balance_date || ''}
+              onChange={v => setForm(f => ({ ...f, balance_date: v }))} />
           </div>
           <div>
             <label className="block text-xs text-gray-500 mb-1">Opening Cash Balance</label>
@@ -2299,20 +2300,15 @@ function CurrencySplitTab() {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">From date <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input
-              type="date"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={fromDate}
-              onChange={e => { setFromDate(e.target.value); setResult(null); setError(null) }}
-            />
+            <DatePicker className="w-36" max={new Date().toISOString().slice(0, 10)}
+              value={fromDate || ''} placeholder="From"
+              onChange={v => { setFromDate(v); setResult(null); setError(null) }} />
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">To date <span className="text-gray-400 font-normal">(optional)</span></label>
-            <input
-              type="date"
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              value={toDate}
-              onChange={e => { setToDate(e.target.value); setResult(null); setError(null) }}
+            <DatePicker className="w-36" max={new Date().toISOString().slice(0, 10)}
+              value={toDate || ''} placeholder="To"
+              onChange={v => { setToDate(v); setResult(null); setError(null) }}
             />
           </div>
         </div>

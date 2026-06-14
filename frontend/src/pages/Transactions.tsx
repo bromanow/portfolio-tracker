@@ -272,12 +272,9 @@ function TxFormFields({ fields, onChange, accounts, securities, tickerInput, onT
       {/* Date */}
       <div>
         <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-400">*</span></label>
-        <input type="date" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
           value={(fields.transaction_date as string) || ''}
-          onChange={e => {
-            lastFetchRef.current = ''
-            onChange({ ...fields, transaction_date: e.target.value })
-          }} />
+          onChange={v => { lastFetchRef.current = ''; onChange({ ...fields, transaction_date: v }) }} />
       </div>
       {/* Type */}
       <div>

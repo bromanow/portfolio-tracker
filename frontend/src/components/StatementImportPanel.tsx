@@ -2,6 +2,7 @@ import { useState, useEffect, useMemo, useCallback } from 'react'
 import { useDropzone } from 'react-dropzone'
 import { FileText, Loader2, CheckCircle, AlertTriangle, Sparkles, Eye, Trash2, Upload, ChevronRight, ChevronDown, RefreshCw } from 'lucide-react'
 import { importStatement, listStatements, openStatementFile, deleteStatement, reprocessStatement, reprocessStatements, statementHandoff, switchSecurity, getAccounts, getSecurities, type StoredStatement, type Account, type Security } from '../api/client'
+import DatePicker from './DatePicker'
 
 // Parse any investment statement PDF into holdings (Gemini-powered; institution-agnostic).
 export default function StatementImportPanel() {
@@ -310,8 +311,8 @@ export default function StatementImportPanel() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">Cutover date</label>
-            <input type="date" value={handoffDate} onChange={e => setHandoffDate(e.target.value)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm" />
+            <DatePicker value={handoffDate || ''} onChange={setHandoffDate}
+              max={new Date().toISOString().slice(0, 10)} placeholder="Cutover" />
           </div>
           <button onClick={onHandoff} disabled={!handoffAcct || handoffBusy}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-800 disabled:opacity-50">
@@ -359,8 +360,8 @@ export default function StatementImportPanel() {
           </div>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">Switch date</label>
-            <input type="date" value={swDate} onChange={e => setSwDate(e.target.value)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm" />
+            <DatePicker value={swDate || ''} onChange={setSwDate}
+              max={new Date().toISOString().slice(0, 10)} placeholder="Switch date" />
           </div>
           <button onClick={onSwitch} disabled={!swAcct || !swFrom || !swTo || swBusy}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-700 text-white text-sm rounded hover:bg-gray-800 disabled:opacity-50">

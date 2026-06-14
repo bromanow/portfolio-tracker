@@ -78,21 +78,33 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
         })
 
     # ── 2. Expired options still open (excluded from get_positions, so use ACB) ─
+    # Only the RECENT window is actionable — an option that expired last week may still
+    # need its expiry/assignment recorded. Older ones are a settled backlog (worthless
+    # options that simply stopped appearing on statements); they don't affect current
+    # value (expired options are excluded from valuation everywhere) so we surface their
+    # COUNT in the hint rather than flooding the list with hundreds of ancient rows.
+    EXPIRED_WINDOW_DAYS = 60
     expired_options = []
+    expired_backlog = 0
     for a in acb_rows:
         if _d(a["quantity"]) == 0:
             continue
         sec = secs.get(a["security_id"])
         exp = _opt_expiry(sec)
-        if exp and exp < today:
-            expired_options.append({
-                "security_id": a["security_id"],
-                "ticker": sec.ticker if sec else None,
-                "account": accts[a["account_id"]].name if a["account_id"] in accts else None,
-                "expiry": exp.isoformat(),
-                "days_past": (today - exp).days,
-                "quantity": str(a["quantity"]),
-            })
+        if not (exp and exp < today):
+            continue
+        days_past = (today - exp).days
+        if days_past > EXPIRED_WINDOW_DAYS:
+            expired_backlog += 1
+            continue
+        expired_options.append({
+            "security_id": a["security_id"],
+            "ticker": sec.ticker if sec else None,
+            "account": accts[a["account_id"]].name if a["account_id"] in accts else None,
+            "expiry": exp.isoformat(),
+            "days_past": days_past,
+            "quantity": str(a["quantity"]),
+        })
 
     # ── 3. Stale prices (held equities whose MarketPrice hasn't refreshed) ─────
     stale_prices = []
@@ -151,8 +163,11 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
         _check("unpriced", "Unpriced holdings", "warning", unpriced,
                "Held securities with no market price — carried at cost, so value and P&L are approximate.",
                {"label": "Fix in Securities", "route": "/admin?tab=securities"}),
-        _check("expired_options", "Expired options still open", "danger", expired_options,
-               "Options past their expiry with a non-zero position and no closing entry — distorts cost basis.",
+        _check("expired_options", "Expired options still open", "warning", expired_options,
+               f"Options that expired in the last {EXPIRED_WINDOW_DAYS} days with a non-zero position and no "
+               f"recorded expiry/assignment — their premium or loss isn't realized yet."
+               + (f" ({expired_backlog} older unclosed options exist too — a settled backlog that "
+                  "doesn't affect current value.)" if expired_backlog else ""),
                {"label": "Review transactions", "route": "/transactions"}),
         _check("zero_cost", "Zero-cost positions", "danger", zero_cost,
                "Journaled-in or transferred shares with no book value, so ACB and P&L are wrong.",

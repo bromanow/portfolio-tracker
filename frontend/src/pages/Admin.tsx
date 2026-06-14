@@ -837,6 +837,41 @@ function parseOptionTicker(ticker: string): { underlying: string; optionType: 'C
 }
 
 // ─── Securities Tab ───────────────────────────────────────────────────────────
+function SecurityPicker({ securities, value, onChange, placeholder }: {
+  securities: Security[]; value: number | null; onChange: (id: number | null) => void; placeholder: string
+}) {
+  const [q, setQ] = useState('')
+  const [open, setOpen] = useState(false)
+  const label = (s: Security) => `${s.name || s.ticker} — ${s.ticker}`
+  const selected = securities.find(s => s.id === value) || null
+  const matches = (q.trim()
+    ? securities.filter(s => label(s).toLowerCase().includes(q.toLowerCase()))
+    : securities).slice(0, 20)
+  return (
+    <div className="relative">
+      <input
+        className="border border-gray-200 rounded px-2 py-1.5 text-sm w-72"
+        placeholder={placeholder}
+        value={selected && !open ? label(selected) : q}
+        onChange={e => { setQ(e.target.value); setOpen(true); if (value) onChange(null) }}
+        onFocus={() => setOpen(true)}
+        onBlur={() => setTimeout(() => setOpen(false), 150)}
+      />
+      {open && matches.length > 0 && (
+        <div className="absolute z-20 mt-1 max-h-64 overflow-auto bg-white border border-gray-200 rounded shadow-lg w-72">
+          {matches.map(s => (
+            <button key={s.id} type="button"
+              onMouseDown={e => { e.preventDefault(); onChange(s.id); setQ(''); setOpen(false) }}
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 truncate">
+              {s.name || s.ticker} <span className="text-gray-400">— {s.ticker}</span>
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function SecuritiesTab() {
   const qc = useQueryClient()
   const [search, setSearch] = useState('')
@@ -844,6 +879,8 @@ function SecuritiesTab() {
     queryKey: ['securities', search],
     queryFn: () => getSecurities({ search: search || undefined }),
   })
+  // Full (unfiltered) list for the merge pickers, so they're not limited by the ticker search.
+  const { data: allSecurities = [] } = useQuery({ queryKey: ['securities', 'all'], queryFn: () => getSecurities() })
   const [form, setForm] = useState({ ticker: '', name: '', asset_class: 'EQUITY', currency: 'CAD', exchange: '' })
   const [editing, setEditing] = useState<number | null>(null)
   const [editData, setEditData] = useState<Partial<Security>>({})
@@ -1047,29 +1084,19 @@ function SecuritiesTab() {
         <p className="text-xs text-gray-500 mb-3">
           Move one security's transactions, prices and Plaid mapping onto another, then delete it —
           e.g. join a Plaid-mis-named holding (“Cluster Group Holdings”/CLUS) onto your real fund.
-          Clear the ticker search above to see all securities.
+          Type to search either field.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">Merge this (deleted)</label>
-            <select value={mergeSource ?? ''} onChange={e => setMergeSource(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1.5 text-sm min-w-[16rem]">
-              <option value="">Select source…</option>
-              {(securities as Security[]).filter(s => !s.is_option).map(s => (
-                <option key={s.id} value={s.id}>{s.name || s.ticker} — {s.ticker}</option>
-              ))}
-            </select>
+            <SecurityPicker securities={(allSecurities as Security[]).filter(s => !s.is_option)}
+              value={mergeSource} onChange={setMergeSource} placeholder="Search source…" />
           </div>
           <span className="pb-2 text-gray-400">→ into →</span>
           <div className="flex flex-col gap-1">
             <label className="text-xs text-gray-500">Keep this (target)</label>
-            <select value={mergeTarget ?? ''} onChange={e => setMergeTarget(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1.5 text-sm min-w-[16rem]">
-              <option value="">Select target…</option>
-              {(securities as Security[]).filter(s => !s.is_option).map(s => (
-                <option key={s.id} value={s.id}>{s.name || s.ticker} — {s.ticker}</option>
-              ))}
-            </select>
+            <SecurityPicker securities={(allSecurities as Security[]).filter(s => !s.is_option)}
+              value={mergeTarget} onChange={setMergeTarget} placeholder="Search target…" />
           </div>
           <button
             onClick={() => { if (mergeSource && mergeTarget && confirm('Merge and delete the source security? This moves its transactions/prices to the target.')) { setMergeMsg(null); mergeMut.mutate() } }}

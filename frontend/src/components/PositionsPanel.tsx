@@ -1,4 +1,4 @@
-import { useState, useMemo, Fragment } from 'react'
+import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { getConsolidatedPositions } from '../api/client'
@@ -159,6 +159,15 @@ function loadColOrder(): string[] {
   }
 }
 
+const COL_WIDTH_KEY = 'holdings-col-widths'
+function loadColWidths(): Record<string, number> {
+  try {
+    const raw = localStorage.getItem(COL_WIDTH_KEY)
+    const v = raw ? JSON.parse(raw) : {}
+    return v && typeof v === 'object' ? v : {}
+  } catch { return {} }
+}
+
 type AcctPos = ConsolidatedPosition['accounts'][number]
 /** Aggregates for subtotal / group-header / totals rows. `mkt` is the value to show
  *  in the Mkt-Value column; `mktForPct` is the base for the day-gain percentage. */
@@ -216,7 +225,33 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
     }
     setDragCol(null); setDragOverCol(null)
   }
-  const isCustomOrder = colOrder.join(',') !== DEFAULT_COL_ORDER.join(',')
+
+  // Column resizing — drag the right edge of a header. Widths persist to localStorage.
+  const [colWidths, setColWidths] = useState<Record<string, number>>(loadColWidths)
+  useEffect(() => {
+    try { localStorage.setItem(COL_WIDTH_KEY, JSON.stringify(colWidths)) } catch { /* ignore */ }
+  }, [colWidths])
+  const resizeRef = useRef<{ col: string; startX: number; startW: number } | null>(null)
+  const startResize = (e: React.MouseEvent, col: string) => {
+    e.preventDefault(); e.stopPropagation()   // don't trigger column drag-reorder or sort
+    const th = (e.currentTarget as HTMLElement).closest('th')
+    const startW = colWidths[col] ?? th?.getBoundingClientRect().width ?? 120
+    resizeRef.current = { col, startX: e.clientX, startW }
+    const onMove = (ev: MouseEvent) => {
+      const r = resizeRef.current
+      if (!r) return
+      const w = Math.max(56, Math.round(r.startW + (ev.clientX - r.startX)))
+      setColWidths(prev => ({ ...prev, [r.col]: w }))
+    }
+    const onUp = () => {
+      resizeRef.current = null
+      document.removeEventListener('mousemove', onMove)
+      document.removeEventListener('mouseup', onUp)
+    }
+    document.addEventListener('mousemove', onMove)
+    document.addEventListener('mouseup', onUp)
+  }
+  const isCustomOrder = colOrder.join(',') !== DEFAULT_COL_ORDER.join(',') || Object.keys(colWidths).length > 0
 
   const handleTickerClick = (pos: ConsolidatedPosition, e: React.MouseEvent) => {
     e.stopPropagation()
@@ -573,7 +608,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
           <div className="ml-auto flex items-center gap-2 flex-shrink-0">
             {isCustomOrder && (
               <button
-                onClick={e => { e.stopPropagation(); persistOrder(DEFAULT_COL_ORDER) }}
+                onClick={e => { e.stopPropagation(); persistOrder(DEFAULT_COL_ORDER); setColWidths({}) }}
                 className="hidden md:block text-xs border border-gray-200 rounded px-3 py-1 bg-white text-gray-500 hover:bg-gray-50"
                 title="Reset column order to default"
               >
@@ -735,13 +770,21 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         onDrop={() => dropColumn(c.col)}
                         onDragEnd={() => { setDragCol(null); setDragOverCol(null) }}
                         onClick={() => toggleSort(c.col)}
-                        title="Drag to reorder · click to sort"
-                        className={`px-4 py-2.5 cursor-move hover:bg-gray-100 select-none ${c.right ? 'text-right' : 'text-left'} ${dragCol === c.col ? 'opacity-40' : ''} ${dragOverCol === c.col && dragCol && dragCol !== c.col ? 'border-l-2 border-blue-400' : ''}`}
+                        title="Drag to reorder · click to sort · drag right edge to resize"
+                        style={colWidths[c.col] ? { width: colWidths[c.col], minWidth: colWidths[c.col], maxWidth: colWidths[c.col] } : undefined}
+                        className={`relative px-4 py-2.5 cursor-move hover:bg-gray-100 select-none ${c.right ? 'text-right' : 'text-left'} ${dragCol === c.col ? 'opacity-40' : ''} ${dragOverCol === c.col && dragCol && dragCol !== c.col ? 'border-l-2 border-blue-400' : ''}`}
                       >
-                        <div className={`flex items-center gap-1 ${c.right ? 'justify-end' : ''}`}>
+                        <div className={`flex items-center gap-1 ${c.right ? 'justify-end' : ''} ${colWidths[c.col] ? 'overflow-hidden' : ''}`}>
                           {c.label}
                           <SortIcon col={c.col} />
                         </div>
+                        <span
+                          onMouseDown={e => startResize(e, c.col)}
+                          onClick={e => e.stopPropagation()}
+                          draggable={false}
+                          className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300/60"
+                          title="Drag to resize"
+                        />
                       </th>
                     ))}
                   </tr>

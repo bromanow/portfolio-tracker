@@ -1068,6 +1068,21 @@ export const getExpiredOptions = () =>
 export const closeExpiredOptions = (body: { keys?: number[][]; all?: boolean }) =>
   api.post<{ closed: number; skipped: number; accounts: number }>('/portfolio/expired-options/close', body).then(r => r.data)
 
+export interface OptionRetypePreview {
+  sell: number
+  buy: number
+  total: number
+  other: number
+  by_brokerage: { brokerage: string; count: number }[]
+  sample: { date: string; type: string; ticker: string; quantity: string; cad_amount: string | null; account: string }[]
+}
+export const getOptionRetypePreview = () =>
+  api.get<OptionRetypePreview>('/portfolio/option-retype/preview').then(r => r.data)
+export const applyOptionRetype = () =>
+  api.post<{ applied: boolean; sell_retyped: number; buy_retyped: number }>('/portfolio/option-retype/apply', { confirm: true }).then(r => r.data)
+export const revertOptionRetype = () =>
+  api.post<{ reverted: boolean; sell: number; buy: number }>('/portfolio/option-retype/revert', { confirm: true }).then(r => r.data)
+
 export const purgeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

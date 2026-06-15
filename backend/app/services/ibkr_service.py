@@ -251,7 +251,7 @@ def scan_ticker_ibeam(
         )
         if not has_options:
             continue
-        if is_canadian and ("TSX" in desc or "TORONTO" in desc):
+        if is_canadian and any(x in desc for x in ("TSX", "TSE", "TORONTO", "VENTURE")):
             underlying = item
             break
         if not is_canadian and underlying is None:
@@ -477,7 +477,7 @@ def fetch_option_price_ibeam(
             if not has_options:
                 continue
             desc = (item.get("description") or "").upper()
-            if is_canadian and ("TSX" in desc or "TORONTO" in desc):
+            if is_canadian and any(x in desc for x in ("TSX", "TSE", "TORONTO", "VENTURE")):
                 underlying_item = item
                 break
             if not is_canadian and underlying_item is None:

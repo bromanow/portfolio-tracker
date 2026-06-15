@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { getOptionsReport, getAccounts, setManualPrice, clearManualPrice, expireOption } from '../api/client'
+import { getOptionsReport, getAccounts, setManualPrice, clearManualPrice, expireOption, getOptionsLive } from '../api/client'
 import type { OptionPosition, OptionIncomeRow, Account } from '../api/client'
 import { parseOptionTicker } from '../utils/optionFormat'
 import { ChevronUp, ChevronDown, ChevronsUpDown, Pencil, Check, X, Trash2 } from 'lucide-react'
@@ -285,6 +285,16 @@ export default function Options() {
     queryFn: () => getOptionsReport({ account_ids: accountIdsParam }),
   })
 
+  // Live bid/ask + greeks from IBeam (production-only). Fetched async so the table renders
+  // immediately; cells fall back to "—" when IBeam is down. Cached server-side (60s).
+  const { data: live, isFetching: liveFetching } = useQuery({
+    queryKey: ['options-live'],
+    queryFn: getOptionsLive,
+    staleTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
+  const quotes = live?.quotes ?? {}
+
   const expireMut = useMutation({
     mutationFn: ({ accountId, securityId, expiryDate }: { accountId: number; securityId: number; expiryDate?: string }) =>
       expireOption(accountId, securityId, expiryDate),
@@ -436,6 +446,10 @@ export default function Options() {
                       <SortTh col="qty" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Qty</SortTh>
                       <SortTh col="currency" sort={posSort.sort} onSort={posSort.toggle} className="text-center">CCY</SortTh>
                       <SortTh col="price" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Opt Price</SortTh>
+                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Live bid / ask from IBKR (IBeam)">Bid / Ask</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase" title="Implied volatility (IBKR)">IV</th>
+                      <th className="px-4 py-2.5 text-center text-xs text-gray-500 uppercase whitespace-nowrap" title="Greeks from IBKR: delta / gamma / theta / vega">Greeks (Δ·Γ·Θ·V)</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Premium per contract: sold/contract for short, paid/contract for long">Prem/ct</th>
                       <SortTh col="mkt_val" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Mkt Val</SortTh>
                       <SortTh col="acb" sort={posSort.sort} onSort={posSort.toggle} className="text-right">ACB</SortTh>
                       <SortTh col="pnl" sort={posSort.sort} onSort={posSort.toggle} className="text-right">P&L</SortTh>
@@ -494,6 +508,27 @@ export default function Options() {
                           <td className="px-4 py-2.5">
                             <ManualPriceCell position={p} onSaved={() => {}} />
                           </td>
+                          {(() => {
+                            const q = quotes[String(p.security_id)]
+                            const g = (v: number | null | undefined, d = 2) => (v == null ? <span className="text-gray-300">—</span> : v.toFixed(d))
+                            const premPerCt = Math.abs(parseFloat(p.quantity)) > 0
+                              ? Math.abs(parseFloat(p.total_acb_cad ?? '0')) / Math.abs(parseFloat(p.quantity))
+                              : null
+                            return (
+                              <>
+                                <td className="px-4 py-2.5 text-right font-mono text-xs whitespace-nowrap">
+                                  {q && (q.bid != null || q.ask != null)
+                                    ? <span className="text-gray-700">{q.bid != null ? q.bid.toFixed(2) : '—'} / {q.ask != null ? q.ask.toFixed(2) : '—'}</span>
+                                    : <span className="text-gray-300">{liveFetching ? '…' : '—'}</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right text-xs text-gray-600">{q?.iv_pct != null ? `${q.iv_pct.toFixed(1)}%` : <span className="text-gray-300">—</span>}</td>
+                                <td className="px-4 py-2.5 text-center font-mono text-xs text-gray-600 whitespace-nowrap">
+                                  {q ? <span>{g(q.delta)}·{g(q.gamma, 3)}·{g(q.theta)}·{g(q.vega)}</span> : <span className="text-gray-300">{liveFetching ? '…' : '—'}</span>}
+                                </td>
+                                <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-600">{premPerCt != null ? fmtCAD(premPerCt) : <span className="text-gray-300">—</span>}</td>
+                              </>
+                            )
+                          })()}
                           <td className="px-4 py-2.5 text-right font-semibold">{fmtCAD(p.market_value_cad)}</td>
                           <td className="px-4 py-2.5 text-right text-gray-600">{fmtCAD(p.total_acb_cad)}</td>
                           <td className="px-4 py-2.5 text-right">

@@ -1084,6 +1084,18 @@ export const applyOptionRetype = () =>
 export const revertOptionRetype = () =>
   api.post<{ reverted: boolean; sell: number; buy: number }>('/portfolio/option-retype/revert', { confirm: true }).then(r => r.data)
 
+export interface OptionLiveQuote {
+  bid: number | null
+  ask: number | null
+  delta: number | null
+  gamma: number | null
+  theta: number | null
+  vega: number | null
+  iv_pct: number | null
+}
+export const getOptionsLive = () =>
+  api.get<{ available: boolean; quotes: Record<string, OptionLiveQuote> }>('/portfolio/options-live').then(r => r.data)
+
 export const purgeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

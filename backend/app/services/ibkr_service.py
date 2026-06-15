@@ -519,6 +519,12 @@ def fetch_option_price_ibeam(
         bid  = _f(item, 84, 0.0) or 0.0
         ask  = _f(item, 86)
         mark = _f(item, 7635)
+        # Greeks come free in the same snapshot (_CP_FIELDS requests them).
+        delta = _f(item, 7308)
+        gamma = _f(item, 7309)
+        theta = _f(item, 7310)
+        vega  = _f(item, 7311)
+        iv_pct = _f(item, 7633)
 
         if bid <= 0 and not mark:
             logger.debug("IBeam price: no market data for conId %s (%s)", opt_conids[0], underlying)
@@ -532,7 +538,14 @@ def fetch_option_price_ibeam(
             underlying, expiry, option_type, strike,
             bid, f"{ask:.4f}" if ask else "N/A", mid, currency,
         )
-        return {"price": mid, "bid": bid, "ask": ask, "currency": currency}
+        return {
+            "price": mid, "bid": bid, "ask": ask, "currency": currency,
+            "delta": round(delta, 4) if delta is not None else None,
+            "gamma": round(gamma, 6) if gamma is not None else None,
+            "theta": round(theta, 4) if theta is not None else None,
+            "vega": round(vega, 4) if vega is not None else None,
+            "iv_pct": round(iv_pct, 2) if iv_pct is not None else None,
+        }
 
     except Exception as exc:
         logger.debug("IBeam option price failed for %s %s/%s/%s: %s", underlying, expiry, strike, option_type, exc)

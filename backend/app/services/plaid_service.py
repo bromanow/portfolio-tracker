@@ -371,18 +371,15 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
     holdings = data.get("holdings", [])
     today = date.today()
 
-    # 1. Securities → our Security rows + base prices. Cash-equivalents (e.g. a
-    #    "U S Dollar" sweep) are the account's cash, not a holding — route those to
-    #    a CASH_OPENING below instead of creating a phantom security.
+    # Securities are created lazily, only when a holding turns out to be a REAL position
+    # (see the loop below). Plaid's /holdings/get returns a `securities` array listing every
+    # security the institution references — including ones with no position, qty 0, or dust —
+    # so upserting them all here would spawn orphan securities (0 txns) on every overnight
+    # sync. We instead upsert inside the position loop after the qty/dust checks pass.
     sec_map: dict[str, int] = {}
-    for sid, psec in securities.items():
-        if psec.get("is_cash_equivalent"):
-            continue
-        sec = _upsert_security(db, psec, today)
-        sec_map[sid] = sec.id
 
     # 2. Group holdings by Plaid account; create our Account + replace its positions.
-    summary = {"accounts": 0, "holdings": 0, "securities": len(securities)}
+    summary = {"accounts": 0, "holdings": 0, "securities": 0}
     by_acct: dict[str, list[dict]] = {}
     for h in holdings:
         by_acct.setdefault(h["account_id"], []).append(h)
@@ -426,6 +423,14 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
             if mkt_val is not None and abs(mkt_val) < Decimal("1"):
                 continue
             unit_price = _d(h.get("institution_price"))
+            # Real held position → NOW create/resolve the security (avoids orphan securities
+            # for non-held entries in Plaid's `securities` array).
+            sid = h["security_id"]
+            local_sec_id = sec_map.get(sid)
+            if local_sec_id is None:
+                local_sec_id = _upsert_security(db, securities.get(sid, {}), today).id
+                sec_map[sid] = local_sec_id
+                summary["securities"] += 1
             # Value at market (Book = Securities, P&L ≈ 0). These are registered accounts
             # where cost basis is display-only, and Plaid's cost_basis is ambiguous
             # (docs say total; Sandbox returns per-unit-looking values). Wire real cost
@@ -433,12 +438,12 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
             cost_native = mkt_val if mkt_val is not None else Decimal("0")
             cad_amount = (cost_native * _fx_to_cad(db, ccy, today)).quantize(Decimal("0.01"))
             # Refresh the price from the holding's unit price (more current than security close).
-            if unit_price is not None and h["security_id"] in sec_map:
-                _write_price(db, sec_map[h["security_id"]], unit_price, ccy, today)
+            if unit_price is not None:
+                _write_price(db, local_sec_id, unit_price, ccy, today)
 
             db.add(Transaction(
                 account_id=acct.id,
-                security_id=sec_map.get(h["security_id"]),
+                security_id=local_sec_id,
                 transaction_date=today,
                 transaction_type="OPENING_BALANCE",
                 quantity=qty,

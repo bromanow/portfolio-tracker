@@ -152,6 +152,16 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
             "quantity": str(a["quantity"]),
         })
 
+    # ── 6. Unused securities (no transactions reference them) ──────────────────
+    # Orphans — typically Plaid listing a security it doesn't actually hold, or a security
+    # left behind after a position fully closed. Harmless but clutter; safe to delete.
+    from app.models.transactions import Transaction as _Txn
+    used_ids = {r[0] for r in db.query(_Txn.security_id).filter(_Txn.security_id.isnot(None)).distinct()}
+    unused_securities = [
+        {"security_id": s.id, "ticker": s.ticker, "name": s.name, "asset_class": s.asset_class}
+        for s in secs.values() if s.id not in used_ids
+    ]
+
     def _check(key, title, severity, items, hint, action):
         return {
             "key": key, "title": title, "severity": severity,
@@ -178,6 +188,10 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
         _check("stale_accounts", "Accounts needing an import", "warning", stale_accounts,
                "Accounts with no recent transactions or imports for their data source.",
                {"label": "Go to import", "route": "/import"}),
+        _check("unused_securities", "Unused securities", "warning", unused_securities,
+               "Securities with no transactions — usually Plaid listing something it doesn't hold, "
+               "or a leftover after a position closed. Safe to delete.",
+               {"label": "Clean up in Securities", "route": "/admin?tab=securities"}),
     ]
     issues = sum(c["count"] for c in checks)
     return {

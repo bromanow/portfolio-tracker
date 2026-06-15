@@ -20,6 +20,7 @@ const COLUMNS: Record<string, { key: string; label: string }[]> = {
   zero_cost:       [{ key: 'ticker', label: 'Ticker' }, { key: 'account', label: 'Account' }, { key: 'quantity', label: 'Qty' }],
   stale_prices:    [{ key: 'ticker', label: 'Ticker' }, { key: 'last_priced', label: 'Last priced' }, { key: 'days_old', label: 'Days old' }],
   stale_accounts:  [{ key: 'account', label: 'Account' }, { key: 'brokerage', label: 'Brokerage' }, { key: 'source', label: 'Source' }, { key: 'last_loaded', label: 'Last loaded' }, { key: 'days_since_load', label: 'Days' }],
+  unused_securities: [{ key: 'ticker', label: 'Ticker' }, { key: 'name', label: 'Name' }, { key: 'asset_class', label: 'Class' }],
 }
 
 function fmtCell(key: string, v: unknown): string {

@@ -449,7 +449,7 @@ export default function Options() {
                       <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Live bid / ask from IBKR (IBeam)">Bid / Ask</th>
                       <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase" title="Implied volatility (IBKR)">IV</th>
                       <th className="px-4 py-2.5 text-center text-xs text-gray-500 uppercase whitespace-nowrap" title="Greeks from IBKR: delta / gamma / theta / vega">Greeks (Δ·Γ·Θ·V)</th>
-                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Premium per contract: sold/contract for short, paid/contract for long">Prem/ct</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Price paid per share (ACB ÷ 100), comparable to the current Opt Price">Cost/Share</th>
                       <SortTh col="mkt_val" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Mkt Val</SortTh>
                       <SortTh col="acb" sort={posSort.sort} onSort={posSort.toggle} className="text-right">ACB</SortTh>
                       <SortTh col="pnl" sort={posSort.sort} onSort={posSort.toggle} className="text-right">P&L</SortTh>
@@ -511,8 +511,10 @@ export default function Options() {
                           {(() => {
                             const q = quotes[String(p.security_id)]
                             const g = (v: number | null | undefined, d = 2) => (v == null ? <span className="text-gray-300">—</span> : v.toFixed(d))
-                            const premPerCt = Math.abs(parseFloat(p.quantity)) > 0
-                              ? Math.abs(parseFloat(p.total_acb_cad ?? '0')) / Math.abs(parseFloat(p.quantity))
+                            // Price paid per SHARE = |total ACB| / (contracts × 100), so it lines
+                            // up with the per-share Opt Price column.
+                            const costPerShare = Math.abs(parseFloat(p.quantity)) > 0
+                              ? Math.abs(parseFloat(p.total_acb_cad ?? '0')) / (Math.abs(parseFloat(p.quantity)) * 100)
                               : null
                             return (
                               <>
@@ -525,7 +527,7 @@ export default function Options() {
                                 <td className="px-4 py-2.5 text-center font-mono text-xs text-gray-600 whitespace-nowrap">
                                   {q ? <span>{g(q.delta)}·{g(q.gamma, 3)}·{g(q.theta)}·{g(q.vega)}</span> : <span className="text-gray-300">{liveFetching ? '…' : '—'}</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-600">{premPerCt != null ? fmtCAD(premPerCt) : <span className="text-gray-300">—</span>}</td>
+                                <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-600">{costPerShare != null ? fmtCAD(costPerShare) : <span className="text-gray-300">—</span>}</td>
                               </>
                             )
                           })()}

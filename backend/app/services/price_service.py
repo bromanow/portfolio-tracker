@@ -864,9 +864,28 @@ def refresh_all_prices(
     now = datetime.now(timezone.utc).replace(tzinfo=None)
     today = date.today()
 
+    # Non-Yahoo sources (e.g. tmx:<SYMBOL> for Canadian mutual funds like Pender PGF*) can't
+    # go through the Yahoo thread pool — their override string ("tmx:PGF550") isn't a Yahoo
+    # symbol. Route them through fetch_price_for_security, which dispatches by override prefix.
+    # (Bug fix: previously these were sent to Yahoo as a literal symbol and failed silently,
+    #  so TMX-priced funds were never refreshed after their first manual fetch.)
+    tmx_secs = [s for s in non_options
+                if (s.fetch_ticker_override or "").strip().lower().startswith("tmx:")]
+    for sec in tmx_secs:
+        try:
+            if fetch_price_for_security(db, sec, usd_to_cad=usd_to_cad, cached_mp=all_mp.get(sec.id)):
+                fetched += 1
+            else:
+                failed += 1
+        except Exception as exc:
+            logger.warning("TMX price refresh failed for %s: %s", sec.ticker, exc)
+            failed += 1
+
     # Build sym → [securities] map (multiple securities may share a fetch ticker)
     sym_to_secs: dict[str, list[Security]] = {}
     for sec in non_options:
+        if sec in tmx_secs:
+            continue   # already handled above via its dedicated fetcher
         cached_mp = all_mp.get(sec.id)
         candidates = _yahoo_candidates(sec, cached_mp.fetch_ticker if cached_mp else None)
         if not candidates:

@@ -8,7 +8,6 @@ import Performance from './pages/Performance'
 import Activity from './pages/Activity'
 import SecurityDetail from './pages/SecurityDetail'
 import Scanner from './pages/Scanner'
-import Prices from './pages/Prices'
 import DataHealth from './pages/DataHealth'
 import Admin from './pages/Admin'
 
@@ -49,7 +48,7 @@ export default function App() {
         <Route path="performance"  element={<Performance />} />
         <Route path="activity"     element={<Activity />} />
         <Route path="scanner"      element={<Scanner />} />
-        <Route path="prices"       element={<Prices />} />
+        <Route path="prices"       element={<Navigate to="/admin?tab=prices" replace />} />
         <Route path="data-health"  element={<DataHealth />} />
         <Route path="admin"        element={<Admin />} />
 

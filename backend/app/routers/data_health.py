@@ -174,7 +174,7 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
                {"label": "Set book value", "route": "/transactions"}),
         _check("stale_prices", "Stale prices", "warning", stale_prices,
                f"Held equities priced more than {STALE_PRICE_DAYS} days ago.",
-               {"label": "Refresh prices", "route": "/prices"}),
+               {"label": "Refresh prices", "route": "/admin?tab=prices"}),
         _check("stale_accounts", "Accounts needing an import", "warning", stale_accounts,
                "Accounts with no recent transactions or imports for their data source.",
                {"label": "Go to import", "route": "/import"}),

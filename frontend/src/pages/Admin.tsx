@@ -1,6 +1,8 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import PlaidConnect from '../components/PlaidConnect'
+import Prices from './Prices'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import DatePicker from '../components/DatePicker'
@@ -26,23 +28,34 @@ import {
 } from '../api/client'
 import type { Account, Security, TypeMapping, FXRate, OpeningBalance, MarketPrice, CashOpening, Brokerage, YahooSearchResult, DbStats, CurrencySummary, Client, AppUser, IBKRFlexConfig } from '../api/client'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'plaid'
+type TabId = 'system' | 'accounts' | 'securities' | 'prices' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'plaid'
 
-const ALL_TABS: { id: TabId; label: string; adminOnly?: boolean }[] = [
-  { id: 'system',           label: 'System',           adminOnly: true },
-  { id: 'my-account',       label: 'My Account' },
-  { id: 'accounts',         label: 'Accounts' },
-  { id: 'opening-balances', label: 'Opening Balances' },
-  { id: 'ibkr-flex',        label: 'IBKR Flex',        adminOnly: true },
-  { id: 'plaid',            label: 'Plaid',            adminOnly: true },
-  { id: 'securities',       label: 'Securities',       adminOnly: true },
-  { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
-  { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
-  { id: 'fx-rates',         label: 'FX Rates',         adminOnly: true },
-  { id: 'currency-split',   label: 'Currency Split',   adminOnly: true },
-  { id: 'users',            label: 'Users',            adminOnly: true },
-  { id: 'danger',           label: '⚠ Bulk Delete',   adminOnly: true },
+// Grouped for the left-hand sub-page nav (section header → tabs).
+const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly?: boolean }[] }[] = [
+  { heading: 'You', tabs: [
+    { id: 'my-account',       label: 'My Account' },
+    { id: 'system',           label: 'System',           adminOnly: true },
+  ]},
+  { heading: 'Data', tabs: [
+    { id: 'accounts',         label: 'Accounts' },
+    { id: 'opening-balances', label: 'Opening Balances' },
+    { id: 'securities',       label: 'Securities',       adminOnly: true },
+    { id: 'prices',           label: 'Prices',           adminOnly: true },
+    { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
+    { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
+    { id: 'fx-rates',         label: 'FX Rates',         adminOnly: true },
+    { id: 'currency-split',   label: 'Currency Split',   adminOnly: true },
+  ]},
+  { heading: 'Connections', tabs: [
+    { id: 'ibkr-flex',        label: 'IBKR Flex',        adminOnly: true },
+    { id: 'plaid',            label: 'Plaid',            adminOnly: true },
+  ]},
+  { heading: 'Manage', tabs: [
+    { id: 'users',            label: 'Users',            adminOnly: true },
+    { id: 'danger',           label: '⚠ Bulk Delete',   adminOnly: true },
+  ]},
 ]
+const ALL_TABS = TAB_GROUPS.flatMap(g => g.tabs)
 
 // ─── Confirmation Dialog ──────────────────────────────────────────────────────
 function ConfirmDialog({
@@ -3121,41 +3134,67 @@ function IBKRFlexTab() {
 export default function Admin() {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
-  const tabs = ALL_TABS.filter(t => !t.adminOnly || isAdmin)
-  const [tab, setTab] = useState<TabId>(() => isAdmin ? 'system' : 'my-account')
+  const [searchParams, setSearchParams] = useSearchParams()
+  const visible = (t: { adminOnly?: boolean }) => !t.adminOnly || isAdmin
+  const groups = TAB_GROUPS
+    .map(g => ({ ...g, tabs: g.tabs.filter(visible) }))
+    .filter(g => g.tabs.length > 0)
+
+  // Tab is URL-driven (?tab=…) so deep links work (e.g. Data Health → /admin?tab=securities).
+  const urlTab = searchParams.get('tab') as TabId | null
+  const valid = ALL_TABS.some(t => t.id === urlTab && visible(t))
+  const tab: TabId = valid && urlTab ? urlTab : (isAdmin ? 'system' : 'my-account')
+  const selectTab = (id: TabId) => {
+    const next = new URLSearchParams(searchParams)
+    next.set('tab', id)
+    setSearchParams(next, { replace: true })
+  }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
-      <div className="border-b border-gray-200 overflow-x-auto">
-        <div className="flex gap-0 min-w-max">
-          {tabs.map(t => (
-            <button
-              key={t.id}
-              onClick={() => setTab(t.id)}
-              className={`px-5 py-3 text-sm font-medium border-b-2 transition-colors whitespace-nowrap ${
-                tab === t.id ? 'border-blue-600 text-blue-700' : 'border-transparent text-gray-500 hover:text-gray-700'
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
-      </div>
-      <div>
-        {tab === 'system' && isAdmin && <SystemTab />}
-        {tab === 'my-account' && <MyAccountTab />}
-        {tab === 'accounts' && <AccountsTab />}
-        {tab === 'opening-balances' && <OpeningBalancesTab />}
-        {tab === 'currency-split' && isAdmin && <CurrencySplitTab />}
-        {tab === 'securities' && <SecuritiesTab />}
-        {tab === 'brokerages' && <BrokeragesTab />}
-        {tab === 'type-mappings' && <TypeMappingsTab />}
-        {tab === 'fx-rates' && <FxRatesTab />}
-        {tab === 'ibkr-flex' && isAdmin && <IBKRFlexTab />}
-        {tab === 'plaid' && isAdmin && <PlaidConnect />}
-        {tab === 'users' && isAdmin && <UsersTab />}
-        {tab === 'danger' && isAdmin && <DangerZoneTab />}
+      <div className="flex flex-col md:flex-row gap-5 items-start">
+        {/* Left sub-page nav */}
+        <aside className="w-full md:w-52 flex-shrink-0">
+          <nav className="md:sticky md:top-4 space-y-3">
+            {groups.map(g => (
+              <div key={g.heading}>
+                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{g.heading}</div>
+                <div className="space-y-0.5">
+                  {g.tabs.map(t => (
+                    <button
+                      key={t.id}
+                      onClick={() => selectTab(t.id)}
+                      className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
+                        tab === t.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </nav>
+        </aside>
+
+        {/* Content */}
+        <main className="flex-1 min-w-0 w-full">
+          {tab === 'system' && isAdmin && <SystemTab />}
+          {tab === 'my-account' && <MyAccountTab />}
+          {tab === 'accounts' && <AccountsTab />}
+          {tab === 'opening-balances' && <OpeningBalancesTab />}
+          {tab === 'currency-split' && isAdmin && <CurrencySplitTab />}
+          {tab === 'securities' && <SecuritiesTab />}
+          {tab === 'prices' && isAdmin && <Prices />}
+          {tab === 'brokerages' && <BrokeragesTab />}
+          {tab === 'type-mappings' && <TypeMappingsTab />}
+          {tab === 'fx-rates' && <FxRatesTab />}
+          {tab === 'ibkr-flex' && isAdmin && <IBKRFlexTab />}
+          {tab === 'plaid' && isAdmin && <PlaidConnect />}
+          {tab === 'users' && isAdmin && <UsersTab />}
+          {tab === 'danger' && isAdmin && <DangerZoneTab />}
+        </main>
       </div>
     </div>
   )

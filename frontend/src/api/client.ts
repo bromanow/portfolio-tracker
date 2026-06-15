@@ -335,6 +335,7 @@ export interface ConsolidatedPosition extends PriceFields {
     account_id: number
     account_name: string
     account_type: string
+    brokerage?: string
     quantity: string
     total_acb_cad: string
   }>

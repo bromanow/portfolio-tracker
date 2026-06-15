@@ -122,6 +122,21 @@ function sortRows<T>(rows: T[], col: string, dir: SortDir): T[] {
 // the header, body, breakdown, subtotal and totals rows. Users can drag column
 // headers to reorder, and the order is persisted to localStorage.
 
+type GroupMode = 'none' | 'class' | 'brokerage'
+const GROUP_MODES: GroupMode[] = ['none', 'class', 'brokerage']
+const GROUP_LABEL: Record<GroupMode, string> = { none: 'Group: Off', class: 'Group: Class', brokerage: 'Group: Brokerage' }
+
+// The brokerage a consolidated (multi-account) position belongs to = the brokerage of the
+// account holding the largest quantity. Per-account breakdown still shows any split.
+function dominantBrokerage(p: ConsolidatedPosition): string {
+  let best = '—', bestQ = -Infinity
+  for (const a of p.accounts) {
+    const q = Math.abs(parseFloat(a.quantity || '0'))
+    if (q > bestQ) { bestQ = q; best = a.brokerage || '—' }
+  }
+  return best
+}
+
 const COL_ORDER_KEY = 'holdings-col-order'
 const DEFAULT_COL_ORDER = [
   'ticker', 'asset_class', 'total_quantity', 'acb_per_share_cad', 'total_acb_cad',
@@ -178,7 +193,8 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const [sortCol, setSortCol] = useState('total_acb_cad')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [selectedPosition, setSelectedPosition] = useState<ConsolidatedPosition | null>(null)
-  const [groupByClass, setGroupByClass] = useState(false)
+  const [groupBy, setGroupBy] = useState<GroupMode>('none')
+  const cycleGroup = () => setGroupBy(g => GROUP_MODES[(GROUP_MODES.indexOf(g) + 1) % GROUP_MODES.length])
   const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set())
   const toggleClass = (k: string) =>
     setCollapsedClasses(prev => { const n = new Set(prev); n.has(k) ? n.delete(k) : n.add(k); return n })
@@ -273,15 +289,15 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       }
       return { key, positions, mkt, pnl, day, cost, hasDay }
     }
-    if (!groupByClass) return [summarize('', sorted)]
+    if (groupBy === 'none') return [summarize('', sorted)]
     const m = new Map<string, ConsolidatedPosition[]>()
     for (const p of sorted) {
-      const k = p.asset_class || 'OTHER'
+      const k = groupBy === 'class' ? (p.asset_class || 'OTHER') : dominantBrokerage(p)
       if (!m.has(k)) m.set(k, [])
       m.get(k)!.push(p)
     }
     return [...m.entries()].map(([k, ps]) => summarize(k, ps))
-  }, [sorted, groupByClass])
+  }, [sorted, groupBy])
 
   // All values shown in CAD. USD securities show native price/value as a subscript.
   // Each column carries its own renderers: cell (position row), summary (subtotal/
@@ -358,7 +374,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       summary: c => fmtCAD(c.cost),
     },
     current_price_cad: {
-      col: 'current_price_cad', label: 'Price (CAD)', right: true, nowrap: true,
+      col: 'current_price_cad', label: 'Last Price (CAD)', right: true, nowrap: true,
       cell: pos => pos.current_price_cad ? (
         <div>
           <div className="font-semibold flex items-center justify-end gap-1">
@@ -414,14 +430,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
         : null,
     },
     unrealized_pnl_cad: {
-      col: 'unrealized_pnl_cad', label: 'P&L ($)', right: true,
+      col: 'unrealized_pnl_cad', label: 'Total Gain ($)', right: true,
       cell: pos => pos.unrealized_pnl_cad
         ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>{fmtCAD(pos.unrealized_pnl_cad)}</span>
         : <span className="text-gray-300">—</span>,
       summary: c => <span className={pnlClass(c.pnl)}>{fmtCAD(c.pnl)}</span>,
     },
     unrealized_pnl_pct: {
-      col: 'unrealized_pnl_pct', label: 'P&L (%)', right: true,
+      col: 'unrealized_pnl_pct', label: 'Total Gain (%)', right: true,
       cell: pos => pos.unrealized_pnl_pct
         ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>{fmtPct(pos.unrealized_pnl_pct)}</span>
         : <span className="text-gray-300">—</span>,
@@ -449,8 +465,8 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const exportCsv = () => {
     const headers = ['Ticker', 'Name', 'Currency', 'Total Qty',
       'ACB/Share (CAD)', 'ACB/Share (Native)', 'Total ACB (CAD)',
-      'Price (CAD)', 'Price (Native)', 'Mkt Value (CAD)', 'Mkt Value (Native)',
-      'P&L ($)', 'P&L (%)']
+      'Last Price (CAD)', 'Last Price (Native)', 'Mkt Value (CAD)', 'Mkt Value (Native)',
+      'Total Gain ($)', 'Total Gain (%)']
     const rows = (consolidated as ConsolidatedPosition[]).map(p => {
       const usd = usdMarketValue(p)
       const isUSD = p.price_currency === 'USD'
@@ -565,11 +581,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
               </button>
             )}
             <button
-              onClick={e => { e.stopPropagation(); setGroupByClass(g => !g) }}
-              className={`hidden md:block text-xs border rounded px-3 py-1 ${groupByClass ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-              title="Group holdings by asset class with subtotals"
+              onClick={e => { e.stopPropagation(); cycleGroup() }}
+              className={`hidden md:block text-xs border rounded px-3 py-1 ${groupBy !== 'none' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              title="Group holdings (off → by asset class → by brokerage) with subtotals"
             >
-              Group by Class
+              {GROUP_LABEL[groupBy]}
             </button>
             <button
               onClick={e => { e.stopPropagation(); exportCsv() }}
@@ -612,11 +628,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 {sortDir === 'asc' ? '↑' : '↓'}
               </button>
               <button
-                onClick={() => setGroupByClass(g => !g)}
-                className={`text-sm border rounded px-3 py-1.5 ${groupByClass ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
-                title="Group by asset class"
+                onClick={cycleGroup}
+                className={`text-sm border rounded px-3 py-1.5 ${groupBy !== 'none' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                title="Group: off → asset class → brokerage"
               >
-                Group
+                {groupBy === 'none' ? 'Group' : groupBy === 'class' ? 'Class' : 'Broker'}
               </button>
             </div>
 
@@ -626,7 +642,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 const collapsed = collapsedClasses.has(group.key)
                 return (
                   <div key={group.key || 'all'}>
-                    {groupByClass && group.key && (
+                    {groupBy !== 'none' && group.key && (
                       <div
                         className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 cursor-pointer select-none"
                         onClick={() => toggleClass(group.key)}
@@ -736,7 +752,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                     const groupCollapsed = collapsedClasses.has(group.key)
                     return (
                       <Fragment key={group.key || 'all'}>
-                        {groupByClass && group.key && (
+                        {groupBy !== 'none' && group.key && (
                           <tr
                             className="bg-gray-50/80 border-t border-gray-200 cursor-pointer select-none hover:bg-gray-100 font-semibold text-sm"
                             onClick={() => toggleClass(group.key)}

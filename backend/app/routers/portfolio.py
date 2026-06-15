@@ -147,6 +147,11 @@ def get_consolidated_positions(
     for mp in db.query(MarketPrice).all():
         price_map[mp.security_id] = mp
 
+    # account_id → brokerage name, so the Holdings table can group by brokerage.
+    from app.models.master import Account as _Acct, Brokerage as _Brk
+    _brk_name = {b.id: b.name for b in db.query(_Brk).all()}
+    _acct_brk = {a.id: _brk_name.get(a.brokerage_id, "—") for a in db.query(_Acct).all()}
+
     # Aggregate by ticker
     grouped: dict = defaultdict(lambda: {
         "ticker": "", "security_name": None, "asset_class": "EQUITY", "currency": "",
@@ -179,6 +184,7 @@ def get_consolidated_positions(
             "account_id": pos["account_id"],
             "account_name": pos["account_name"],
             "account_type": pos["account_type"],
+            "brokerage": _acct_brk.get(pos["account_id"], "—"),
             "quantity": str(qty),
             "total_acb_cad": str(acb),
         })

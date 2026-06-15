@@ -1051,6 +1051,23 @@ export interface DataHealthReport {
 export const getDataHealth = () =>
   api.get<DataHealthReport>('/portfolio/data-health').then(r => r.data)
 
+export interface ExpiredOption {
+  security_id: number
+  account_id: number
+  ticker: string
+  account: string | null
+  expiry: string
+  days_past: number
+  quantity: string
+  is_short: boolean
+  est_realized_cad: string
+  already_recorded: boolean
+}
+export const getExpiredOptions = () =>
+  api.get<{ count: number; items: ExpiredOption[] }>('/portfolio/expired-options').then(r => r.data)
+export const closeExpiredOptions = (body: { keys?: number[][]; all?: boolean }) =>
+  api.post<{ closed: number; skipped: number; accounts: number }>('/portfolio/expired-options/close', body).then(r => r.data)
+
 export const purgeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

@@ -168,7 +168,7 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
                f"recorded expiry/assignment — their premium or loss isn't realized yet."
                + (f" ({expired_backlog} older unclosed options exist too — a settled backlog that "
                   "doesn't affect current value.)" if expired_backlog else ""),
-               {"label": "Review transactions", "route": "/transactions"}),
+               {"label": "Close expired options", "route": "/admin?tab=expired-options"}),
         _check("zero_cost", "Zero-cost positions", "danger", zero_cost,
                "Journaled-in or transferred shares with no book value, so ACB and P&L are wrong.",
                {"label": "Set book value", "route": "/transactions"}),

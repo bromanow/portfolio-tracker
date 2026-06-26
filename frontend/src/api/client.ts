@@ -714,6 +714,13 @@ export const getFxRateLookup = (date: string, fromCurrency: string, toCurrency =
     { params: { date, from_currency: fromCurrency, to_currency: toCurrency } }
   ).then(r => r.data)
 export const refreshFxRates = () => api.post('/admin/fx-rates/refresh').then(r => r.data)
+
+export interface SchedulerStatus {
+  jobs: { id: string; name: string; next_run: string | null }[]
+  log: { name: string; status: string; detail: string; at: string }[]
+}
+export const getSchedulerStatus = () => api.get<SchedulerStatus>('/system/scheduler').then(r => r.data)
+export const runSchedulerNow = () => api.post('/system/scheduler/run').then(r => r.data)
 export const getCurrencies = () => api.get('/admin/currencies').then(r => r.data)
 // Opening Balances
 export const getOpeningBalances = () => api.get<OpeningBalance[]>('/admin/opening-balances').then(r => r.data)

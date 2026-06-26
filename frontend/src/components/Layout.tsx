@@ -6,6 +6,7 @@ import BottomNav from './BottomNav'
 import QuickAddFAB from './QuickAddFAB'
 import Header from './Header'
 import api from '../api/client'
+import { useSessionBehaviors } from '../hooks/useSessionBehaviors'
 
 function useBackendHealth() {
   return useQuery({
@@ -20,6 +21,7 @@ function useBackendHealth() {
 
 export default function Layout() {
   const { isError, isFetching, refetch } = useBackendHealth()
+  useSessionBehaviors()
 
   return (
     <div className="flex h-screen bg-gray-50">

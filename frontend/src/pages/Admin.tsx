@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import PlaidConnect from '../components/PlaidConnect'
 import Prices from './Prices'
+import { usePreference } from '../hooks/usePreference'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
 import DatePicker from '../components/DatePicker'
@@ -18,6 +19,7 @@ import {
   getPrices, refreshAllPrices, refreshOnePrice, deletePrice,
   getCashOpenings, createCashOpening, deleteCashOpening,
   getSystemHealth, restartBackend, getDbStats, optimizeDb,
+  getSchedulerStatus, runSchedulerNow,
   computeSnapshots, getSnapshotFreshness, getPortfolioJob,
   getExpiredOptions, closeExpiredOptions, type ExpiredOption,
   getOptionRetypePreview, applyOptionRetype, revertOptionRetype,
@@ -1935,6 +1937,75 @@ function DangerZoneTab() {
 // ─── System Tab ───────────────────────────────────────────────────────────────
 type RestartStatus = 'idle' | 'restarting' | 'online' | 'error'
 
+function SchedulerSection() {
+  const { data, refetch, isFetching } = useQuery({
+    queryKey: ['scheduler-status'],
+    queryFn: getSchedulerStatus,
+    refetchInterval: 15_000,
+  })
+  const [running, setRunning] = useState(false)
+  const runNow = async () => {
+    setRunning(true)
+    try { await runSchedulerNow() } finally {
+      // Poll the log a few times so the user sees results land.
+      setTimeout(() => { refetch(); setRunning(false) }, 3000)
+    }
+  }
+  const fmtTime = (iso: string | null) => iso ? new Date(iso).toLocaleString() : '—'
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="h-4 w-4 text-gray-500" />
+          <h3 className="font-semibold text-gray-800">Scheduled Jobs</h3>
+        </div>
+        <button
+          onClick={runNow}
+          disabled={running}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+        >
+          {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+          Run nightly jobs now
+        </button>
+      </div>
+      <p className="text-xs text-gray-500">Nightly: Bank of Canada FX → Plaid → IBKR Flex → snapshot recompute → view refresh.</p>
+
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-gray-50 text-xs uppercase tracking-wide text-gray-400 font-medium">Next runs</div>
+        <div className="divide-y divide-gray-50">
+          {(data?.jobs ?? []).map(j => (
+            <div key={j.id} className="flex items-center justify-between px-4 py-2 text-sm">
+              <span className="text-gray-700">{j.name}</span>
+              <span className="text-xs text-gray-500">{fmtTime(j.next_run)}</span>
+            </div>
+          ))}
+          {(data?.jobs ?? []).length === 0 && <div className="px-4 py-2 text-sm text-gray-400">No jobs scheduled.</div>}
+        </div>
+        <div className="px-4 py-2 bg-gray-50 text-xs uppercase tracking-wide text-gray-400 font-medium border-t border-gray-100 flex items-center justify-between">
+          <span>Recent runs</span>
+          {isFetching && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+        </div>
+        <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+          {(data?.log ?? []).map((r, i) => (
+            <div key={i} className="flex items-start gap-2 px-4 py-2 text-sm">
+              <span className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${r.status === 'ok' ? 'bg-emerald-500' : 'bg-red-500'}`} />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-medium text-gray-700">{r.name}</span>
+                  <span className="text-xs text-gray-400 whitespace-nowrap">{fmtTime(r.at)}</span>
+                </div>
+                <div className="text-xs text-gray-500 break-words">{r.detail}</div>
+              </div>
+            </div>
+          ))}
+          {(data?.log ?? []).length === 0 && <div className="px-4 py-3 text-sm text-gray-400">No runs recorded yet (since last restart).</div>}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function SystemTab() {
   const queryClient = useQueryClient()
   const [restartStatus, setRestartStatus] = useState<RestartStatus>('idle')
@@ -2145,6 +2216,9 @@ function SystemTab() {
           </button>
         </div>
       </div>
+
+      {/* Scheduled jobs section */}
+      <SchedulerSection />
 
       {/* Database section */}
       <div className="space-y-3">
@@ -2419,6 +2493,27 @@ function CurrencySplitTab() {
 }
 
 // ─── My Account Tab ──────────────────────────────────────────────────────────
+function PrefToggle({ prefKey, label, hint }: { prefKey: Parameters<typeof usePreference>[0]; label: string; hint: string }) {
+  const [on, setOn] = usePreference(prefKey)
+  return (
+    <label className="flex items-start gap-3 cursor-pointer">
+      <button
+        type="button"
+        role="switch"
+        aria-checked={on}
+        onClick={() => setOn(!on)}
+        className={`mt-0.5 relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-blue-600' : 'bg-gray-300'}`}
+      >
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: on ? 'translateX(18px)' : 'translateX(3px)' }} />
+      </button>
+      <span>
+        <span className="text-sm font-medium text-gray-800">{label}</span>
+        <span className="block text-xs text-gray-500">{hint}</span>
+      </span>
+    </label>
+  )
+}
+
 function MyAccountTab() {
   const { user } = useAuth()
   const [pwCurrent, setPwCurrent] = useState('')
@@ -2465,6 +2560,17 @@ function MyAccountTab() {
           <span className="text-gray-500">Role</span>
           <span className="font-medium text-gray-900 capitalize">{user?.role}</span>
         </div>
+      </div>
+
+      {/* Preferences */}
+      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-gray-700">Preferences</h2>
+        <PrefToggle prefKey="idleLogout"
+          label="Log out after 10 minutes of inactivity"
+          hint="Automatically signs you out if there's no mouse or keyboard activity." />
+        <PrefToggle prefKey="refreshOnLogin"
+          label="Refresh prices automatically on login"
+          hint="Kicks off a market-price refresh once each time you sign in." />
       </div>
 
       {/* Change password */}

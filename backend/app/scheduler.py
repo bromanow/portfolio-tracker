@@ -16,8 +16,42 @@ logger = logging.getLogger(__name__)
 
 _scheduler: Optional[AsyncIOScheduler] = None
 
+# In-memory log of recent scheduled-job runs (most recent first), surfaced in Admin → System
+# so the nightly jobs (IBKR Flex, Plaid, BOC FX, snapshot recompute/refresh) are visible
+# without tailing container logs. Resets on restart.
+_RUN_LOG: list[dict] = []
+_RUN_LOG_MAX = 60
 
-def _run_nightly_ibkr_sync():
+
+def _record(name: str, status: str, detail: str = "") -> None:
+    from datetime import datetime, timezone
+    _RUN_LOG.insert(0, {
+        "name": name, "status": status, "detail": str(detail)[:300],
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    del _RUN_LOG[_RUN_LOG_MAX:]
+
+
+def get_run_log() -> list[dict]:
+    """Recent scheduled-job runs (most recent first)."""
+    return list(_RUN_LOG)
+
+
+def _logged(name: str, fn):
+    """Wrap a job so its outcome (summary string or error) lands in the run log."""
+    def wrapped():
+        import time as _t
+        t0 = _t.time()
+        try:
+            summary = fn()
+            _record(name, "ok", f"{summary or 'done'} ({_t.time() - t0:.0f}s)")
+        except Exception as exc:   # noqa: BLE001
+            logger.exception("%s crashed", name)
+            _record(name, "error", str(exc))
+    return wrapped
+
+
+def _run_nightly_ibkr_sync() -> str:
     """Sync all enabled IBKR Flex configs. Runs in the scheduler thread."""
     from app.database import SessionLocal
     from app.services.ibkr_flex import sync_all_configs
@@ -27,28 +61,21 @@ def _run_nightly_ibkr_sync():
         results = sync_all_configs(db)
         total = sum(r.get("imported", 0) for r in results)
         errors = [r for r in results if r.get("error")]
-        logger.info(
-            "Nightly IBKR sync complete: %d account(s), %d transaction(s) imported, %d error(s)",
-            len(results), total, len(errors),
-        )
-        if errors:
-            for e in errors:
-                logger.warning("  account_id=%s: %s", e["account_id"], e["error"])
-    except Exception:
-        logger.exception("Nightly IBKR sync crashed")
+        for e in errors:
+            logger.warning("  IBKR account_id=%s: %s", e["account_id"], e["error"])
+        return f"{len(results)} account(s), {total} txn(s) imported, {len(errors)} error(s)"
     finally:
         db.close()
 
 
-def _run_plaid_sync():
+def _run_plaid_sync() -> str:
     """Re-sync every connected Plaid Item's holdings. Runs in the scheduler thread."""
     from app.database import SessionLocal
     from app.services import plaid_service as plaid
     from app.models.plaid import PlaidItem
 
     if not plaid.is_configured():
-        logger.info("Plaid sync skipped — Plaid not configured")
-        return
+        return "skipped — Plaid not configured"
     db = SessionLocal()
     try:
         items = db.query(PlaidItem).all()
@@ -60,14 +87,27 @@ def _run_plaid_sync():
             except Exception as e:
                 err += 1
                 logger.warning("Plaid sync failed (item=%s): %s", item.item_id, e)
-        logger.info("Plaid sync complete: %d item(s) ok, %d error(s)", ok, err)
-    except Exception:
-        logger.exception("Plaid sync crashed")
+        return f"{ok} item(s) ok, {err} error(s)"
     finally:
         db.close()
 
 
-def _run_nightly_snapshot_recompute():
+def _run_nightly_fx_refresh() -> str:
+    """Refresh Bank of Canada USD/CAD FX rates so valuation/conversions use current rates.
+    fetch_boc_rates is async; run it on a fresh event loop in this scheduler thread."""
+    import asyncio
+    from app.database import SessionLocal
+    from app.services import fx_service
+
+    db = SessionLocal()
+    try:
+        added = asyncio.run(fx_service.fetch_boc_rates(db))
+        return f"{added} BOC FX rate(s) added/updated"
+    finally:
+        db.close()
+
+
+def _run_nightly_snapshot_recompute() -> str:
     """Rebuild the portfolio_snapshots table for ALL accounts so the Performance chart
     and returns reflect the latest transactions/prices without anyone clicking the manual
     Recompute button. Runs after the IBKR sync (new transactions) and before the view
@@ -78,14 +118,12 @@ def _run_nightly_snapshot_recompute():
     db = SessionLocal()
     try:
         result = compute_portfolio_snapshots(db)
-        logger.info("Nightly snapshot recompute: %s", result)
-    except Exception:
-        logger.exception("Nightly snapshot recompute crashed")
+        return str(result)
     finally:
         db.close()
 
 
-def _run_nightly_snapshot_refresh():
+def _run_nightly_snapshot_refresh() -> str:
     """Refresh mv_snapshot_monthly after the snapshot recompute populates new rows."""
     from app.database import SessionLocal
     from app.services.snapshot_view_service import refresh_snapshot_views
@@ -93,9 +131,7 @@ def _run_nightly_snapshot_refresh():
     db = SessionLocal()
     try:
         result = refresh_snapshot_views(db)
-        logger.info("Nightly snapshot view refresh: %s", result)
-    except Exception:
-        logger.exception("Nightly snapshot view refresh crashed")
+        return str(result)
     finally:
         db.close()
 
@@ -107,9 +143,20 @@ def start_scheduler():
 
     _scheduler = AsyncIOScheduler()
 
+    # Bank of Canada USD/CAD FX rates first (05:05 UTC) so downstream valuation/conversion
+    # uses fresh rates.
+    _scheduler.add_job(
+        _logged("BOC FX rate refresh", _run_nightly_fx_refresh),
+        CronTrigger(hour=5, minute=5, timezone="UTC"),
+        id="boc_fx_refresh",
+        name="Nightly Bank of Canada FX refresh",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     # 00:15 ET = 05:15 UTC (handles both EST and EDT conservatively)
     _scheduler.add_job(
-        _run_nightly_ibkr_sync,
+        _logged("IBKR Flex sync", _run_nightly_ibkr_sync),
         CronTrigger(hour=5, minute=15, timezone="UTC"),
         id="ibkr_nightly_sync",
         name="Nightly IBKR Flex Query sync",
@@ -120,7 +167,7 @@ def start_scheduler():
     # Rebuild the snapshot table 20 min after the IBKR sync, so the Performance chart picks
     # up the night's new transactions/prices automatically (no manual Recompute needed).
     _scheduler.add_job(
-        _run_nightly_snapshot_recompute,
+        _logged("Snapshot recompute", _run_nightly_snapshot_recompute),
         CronTrigger(hour=5, minute=35, timezone="UTC"),
         id="snapshot_recompute",
         name="Nightly portfolio_snapshots recompute",
@@ -131,7 +178,7 @@ def start_scheduler():
     # Refresh the materialized view after the recompute finishes so report queries
     # (monthly returns, returns-detail) always see the freshly-rebuilt snapshots.
     _scheduler.add_job(
-        _run_nightly_snapshot_refresh,
+        _logged("Snapshot view refresh", _run_nightly_snapshot_refresh),
         CronTrigger(hour=6, minute=0, timezone="UTC"),
         id="snapshot_view_refresh",
         name="Nightly mv_snapshot_monthly refresh",
@@ -149,17 +196,38 @@ def start_scheduler():
     }.get(freq)
     if plaid_trigger is not None:
         _scheduler.add_job(
-            _run_plaid_sync, plaid_trigger,
+            _logged("Plaid sync", _run_plaid_sync), plaid_trigger,
             id="plaid_sync", name=f"Plaid holdings sync ({freq})",
             replace_existing=True, misfire_grace_time=3600,
         )
 
     _scheduler.start()
     logger.info(
-        "Scheduler started — IBKR sync 00:15 ET, snapshot recompute 00:35 ET, "
-        "view refresh 01:00 ET, Plaid sync: %s",
+        "Scheduler started — BOC FX 00:05 ET, Plaid 00:00 ET, IBKR sync 00:15 ET, "
+        "snapshot recompute 00:35 ET, view refresh 01:00 ET (Plaid: %s)",
         freq if plaid_trigger is not None else "off (manual only)",
     )
+
+
+def get_jobs() -> list[dict]:
+    """Configured jobs + their next scheduled run (UTC)."""
+    if _scheduler is None:
+        return []
+    return [
+        {"id": j.id, "name": j.name,
+         "next_run": j.next_run_time.isoformat() if j.next_run_time else None}
+        for j in _scheduler.get_jobs()
+    ]
+
+
+def run_all_now() -> None:
+    """Run the full nightly batch now (FX → Plaid → IBKR → snapshot recompute → view
+    refresh), recording each to the run log. Intended to be called in a background thread."""
+    _logged("BOC FX rate refresh", _run_nightly_fx_refresh)()
+    _logged("Plaid sync", _run_plaid_sync)()
+    _logged("IBKR Flex sync", _run_nightly_ibkr_sync)()
+    _logged("Snapshot recompute", _run_nightly_snapshot_recompute)()
+    _logged("Snapshot view refresh", _run_nightly_snapshot_refresh)()
 
 
 def stop_scheduler():

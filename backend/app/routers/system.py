@@ -103,6 +103,22 @@ def restart():
     return {"message": "Backend restarting — it will be back online in a few seconds."}
 
 
+@router.get("/scheduler")
+def scheduler_status():
+    """Scheduled jobs (with next run) + the recent run log, for Admin → System."""
+    from app import scheduler
+    return {"jobs": scheduler.get_jobs(), "log": scheduler.get_run_log()}
+
+
+@router.post("/scheduler/run")
+def scheduler_run_now():
+    """Run the full nightly batch now in the background; results land in the run log."""
+    import threading
+    from app import scheduler
+    threading.Thread(target=scheduler.run_all_now, daemon=True).start()
+    return {"message": "Nightly jobs started — watch the run log."}
+
+
 @router.post("/fix-ibkr-fx-trades")
 def fix_ibkr_fx_trades(db: Session = Depends(get_db)):
     """

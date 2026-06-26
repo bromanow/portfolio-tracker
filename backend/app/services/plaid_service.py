@@ -391,6 +391,33 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
         acct = _get_or_create_account(db, item, pacct, owner)
         summary["accounts"] += 1
 
+        # Stable position date — DON'T re-date to "today" each sync. Plaid positions are
+        # OPENING_BALANCE rows; if they jump to today every night, the snapshot reconstruction
+        # vacates every date since the handoff and the chart drops to $0 in between (the gap
+        # grows nightly). Instead:
+        #   • if statements were handed off to Plaid, continue from the handoff cutover so
+        #     there's no gap (statements own pre-cutover, Plaid owns cutover→now);
+        #   • else keep the account's first-Plaid date stable;
+        #   • else (first sync, no handoff) start today.
+        # Daily price updates (dated today) then value the carried-forward position; gap dates
+        # fall back to ACB cost, so the line stays continuous instead of dropping to zero.
+        pos_date = today
+        h_row = db.execute(text(
+            "SELECT MIN(transaction_date) FROM transactions "
+            "WHERE account_id = :aid AND external_ref LIKE :hp"
+        ), {"aid": acct.id, "hp": f"stmt-handoff-{acct.id}-%"}).scalar()
+        if h_row is not None:
+            pos_date = h_row
+        else:
+            p_row = db.execute(text(
+                "SELECT MIN(transaction_date) FROM transactions "
+                "WHERE account_id = :aid AND external_ref LIKE :pp"
+            ), {"aid": acct.id, "pp": f"plaid-pos-{pacct_id}-%"}).scalar()
+            if p_row is not None:
+                pos_date = p_row
+        if hasattr(pos_date, "date"):
+            pos_date = pos_date.date()
+
         # Full replace: drop this account's Plaid position rows, re-create from current holdings.
         db.execute(
             text("DELETE FROM transactions WHERE account_id = :aid AND external_ref LIKE :pat"),
@@ -408,7 +435,7 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
                 cash_native = mkt_val if mkt_val is not None else qty
                 cad_amount = (cash_native * _fx_to_cad(db, ccy, today)).quantize(Decimal("0.01"))
                 db.add(Transaction(
-                    account_id=acct.id, security_id=None, transaction_date=today,
+                    account_id=acct.id, security_id=None, transaction_date=pos_date,
                     transaction_type="CASH_OPENING",
                     transaction_currency=ccy, transaction_amount=cash_native, cad_amount=cad_amount,
                     raw_description=f"Plaid cash: {psec.get('name', '')}"[:500] or None,
@@ -444,7 +471,7 @@ def sync_item(db: Session, item, owner: str = "Unknown") -> dict:
             db.add(Transaction(
                 account_id=acct.id,
                 security_id=local_sec_id,
-                transaction_date=today,
+                transaction_date=pos_date,
                 transaction_type="OPENING_BALANCE",
                 quantity=qty,
                 price=unit_price,

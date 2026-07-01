@@ -61,6 +61,15 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [])
 
   const logout = useCallback(() => {
+    // Best-effort signal to the backend (stops IBeam if ibeam-control is deployed — see
+    // ibeam-control/README.md). Fire-and-forget: local logout must succeed regardless.
+    const stored = localStorage.getItem(TOKEN_KEY)
+    if (stored) {
+      fetch(`${API_BASE}/auth/logout`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${stored}` },
+      }).catch(() => { /* best-effort */ })
+    }
     localStorage.removeItem(TOKEN_KEY)
     setToken(null)
     setUser(null)

@@ -1059,6 +1059,18 @@ export interface DataHealthReport {
 export const getDataHealth = () =>
   api.get<DataHealthReport>('/portfolio/data-health').then(r => r.data)
 
+export const logoutApi = () => api.post('/auth/logout').then(r => r.data)
+
+export interface IBeamStatus {
+  configured: boolean
+  container: { name: string; status: string; started_at: string | null; error?: string } | null
+  authenticated: boolean
+}
+export const getIBeamStatus = () => api.get<IBeamStatus>('/ibeam/status').then(r => r.data)
+export const startIBeam = () => api.post('/ibeam/start').then(r => r.data)
+export const restartIBeam = () => api.post('/ibeam/restart').then(r => r.data)
+export const stopIBeam = () => api.post('/ibeam/stop').then(r => r.data)
+
 export interface ExpiredOption {
   security_id: number
   account_id: number

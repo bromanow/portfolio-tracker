@@ -33,6 +33,7 @@ from app.routers import data_health as data_health_router
 from app.routers import expired_options as expired_options_router
 from app.routers import option_retype as option_retype_router
 from app.routers import options_live as options_live_router
+from app.routers import ibeam_control as ibeam_control_router
 
 log = logging.getLogger(__name__)
 
@@ -256,6 +257,7 @@ app.include_router(data_health_router.router, dependencies=_auth)
 app.include_router(expired_options_router.router, dependencies=_auth)
 app.include_router(option_retype_router.router, dependencies=_auth)
 app.include_router(options_live_router.router, dependencies=_auth)
+app.include_router(ibeam_control_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

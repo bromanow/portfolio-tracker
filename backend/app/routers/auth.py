@@ -60,12 +60,30 @@ def login(req: LoginRequest, db: Session = Depends(get_db)):
     user.last_login = datetime.utcnow()
     db.commit()
 
+    # Best-effort: bring IBeam up so it's ready by the time anyone opens Options/Scanner.
+    # A no-op if ibeam-control isn't deployed (IBEAM_CONTROL_URL unset) — see
+    # app/services/ibeam_control.py. Backgrounded so login isn't slowed by container start.
+    import threading
+    from app.services import ibeam_control
+    threading.Thread(target=ibeam_control.start, daemon=True).start()
+
     token = create_access_token(user.id, user.email)
     return {
         "access_token": token,
         "token_type": "bearer",
         "user": UserOut(id=user.id, email=user.email, name=user.name, role=user.role),
     }
+
+
+@router.post("/logout")
+def logout(current_user: User = Depends(get_current_user)):
+    """JWTs are stateless (nothing to invalidate server-side) — this endpoint exists so the
+    frontend has a signal to stop IBeam on, matching 'only connect while logged in'. Best-effort
+    and backgrounded; a no-op if ibeam-control isn't deployed."""
+    import threading
+    from app.services import ibeam_control
+    threading.Thread(target=ibeam_control.stop, daemon=True).start()
+    return {"message": "logged out"}
 
 
 @router.get("/me", response_model=UserOut)

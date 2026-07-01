@@ -1,0 +1,87 @@
+"""
+IBeam control service — a minimal, narrowly-scoped Docker control surface.
+
+Why this exists: the backend needs to start/stop the IBeam container (so it only runs while
+someone is using the app, cutting the number of unattended overnight re-auth attempts that can
+trip IBeam's own lockout-prevention shutdown). Docker only exposes that ability through the
+Docker socket, and mounting the raw socket into the backend would let it control *every*
+container on the host. This service is the alternative: it is the ONLY thing with the socket
+mounted, it is reachable only on Coolify's private network, and its code (not just its config)
+hard-codes the single container name it will ever touch — IBEAM_CONTAINER_NAME. There is no
+generic "act on any container" endpoint, unlike a generic docker-socket-proxy.
+
+Endpoints (all require header X-Control-Token matching CONTROL_TOKEN):
+    GET  /status   -> {"status": "running"|"exited"|"not_found"|..., "started_at": "..."}
+    POST /start    -> start the container if it isn't running (no-op if already running)
+    POST /restart  -> force a full stop+start, even if Docker thinks it's already running
+                       (recovers the "running but the internal process died" zombie state)
+    POST /stop     -> stop the container
+"""
+from __future__ import annotations
+
+import os
+
+import docker
+from docker.errors import NotFound
+from fastapi import FastAPI, Header, HTTPException
+
+CONTAINER_NAME = os.environ["IBEAM_CONTAINER_NAME"]
+CONTROL_TOKEN = os.environ["CONTROL_TOKEN"]
+
+app = FastAPI(title="ibeam-control", docs_url=None, redoc_url=None)
+client = docker.from_env()
+
+
+def _check_token(x_control_token: str | None) -> None:
+    if not x_control_token or x_control_token != CONTROL_TOKEN:
+        raise HTTPException(status_code=401, detail="Invalid or missing X-Control-Token")
+
+
+def _get_container():
+    try:
+        return client.containers.get(CONTAINER_NAME)
+    except NotFound:
+        raise HTTPException(status_code=404, detail=f"Container '{CONTAINER_NAME}' not found")
+
+
+@app.get("/status")
+def status(x_control_token: str | None = Header(None)):
+    _check_token(x_control_token)
+    c = _get_container()
+    c.reload()
+    return {
+        "name": CONTAINER_NAME,
+        "status": c.status,   # running | exited | paused | restarting | ...
+        "started_at": c.attrs.get("State", {}).get("StartedAt"),
+    }
+
+
+@app.post("/start")
+def start(x_control_token: str | None = Header(None)):
+    _check_token(x_control_token)
+    c = _get_container()
+    c.reload()
+    if c.status != "running":
+        c.start()
+    return {"action": "start", "was_running": c.status == "running"}
+
+
+@app.post("/restart")
+def restart(x_control_token: str | None = Header(None)):
+    """Force a real stop+start — needed when Docker considers the container 'running' but
+    IBeam's internal auth process has died silently and stopped retrying (a real incident:
+    docker start was a no-op in that state; only a full restart relaunches the entrypoint)."""
+    _check_token(x_control_token)
+    c = _get_container()
+    c.restart(timeout=15)
+    return {"action": "restart"}
+
+
+@app.post("/stop")
+def stop(x_control_token: str | None = Header(None)):
+    _check_token(x_control_token)
+    c = _get_container()
+    c.reload()
+    if c.status == "running":
+        c.stop(timeout=15)
+    return {"action": "stop", "was_running": c.status == "running"}

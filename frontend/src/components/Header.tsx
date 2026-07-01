@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
@@ -12,6 +12,7 @@ import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
+import { getPref } from '../hooks/usePreference'
 
 // Pages that show portfolio account filters
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
@@ -49,7 +50,7 @@ const PAGE_TITLES: Record<string, string> = {
 // ── Main Header ───────────────────────────────────────────────────────────────
 export default function Header() {
   const location = useLocation()
-  const { logout } = useAuth()
+  const { user, logout } = useAuth()
   const showAccountFilters = ACCOUNT_FILTER_PATHS.has(location.pathname)
   const showTimeRange      = TIME_RANGE_PATHS.has(location.pathname)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -97,6 +98,17 @@ export default function Header() {
     mutationFn: refreshAllPrices,
     onSuccess: (data) => { const jobId = data.job_id ?? data.id; if (jobId) setActiveJobId(jobId) },
   })
+
+  // "Refresh prices on login" preference (My Account) — drives the SAME button/mutation as a
+  // manual click, so it shows up as the header button spinning/"Refreshing…" rather than a
+  // separate indicator. Fires once per login (Header unmounts on logout, so `fired` resets
+  // naturally on the next login).
+  const loginRefreshFired = useRef(false)
+  useEffect(() => {
+    if (!user || loginRefreshFired.current) return
+    loginRefreshFired.current = true
+    if (getPref('refreshOnLogin')) refreshMut.mutate()
+  }, [user])
 
   const { data: jobData } = useQuery({
     queryKey: ['price-job', activeJobId],

@@ -21,7 +21,7 @@ function useBackendHealth() {
 
 export default function Layout() {
   const { isError, isFetching, refetch } = useBackendHealth()
-  useSessionBehaviors()
+  const { priceRefreshStatus } = useSessionBehaviors()
 
   return (
     <div className="flex h-screen bg-gray-50">
@@ -62,6 +62,21 @@ export default function Layout() {
 
       {/* Floating action button — mobile only */}
       <QuickAddFAB />
+
+      {/* Login-triggered price refresh — silent otherwise, so surface it briefly */}
+      {priceRefreshStatus !== 'idle' && (
+        <div className="fixed bottom-4 right-4 z-50 flex items-center gap-2 bg-gray-900 text-white text-sm px-4 py-2.5 rounded-lg shadow-lg">
+          {priceRefreshStatus === 'running' && (
+            <><RefreshCw className="h-4 w-4 animate-spin" /> Refreshing prices…</>
+          )}
+          {priceRefreshStatus === 'done' && (
+            <><span className="h-2 w-2 rounded-full bg-emerald-400" /> Prices refreshed</>
+          )}
+          {priceRefreshStatus === 'error' && (
+            <><AlertTriangle className="h-4 w-4 text-red-400" /> Price refresh failed</>
+          )}
+        </div>
+      )}
     </div>
   )
 }

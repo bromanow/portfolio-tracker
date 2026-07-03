@@ -1,16 +1,18 @@
 import { Loader2 } from 'lucide-react'
 import type { SecurityNewsItem } from '../api/client'
 
-// Shared between the security detail card's News tab and the Dashboard's Market News
-// section, so a news item looks and behaves identically everywhere.
+// Shared between the security detail card's News tab and the Dashboard's news sections,
+// so a news item looks and behaves identically everywhere.
 export default function NewsList({
-  items, isLoading, emptyMessage = 'No news found.', compact = false,
+  items, isLoading, emptyMessage = 'No news found.', compact = false, columns = 1,
 }: {
   items: SecurityNewsItem[] | undefined
   isLoading: boolean
   emptyMessage?: string
   /** Compact mode: smaller thumbnails, no summary line — for tighter spaces like the Dashboard. */
   compact?: boolean
+  /** Responsive column count (grid on md+, always 1 column on mobile). */
+  columns?: 1 | 2 | 3
 }) {
   if (isLoading) {
     return (
@@ -22,8 +24,9 @@ export default function NewsList({
   if (!items || items.length === 0) {
     return <p className="text-sm text-gray-400">{emptyMessage}</p>
   }
+  const gridClass = columns === 3 ? 'md:grid-cols-3' : columns === 2 ? 'md:grid-cols-2' : ''
   return (
-    <div className="space-y-3">
+    <div className={`grid grid-cols-1 ${gridClass} gap-3`}>
       {items.map(item => (
         <a
           key={item.id}

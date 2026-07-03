@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import {
   getCashBalances, getImports, getAccounts, getPositions,
-  getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews,
+  getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews, getTopStories, getPortfolioNews,
 } from '../api/client'
 import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
@@ -565,9 +565,21 @@ export default function Dashboard() {
     }).sort((a, b) => b.total - a.total)
   }, [filteredPositions, filteredCash, accounts])
 
+  // General Market news follows the same country toggle as the ticker bar above, so
+  // switching Canada/US changes both.
   const marketNewsQ = useQuery({
-    queryKey: ['market-news'],
-    queryFn: getMarketNews,
+    queryKey: ['market-news', indicatorCountry],
+    queryFn: () => getMarketNews(indicatorCountry),
+    staleTime: 15 * 60 * 1000,
+  })
+  const topStoriesQ = useQuery({
+    queryKey: ['top-stories'],
+    queryFn: getTopStories,
+    staleTime: 15 * 60 * 1000,
+  })
+  const portfolioNewsQ = useQuery({
+    queryKey: ['portfolio-news'],
+    queryFn: getPortfolioNews,
     staleTime: 15 * 60 * 1000,
   })
 
@@ -781,15 +793,44 @@ export default function Dashboard() {
         <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
       </div>
 
-      {/* ── Market News ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-        <h2 className="font-semibold text-gray-800 mb-4">Market News</h2>
-        <NewsList
-          items={marketNewsQ.data?.items}
-          isLoading={marketNewsQ.isLoading}
-          emptyMessage="No market news available."
-          compact
-        />
+      {/* ── News ── */}
+      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-4">
+            General Market <span className="text-gray-400 font-normal text-sm">· {indicatorCountry === 'CA' ? 'Canada' : 'US Markets'}</span>
+          </h2>
+          <NewsList
+            items={marketNewsQ.data?.items}
+            isLoading={marketNewsQ.isLoading}
+            emptyMessage="No market news available."
+            compact
+            columns={3}
+          />
+        </div>
+
+        <div className="pt-6 border-t border-gray-100">
+          <h2 className="font-semibold text-gray-800 mb-1">Top Stories</h2>
+          <p className="text-xs text-gray-400 mb-3">Covered by multiple outlets at once — the biggest stories moving markets right now.</p>
+          <NewsList
+            items={topStoriesQ.data?.items}
+            isLoading={topStoriesQ.isLoading}
+            emptyMessage="No standout stories right now."
+            compact
+            columns={3}
+          />
+        </div>
+
+        <div className="pt-6 border-t border-gray-100">
+          <h2 className="font-semibold text-gray-800 mb-1">Your Portfolio</h2>
+          <p className="text-xs text-gray-400 mb-3">News for today's biggest movers among your holdings.</p>
+          <NewsList
+            items={portfolioNewsQ.data?.items}
+            isLoading={portfolioNewsQ.isLoading}
+            emptyMessage="No news for your current holdings."
+            compact
+            columns={3}
+          />
+        </div>
       </div>
     </div>
   )

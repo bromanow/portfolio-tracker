@@ -537,8 +537,12 @@ export interface SecurityNewsItem {
 export const getSecurityNews = (id: number) =>
   api.get<{ symbol: string | null; items: SecurityNewsItem[] }>(`/securities/${id}/news`).then(r => r.data)
 
-export const getMarketNews = () =>
-  api.get<{ items: SecurityNewsItem[] }>('/market/news').then(r => r.data)
+export const getMarketNews = (country: 'CA' | 'US' = 'CA') =>
+  api.get<{ items: SecurityNewsItem[] }>('/market/news', { params: { country } }).then(r => r.data)
+export const getTopStories = () =>
+  api.get<{ items: SecurityNewsItem[] }>('/market/top-stories').then(r => r.data)
+export const getPortfolioNews = () =>
+  api.get<{ items: SecurityNewsItem[] }>('/market/portfolio-news').then(r => r.data)
 
 export interface BulkFundamentalsSignals {
   [securityId: string]: {

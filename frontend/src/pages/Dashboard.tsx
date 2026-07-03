@@ -1,18 +1,14 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import {
-  PieChart, Pie, Cell, Tooltip, ResponsiveContainer, Legend,
-} from 'recharts'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
 import {
   getCashBalances, getImports, getAccounts, getPositions,
-  getFxRateLookup, getMarketIndicators, getSummaryMetrics,
+  getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews,
 } from '../api/client'
 import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
-
-const COLORS = ['#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6', '#06B6D4', '#84CC16']
+import NewsList from '../components/NewsList'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -526,22 +522,11 @@ export default function Dashboard() {
     }).sort((a, b) => b.total - a.total)
   }, [filteredPositions, filteredCash, accounts])
 
-  // ── Allocation by account type ────────────────────────────────────────────
-  const allocationByType = useMemo(() => {
-    const byType: Record<string, number> = {}
-    for (const p of filteredPositions) {
-      const type = p.account_type || 'Unknown'
-      byType[type] = (byType[type] || 0) + (p.market_value_cad ? parseFloat(p.market_value_cad) : parseFloat(p.total_acb_cad || '0'))
-    }
-    for (const c of filteredCash) {
-      const type = (c as CashBalance).account_type || 'Unknown'
-      const val = parseFloat(c.balance_cad || '0')
-      if (val > 0) byType[type] = (byType[type] || 0) + val
-    }
-    const total = Object.values(byType).reduce((s, v) => s + v, 0) || 1
-    return Object.entries(byType).filter(([, v]) => v > 0).sort(([, a], [, b]) => b - a)
-      .map(([type, val]) => ({ account_type: type, total_cad: val, pct: (val / total) * 100 }))
-  }, [filteredPositions, filteredCash])
+  const marketNewsQ = useQuery({
+    queryKey: ['market-news'],
+    queryFn: getMarketNews,
+    staleTime: 15 * 60 * 1000,
+  })
 
   // ─────────────────────────────────────────────────────────────────────────
   return (
@@ -737,25 +722,15 @@ export default function Dashboard() {
         <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
       </div>
 
-      {/* ── Allocation ── */}
+      {/* ── Market News ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
-        <h2 className="font-semibold text-gray-800 mb-4">Allocation by Account Type</h2>
-        {allocationByType.length === 0 ? (
-          <p className="text-gray-400 text-sm">No allocation data</p>
-        ) : (
-          <ResponsiveContainer width="100%" height={220}>
-            <PieChart>
-              <Pie data={allocationByType} dataKey="pct" nameKey="account_type" cx="50%" cy="50%" outerRadius={85}
-                label={({ account_type, pct }) => `${account_type} ${pct.toFixed(0)}%`} labelLine={false}>
-                {allocationByType.map((_, i) => <Cell key={i} fill={COLORS[i % COLORS.length]} />)}
-              </Pie>
-              <Tooltip formatter={(v: number, _: string, entry: { payload?: { total_cad?: number } }) => [
-                `${v.toFixed(1)}% · ${fmtCAD(entry?.payload?.total_cad)}`,
-              ]} />
-              <Legend />
-            </PieChart>
-          </ResponsiveContainer>
-        )}
+        <h2 className="font-semibold text-gray-800 mb-4">Market News</h2>
+        <NewsList
+          items={marketNewsQ.data?.items}
+          isLoading={marketNewsQ.isLoading}
+          emptyMessage="No market news available."
+          compact
+        />
       </div>
     </div>
   )

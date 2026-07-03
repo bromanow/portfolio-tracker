@@ -537,6 +537,9 @@ export interface SecurityNewsItem {
 export const getSecurityNews = (id: number) =>
   api.get<{ symbol: string | null; items: SecurityNewsItem[] }>(`/securities/${id}/news`).then(r => r.data)
 
+export const getMarketNews = () =>
+  api.get<{ items: SecurityNewsItem[] }>('/market/news').then(r => r.data)
+
 export interface BulkFundamentalsSignals {
   [securityId: string]: {
     fundamentals: StoredFundamentals | null

@@ -341,24 +341,13 @@ def get_security_yahoo_detail(security_id: int, db: Session = Depends(get_db)):
     }
 
 
-def _yahoo_thumbnail(content: dict) -> Optional[str]:
-    thumb = content.get("thumbnail") or {}
-    resolutions = thumb.get("resolutions") or []
-    # Prefer a small non-original resolution (keeps the security card light); fall back to
-    # the original image, else None (some stories — esp. wire-service text — have no image).
-    small = [r for r in resolutions if r.get("tag") != "original" and r.get("url")]
-    if small:
-        return min(small, key=lambda r: r.get("width") or 9999).get("url")
-    return thumb.get("originalUrl")
-
-
 @router.get("/{security_id}/news")
 def get_security_news(security_id: int, db: Session = Depends(get_db)):
     """Recent news for a security via Yahoo Finance (yfinance Ticker.news).
     Gracefully returns an empty list for securities Yahoo doesn't cover (options, some
     Canadian mutual funds/structured notes) rather than erroring."""
-    import yfinance as yf
     from app.services.price_service import _yahoo_candidates
+    from app.services.news_service import fetch_yahoo_news
     from app.models.prices import MarketPrice
 
     sec = db.get(Security, security_id)
@@ -371,29 +360,7 @@ def get_security_news(security_id: int, db: Session = Depends(get_db)):
         return {"symbol": None, "items": []}
 
     sym = candidates[0]
-    try:
-        raw = yf.Ticker(sym).news or []
-    except Exception:
-        return {"symbol": sym, "items": []}
-
-    items = []
-    for entry in raw:
-        content = entry.get("content") or {}
-        if not content.get("title"):
-            continue
-        url = (content.get("clickThroughUrl") or {}).get("url") or (content.get("canonicalUrl") or {}).get("url")
-        if not url:
-            continue
-        items.append({
-            "id": entry.get("id") or content.get("id"),
-            "title": content.get("title"),
-            "summary": content.get("summary") or content.get("description") or None,
-            "published_at": content.get("pubDate") or content.get("displayTime"),
-            "publisher": (content.get("provider") or {}).get("displayName"),
-            "url": url,
-            "thumbnail_url": _yahoo_thumbnail(content),
-        })
-    return {"symbol": sym, "items": items}
+    return {"symbol": sym, "items": fetch_yahoo_news(sym)}
 
 
 @router.get("/{security_id}/price-history")

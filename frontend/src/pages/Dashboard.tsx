@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { TrendingUp, TrendingDown, ChevronDown, ChevronRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
+import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import {
   getCashBalances, getImports, getAccounts, getPositions,
   getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews,
@@ -60,11 +61,24 @@ function fmtUSD(val: number) {
 function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRate: number | null }) {
   const [expanded, setExpanded]       = useState<Set<string>>(new Set())
   const [expandedGrp, setExpandedGrp] = useState<Set<string>>(new Set())
+  const navigate = useNavigate()
+  const { setFilterBrokerages, setFilterAccounts } = useFilterContext()
 
   const toggleBrok = (name: string) =>
     setExpanded(s => { const n = new Set(s); n.has(name) ? n.delete(name) : n.add(name); return n })
   const toggleGrp = (key: string) =>
     setExpandedGrp(s => { const n = new Set(s); n.has(key) ? n.delete(key) : n.add(key); return n })
+
+  // Jump to Holdings pre-filtered to this brokerage / account (same SPA session, so the
+  // shared FilterContext carries the filter across the navigation).
+  const goToBrokerageHoldings = (name: string) => {
+    setFilterBrokerages([name]); setFilterAccounts([])
+    navigate('/holdings')
+  }
+  const goToAccountHoldings = (accountId: number) => {
+    setFilterBrokerages([]); setFilterAccounts([String(accountId)])
+    navigate('/holdings')
+  }
 
   if (data.length === 0)
     return <p className="text-gray-400 text-sm py-4">No positions found.</p>
@@ -87,6 +101,13 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                     ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                     : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
                   {brok.name}
+                  <span
+                    onClick={e => { e.stopPropagation(); goToBrokerageHoldings(brok.name) }}
+                    className="text-gray-300 hover:text-blue-600"
+                    title="View in Holdings"
+                  >
+                    <ExternalLink className="h-3 w-3" />
+                  </span>
                 </div>
                 <div className="text-xs text-gray-400 mt-0.5 truncate">
                   {brok.accounts.length} acct{brok.accounts.length !== 1 ? 's' : ''} · Cash {fmtCAD(brok.totalCash)}
@@ -106,6 +127,13 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                     <span className="flex items-center gap-1.5 min-w-0">
                       <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium whitespace-nowrap">{acct.account_type}</span>
                       <span className="text-gray-700 truncate">{acct.account_name}</span>
+                      <span
+                        onClick={() => goToAccountHoldings(acct.account_id)}
+                        className="text-gray-300 hover:text-blue-600 flex-shrink-0"
+                        title="View in Holdings"
+                      >
+                        <ExternalLink className="h-3 w-3" />
+                      </span>
                     </span>
                     <span className="font-mono font-medium text-gray-900 flex-shrink-0">{fmtCAD(acct.total)}</span>
                   </div>
@@ -161,6 +189,13 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                         ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
                         : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
                       {brok.name}
+                      <span
+                        onClick={e => { e.stopPropagation(); goToBrokerageHoldings(brok.name) }}
+                        className="text-gray-300 hover:text-blue-600"
+                        title="View in Holdings"
+                      >
+                        <ExternalLink className="h-3.5 w-3.5" />
+                      </span>
                     </span>
                   </td>
                   <td className="px-3 py-3 text-right text-xs text-gray-400">
@@ -212,6 +247,13 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                             {isPaired && (
                               <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 font-medium">CAD+USD</span>
                             )}
+                            <span
+                              onClick={e => { e.stopPropagation(); goToAccountHoldings(acct.account_id) }}
+                              className="text-gray-300 hover:text-blue-600"
+                              title="View in Holdings"
+                            >
+                              <ExternalLink className="h-3 w-3" />
+                            </span>
                           </span>
                         </td>
                         <td></td>

@@ -52,6 +52,40 @@ def _drop_future_dated_prices(session, flush_context, instances):
             session.expunge(obj)
 
 
+# ── Guard: apply per-(security, account) transaction-type overrides on import ─
+# See SecurityAccountTypeOverride (app/models/master.py) for the full rationale. Runs on
+# every newly-inserted Transaction across ALL import paths (CSV, IBKR Flex, Plaid,
+# statements, manual create) — forward-looking only, does not touch already-persisted rows
+# (session.dirty), so it never fights a manual edit made after the fact.
+@event.listens_for(SessionLocal, "before_flush")
+def _apply_type_overrides(session, flush_context, instances):
+    txns = [
+        o for o in session.new
+        if getattr(o, "__tablename__", None) == "transactions"
+        and getattr(o, "security_id", None) and getattr(o, "account_id", None)
+    ]
+    if not txns:
+        return
+    from app.models.master import SecurityAccountTypeOverride
+    sec_ids = {t.security_id for t in txns}
+    acct_ids = {t.account_id for t in txns}
+    rules = (
+        session.query(SecurityAccountTypeOverride)
+        .filter(
+            SecurityAccountTypeOverride.security_id.in_(sec_ids),
+            SecurityAccountTypeOverride.account_id.in_(acct_ids),
+        )
+        .all()
+    )
+    if not rules:
+        return
+    rule_map = {(r.security_id, r.account_id, r.from_type): r.to_type for r in rules}
+    for t in txns:
+        new_type = rule_map.get((t.security_id, t.account_id, t.transaction_type))
+        if new_type:
+            t.transaction_type = new_type
+
+
 class Base(DeclarativeBase):
     pass
 

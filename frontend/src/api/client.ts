@@ -210,6 +210,24 @@ export const bulkUpdateTransactions = (ids: number[], transaction_type: string) 
 export const bulkDeleteTransactions = (ids: number[]) =>
   api.post<{ deleted: number }>('/transactions/bulk-delete', { ids }).then(r => r.data)
 
+// ─── Security ↔ Account transaction-type overrides ───────────────────────────
+// Forward-looking reclassify rules (e.g. "DIVIDEND -> DRIP for PGF550 in SW Brian Income"),
+// applied at import time. See backend/app/models/master.py SecurityAccountTypeOverride.
+export interface TypeOverride {
+  id: number
+  security_id: number
+  account_id: number
+  account_name: string
+  from_type: string
+  to_type: string
+}
+export const getTypeOverrides = (securityId: number) =>
+  api.get<TypeOverride[]>(`/securities/${securityId}/type-overrides`).then(r => r.data)
+export const createTypeOverride = (securityId: number, data: { account_id: number; from_type: string; to_type: string }) =>
+  api.post<{ id: number; updated: boolean }>(`/securities/${securityId}/type-overrides`, data).then(r => r.data)
+export const deleteTypeOverride = (id: number) =>
+  api.delete(`/securities/type-overrides/${id}`).then(r => r.data)
+
 // ─── Market Prices ────────────────────────────────────────────────────────────
 export interface MarketPrice {
   security_id: number

@@ -1,16 +1,22 @@
-import { useState } from 'react'
+import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap } from 'lucide-react'
+import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, ReferenceLine,
 } from 'recharts'
-import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals } from '../api/client'
+import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals, Account, Security, Transaction } from '../api/client'
 import {
   getSecurityYahooDetail, getSecurityPriceHistory, getTransactions,
   getSecurityFundamentals, refreshSecurityFundamentals,
   getSecuritySignals, computeSecuritySignals,
+  getAccounts, getSecurities, updateTransaction,
+  getTypeOverrides, deleteTypeOverride,
 } from '../api/client'
+import {
+  TransactionEditModal, prepareTransactionUpdate, fmtApiError,
+} from './TransactionEditModal'
+import type { EditState } from './TransactionEditModal'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -175,6 +181,9 @@ interface Props {
 export default function SecurityDetailPanel({ position, allPositions, onClose }: Props) {
   const [tab, setTab] = useState<Tab>('overview')
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1y')
+  const [txSortCol, setTxSortCol] = useState<'transaction_date' | 'transaction_type' | 'account_name' | 'quantity' | 'price' | 'cad_amount'>('transaction_date')
+  const [txSortDir, setTxSortDir] = useState<'asc' | 'desc'>('desc')
+  const [groupByAccount, setGroupByAccount] = useState(false)
   const qc = useQueryClient()
 
   const secId = position.security_id
@@ -232,6 +241,84 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     enabled: !!secId && tab === 'transactions',
   })
   const transactions = (txnQ.data as { items: Record<string, unknown>[] } | undefined)?.items ?? []
+
+  // ── Sort + group-by-account (client-side; the 200-row page is already loaded) ──
+  const sortedTransactions = useMemo(() => {
+    const dir = txSortDir === 'asc' ? 1 : -1
+    return [...transactions].sort((a, b) => {
+      const av = a[txSortCol], bv = b[txSortCol]
+      const an = parseFloat(String(av)), bn = parseFloat(String(bv))
+      const cmp = (!isNaN(an) && !isNaN(bn) && txSortCol !== 'transaction_date')
+        ? an - bn
+        : String(av ?? '').localeCompare(String(bv ?? ''), undefined, { sensitivity: 'base' })
+      return dir * cmp
+    })
+  }, [transactions, txSortCol, txSortDir])
+
+  const txGroups = useMemo(() => {
+    const sumOf = (rows: Record<string, unknown>[]) => ({
+      qty: rows.reduce((s, t) => s + (parseFloat(String(t.quantity ?? '0')) || 0), 0),
+      amt: rows.reduce((s, t) => s + (parseFloat(String(t.cad_amount ?? '0')) || 0), 0),
+    })
+    if (!groupByAccount) return [{ key: '', rows: sortedTransactions, ...sumOf(sortedTransactions) }]
+    const byAcct = new Map<string, Record<string, unknown>[]>()
+    for (const t of sortedTransactions) {
+      const k = String(t.account_name ?? '—')
+      if (!byAcct.has(k)) byAcct.set(k, [])
+      byAcct.get(k)!.push(t)
+    }
+    return [...byAcct.entries()]
+      .sort((a, b) => a[0].localeCompare(b[0]))
+      .map(([key, rows]) => ({ key, rows, ...sumOf(rows) }))
+  }, [sortedTransactions, groupByAccount])
+  const grandTotal = useMemo(() => ({
+    qty: sortedTransactions.reduce((s, t) => s + (parseFloat(String(t.quantity ?? '0')) || 0), 0),
+    amt: sortedTransactions.reduce((s, t) => s + (parseFloat(String(t.cad_amount ?? '0')) || 0), 0),
+  }), [sortedTransactions])
+
+  const toggleTxSort = (col: typeof txSortCol) => {
+    if (col === txSortCol) setTxSortDir(d => d === 'asc' ? 'desc' : 'asc')
+    else { setTxSortCol(col); setTxSortDir(col === 'transaction_date' ? 'desc' : 'asc') }
+  }
+
+  // ── Inline transaction editing (reuses the same modal as Activity → Transactions) ──
+  const [editingTxn, setEditingTxn] = useState<EditState | null>(null)
+  const [editTxnError, setEditTxnError] = useState<string | null>(null)
+  const [editTickerInput, setEditTickerInput] = useState('')
+
+  const { data: editAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts, enabled: tab === 'transactions' })
+  const { data: editSecurities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities(), enabled: tab === 'transactions' })
+
+  const updateTxnMutation = useMutation({
+    mutationFn: ({ id, fields }: { id: number; fields: Partial<Transaction> }) => updateTransaction(id, fields),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['transactions-panel', secId] })
+      qc.invalidateQueries({ queryKey: ['transactions'] })
+      qc.invalidateQueries({ queryKey: ['positions'] })
+      qc.invalidateQueries({ queryKey: ['consolidated-positions'] })
+      setEditingTxn(null)
+      setEditTxnError(null)
+    },
+    onError: (err: unknown) => setEditTxnError(fmtApiError(err)),
+  })
+
+  const openTxnEdit = (t: Record<string, unknown>) => {
+    setEditTxnError(null)
+    setEditTickerInput(String(t.security_ticker ?? position.ticker ?? ''))
+    setEditingTxn({ tx: t as unknown as Transaction, fields: { ...t } as Partial<Transaction> })
+  }
+
+  // Reclassify rules management (created quick via the edit modal's checkbox, or reviewed/
+  // removed here). See SecurityAccountTypeOverride on the backend.
+  const typeOverridesQ = useQuery({
+    queryKey: ['type-overrides', secId],
+    queryFn: () => getTypeOverrides(secId!),
+    enabled: !!secId && tab === 'transactions',
+  })
+  const deleteOverrideMutation = useMutation({
+    mutationFn: deleteTypeOverride,
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['type-overrides', secId] }),
+  })
 
   // Derived position numbers
   const qty      = parseFloat(position.total_quantity || '0')
@@ -867,6 +954,33 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
           {/* ── Transactions ── */}
           {tab === 'transactions' && (
             <div className="p-5">
+              {(typeOverridesQ.data ?? []).length > 0 && (
+                <div className="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                  <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Reclassify Rules</h4>
+                  <div className="space-y-1">
+                    {typeOverridesQ.data!.map(rule => (
+                      <div key={rule.id} className="flex items-center justify-between text-xs bg-white border border-gray-100 rounded px-2.5 py-1.5">
+                        <span className="text-gray-700">
+                          <span className="font-medium">{rule.from_type}</span> → <span className="font-medium">{rule.to_type}</span>
+                          <span className="text-gray-400"> for </span>{rule.account_name}
+                        </span>
+                        <button
+                          onClick={() => deleteOverrideMutation.mutate(rule.id)}
+                          disabled={deleteOverrideMutation.isPending}
+                          className="text-gray-300 hover:text-red-500"
+                          title="Delete this rule"
+                        >
+                          <X className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-gray-400 mt-2">
+                    Applied automatically to new imports going forward. Create one from the checkbox
+                    when editing a transaction whose type you change.
+                  </p>
+                </div>
+              )}
               {txnQ.isLoading ? (
                 <div className="flex items-center gap-2 text-sm text-gray-400">
                   <Loader2 className="h-4 w-4 animate-spin" /> Loading transactions…
@@ -874,50 +988,121 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
               ) : transactions.length === 0 ? (
                 <p className="text-sm text-gray-400">No transactions found.</p>
               ) : (
-                <div className="overflow-x-auto">
-                  <table className="min-w-full text-xs divide-y divide-gray-100">
-                    <thead className="bg-gray-50">
-                      <tr className="text-gray-500 uppercase">
-                        <th className="px-3 py-2 text-left">Date</th>
-                        <th className="px-3 py-2 text-left">Type</th>
-                        <th className="px-3 py-2 text-left">Account</th>
-                        <th className="px-3 py-2 text-right">Qty</th>
-                        <th className="px-3 py-2 text-right">Price</th>
-                        <th className="px-3 py-2 text-right">Amount (CAD)</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-50">
-                      {transactions.map((t: Record<string, unknown>, i: number) => {
-                        const typ = String(t.transaction_type || '')
-                        const isBuy = ['BUY', 'DRIP'].includes(typ)
-                        const isSell = ['SELL', 'OPTION_EXPIRY', 'OPTION_ASSIGNMENT'].includes(typ)
-                        return (
-                          <tr key={i} className="hover:bg-gray-50">
-                            <td className="px-3 py-2 text-gray-600">{String(t.transaction_date || '').slice(0, 10)}</td>
-                            <td className="px-3 py-2">
-                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
-                                isBuy ? 'bg-blue-50 text-blue-700' :
-                                isSell ? 'bg-red-50 text-red-700' :
-                                'bg-gray-100 text-gray-600'
-                              }`}>{typ}</span>
-                            </td>
-                            <td className="px-3 py-2 text-gray-500 max-w-[120px] truncate">{String(t.account_name || '—')}</td>
-                            <td className="px-3 py-2 text-right text-gray-700">
-                              {t.quantity != null ? parseFloat(String(t.quantity)).toLocaleString('en-CA', { maximumFractionDigits: 4 }) : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right text-gray-700">
-                              {t.price != null ? fmtCur(parseFloat(String(t.price)), String(t.currency || 'CAD')) : '—'}
-                            </td>
-                            <td className="px-3 py-2 text-right font-medium">
-                              {t.cad_amount != null ? fmtCAD(String(t.cad_amount)) : '—'}
-                            </td>
-                          </tr>
-                        )
-                      })}
-                    </tbody>
-                  </table>
-                </div>
+                <>
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-xs text-gray-400">Click a row to edit it.</p>
+                    <button
+                      onClick={() => setGroupByAccount(g => !g)}
+                      className={`text-xs border rounded px-2.5 py-1 ${groupByAccount ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                    >
+                      Group by Account
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto">
+                    <table className="min-w-full text-xs divide-y divide-gray-100">
+                      <thead className="bg-gray-50">
+                        <tr className="text-gray-500 uppercase">
+                          {([
+                            ['transaction_date', 'Date', 'left'],
+                            ['transaction_type', 'Type', 'left'],
+                            ['account_name', 'Account', 'left'],
+                            ['quantity', 'Qty', 'right'],
+                            ['price', 'Price', 'right'],
+                            ['cad_amount', 'Amount (CAD)', 'right'],
+                          ] as const).map(([col, label, align]) => (
+                            <th
+                              key={col}
+                              onClick={() => toggleTxSort(col)}
+                              className={`px-3 py-2 cursor-pointer select-none hover:bg-gray-100 text-${align}`}
+                            >
+                              <span className={`flex items-center gap-1 ${align === 'right' ? 'justify-end' : ''}`}>
+                                {label}
+                                {txSortCol === col
+                                  ? (txSortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />)
+                                  : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
+                              </span>
+                            </th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-gray-50">
+                        {txGroups.map((group, gi) => (
+                          <Fragment key={gi}>
+                            {groupByAccount && (
+                              <tr key={`hdr-${gi}`} className="bg-gray-50">
+                                <td colSpan={6} className="px-3 py-1.5 text-xs font-semibold text-gray-600">{group.key}</td>
+                              </tr>
+                            )}
+                            {group.rows.map((t: Record<string, unknown>, i: number) => {
+                              const typ = String(t.transaction_type || '')
+                              const isBuy = ['BUY', 'DRIP'].includes(typ)
+                              const isSell = ['SELL', 'OPTION_EXPIRY', 'OPTION_ASSIGNMENT'].includes(typ)
+                              return (
+                                <tr key={`${gi}-${i}`} className="hover:bg-blue-50 cursor-pointer" onClick={() => openTxnEdit(t)}>
+                                  <td className="px-3 py-2 text-gray-600">{String(t.transaction_date || '').slice(0, 10)}</td>
+                                  <td className="px-3 py-2">
+                                    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${
+                                      isBuy ? 'bg-blue-50 text-blue-700' :
+                                      isSell ? 'bg-red-50 text-red-700' :
+                                      'bg-gray-100 text-gray-600'
+                                    }`}>{typ}</span>
+                                  </td>
+                                  <td className="px-3 py-2 text-gray-500 max-w-[120px] truncate">{String(t.account_name || '—')}</td>
+                                  <td className="px-3 py-2 text-right text-gray-700">
+                                    {t.quantity != null ? parseFloat(String(t.quantity)).toLocaleString('en-CA', { maximumFractionDigits: 4 }) : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-right text-gray-700">
+                                    {t.price != null ? fmtCur(parseFloat(String(t.price)), String(t.currency || 'CAD')) : '—'}
+                                  </td>
+                                  <td className="px-3 py-2 text-right font-medium">
+                                    {t.cad_amount != null ? fmtCAD(String(t.cad_amount)) : '—'}
+                                  </td>
+                                </tr>
+                              )
+                            })}
+                            {groupByAccount && (
+                              <tr key={`sub-${gi}`} className="bg-gray-50/60 font-medium">
+                                <td colSpan={3} className="px-3 py-1.5 text-right text-gray-500 text-xs">Subtotal</td>
+                                <td className="px-3 py-1.5 text-right text-gray-700">{group.qty.toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                                <td />
+                                <td className="px-3 py-1.5 text-right text-gray-800">{fmtCAD(group.amt)}</td>
+                              </tr>
+                            )}
+                          </Fragment>
+                        ))}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t-2 border-gray-200 font-semibold">
+                          <td colSpan={3} className="px-3 py-2 text-right text-gray-600 text-xs">Total</td>
+                          <td className="px-3 py-2 text-right text-gray-900">{grandTotal.qty.toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                          <td />
+                          <td className="px-3 py-2 text-right text-gray-900">{fmtCAD(grandTotal.amt)}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </>
               )}
+
+              <TransactionEditModal
+                editing={editingTxn}
+                onClose={() => { setEditingTxn(null); setEditTxnError(null) }}
+                onChangeFields={fields => setEditingTxn(p => p ? { ...p, fields } : null)}
+                accounts={editAccounts as Account[]}
+                securities={editSecurities as Security[]}
+                tickerInput={editTickerInput}
+                onTickerChange={val => {
+                  setEditTickerInput(val)
+                  const sec = (editSecurities as Security[]).find(s => s.ticker.toUpperCase() === val)
+                  setEditingTxn(p => p ? { ...p, fields: { ...p.fields, security_id: sec?.id ?? null } } : null)
+                }}
+                error={editTxnError}
+                saving={updateTxnMutation.isPending}
+                onSave={() => {
+                  if (!editingTxn) return
+                  updateTxnMutation.mutate({ id: editingTxn.tx.id, fields: prepareTransactionUpdate(editingTxn.fields) })
+                }}
+              />
             </div>
           )}
         </div>

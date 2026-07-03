@@ -98,6 +98,31 @@ class BrokerageTypeMapping(Base):
     __table_args__ = (UniqueConstraint("brokerage_id", "raw_type", name="uq_type_mapping"),)
 
 
+class SecurityAccountTypeOverride(Base):
+    """Per-(security, account) transaction-type reclassification, applied at import time.
+
+    Unlike BrokerageTypeMapping (raw import string -> canonical type, whole-brokerage), this
+    is for cases where the SAME canonical type means different things for a specific fund in a
+    specific account — e.g. a Scotia Wealth Pender fund whose passive reinvestment sometimes
+    imports as plain DIVIDEND instead of DRIP. Applied by a before_flush guard (see
+    app/database.py) on every newly-inserted Transaction, so it covers every import path
+    (CSV, IBKR Flex, Plaid, statements) without touching each parser. Forward-looking only —
+    does not rewrite already-persisted rows; use the transaction edit UI for those.
+    """
+    __tablename__ = "security_account_type_overrides"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    security_id: Mapped[int] = mapped_column(Integer, ForeignKey("securities.id"), nullable=False)
+    account_id: Mapped[int] = mapped_column(Integer, ForeignKey("accounts.id"), nullable=False)
+    from_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    to_type: Mapped[str] = mapped_column(String(30), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
+
+    __table_args__ = (
+        UniqueConstraint("security_id", "account_id", "from_type", name="uq_sec_acct_type_override"),
+    )
+
+
 class PortfolioSnapshot(Base):
     """
     Pre-computed daily portfolio value per account.

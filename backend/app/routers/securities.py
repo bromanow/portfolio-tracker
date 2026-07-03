@@ -527,3 +527,75 @@ def get_bulk_fundamentals_signals(
         }
         for sec_id in ids
     }
+
+
+# ─── Per-(security, account) transaction-type overrides ──────────────────────
+# See SecurityAccountTypeOverride (app/models/master.py) and the before_flush guard in
+# app/database.py for the full rationale — forward-looking reclassification (e.g. a fund's
+# passive reinvestment importing as DIVIDEND when it should be DRIP for one specific account).
+
+class TypeOverrideCreate(BaseModel):
+    account_id: int
+    from_type: str
+    to_type: str
+
+
+@router.get("/{security_id}/type-overrides")
+def list_type_overrides(security_id: int, db: Session = Depends(get_db)):
+    from app.models.master import SecurityAccountTypeOverride, Account
+    rows = (
+        db.query(SecurityAccountTypeOverride, Account.name)
+        .join(Account, Account.id == SecurityAccountTypeOverride.account_id)
+        .filter(SecurityAccountTypeOverride.security_id == security_id)
+        .order_by(Account.name)
+        .all()
+    )
+    return [
+        {
+            "id": r.id, "security_id": r.security_id, "account_id": r.account_id,
+            "account_name": name, "from_type": r.from_type, "to_type": r.to_type,
+        }
+        for r, name in rows
+    ]
+
+
+@router.post("/{security_id}/type-overrides", status_code=201)
+def create_type_override(security_id: int, body: TypeOverrideCreate, db: Session = Depends(get_db)):
+    from app.models.master import SecurityAccountTypeOverride
+    sec = db.get(Security, security_id)
+    if not sec:
+        raise HTTPException(status_code=404, detail="Security not found")
+    if body.from_type == body.to_type:
+        raise HTTPException(status_code=400, detail="from_type and to_type must differ")
+    existing = (
+        db.query(SecurityAccountTypeOverride)
+        .filter(
+            SecurityAccountTypeOverride.security_id == security_id,
+            SecurityAccountTypeOverride.account_id == body.account_id,
+            SecurityAccountTypeOverride.from_type == body.from_type,
+        )
+        .first()
+    )
+    if existing:
+        existing.to_type = body.to_type
+        db.commit()
+        return {"id": existing.id, "updated": True}
+    row = SecurityAccountTypeOverride(
+        security_id=security_id, account_id=body.account_id,
+        from_type=body.from_type, to_type=body.to_type,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return {"id": row.id, "updated": False}
+
+
+@router.delete("/type-overrides/{override_id}")
+def delete_type_override(override_id: int, db: Session = Depends(get_db)):
+    from app.models.master import SecurityAccountTypeOverride
+    row = db.get(SecurityAccountTypeOverride, override_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Override not found")
+    db.delete(row)
+    db.commit()
+    return {"deleted": override_id}

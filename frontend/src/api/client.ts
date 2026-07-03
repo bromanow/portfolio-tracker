@@ -525,6 +525,18 @@ export const getSecuritySignals = (id: number) =>
 export const computeSecuritySignals = (id: number) =>
   api.post(`/securities/${id}/compute-signals`).then(r => r.data)
 
+export interface SecurityNewsItem {
+  id: string
+  title: string
+  summary: string | null
+  published_at: string | null
+  publisher: string | null
+  url: string
+  thumbnail_url: string | null
+}
+export const getSecurityNews = (id: number) =>
+  api.get<{ symbol: string | null; items: SecurityNewsItem[] }>(`/securities/${id}/news`).then(r => r.data)
+
 export interface BulkFundamentalsSignals {
   [securityId: string]: {
     fundamentals: StoredFundamentals | null

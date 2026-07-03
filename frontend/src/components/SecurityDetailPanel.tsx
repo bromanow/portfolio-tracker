@@ -12,6 +12,7 @@ import {
   getSecuritySignals, computeSecuritySignals,
   getAccounts, getSecurities, updateTransaction,
   getTypeOverrides, deleteTypeOverride,
+  getSecurityNews,
 } from '../api/client'
 import {
   TransactionEditModal, prepareTransactionUpdate, fmtApiError,
@@ -61,7 +62,7 @@ function pnlClass(n: number | string | null | undefined) {
 }
 
 type ChartPeriod = '1m' | '3m' | '6m' | '1y' | '3y' | 'max'
-type Tab = 'overview' | 'chart' | 'fundamentals' | 'signals' | 'transactions'
+type Tab = 'overview' | 'chart' | 'fundamentals' | 'signals' | 'transactions' | 'news'
 
 
 // ─── RSI gauge ────────────────────────────────────────────────────────────────
@@ -217,6 +218,13 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
   })
   const sig: SecuritySignals | undefined = sigQ.data
 
+  const newsQ = useQuery({
+    queryKey: ['security-news', secId],
+    queryFn: () => getSecurityNews(secId!),
+    enabled: !!secId && tab === 'news',
+    staleTime: 15 * 60 * 1000,
+  })
+
   // Mutations
   const refreshFunds = useMutation({
     mutationFn: () => refreshSecurityFundamentals(secId!),
@@ -343,6 +351,7 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     { id: 'fundamentals', label: 'Fundamentals' },
     { id: 'signals', label: 'Signals' },
     { id: 'transactions', label: 'Transactions' },
+    { id: 'news', label: 'News' },
   ]
 
   return (
@@ -1103,6 +1112,53 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
                   updateTxnMutation.mutate({ id: editingTxn.tx.id, fields: prepareTransactionUpdate(editingTxn.fields) })
                 }}
               />
+            </div>
+          )}
+
+          {tab === 'news' && (
+            <div className="p-5">
+              {newsQ.isLoading ? (
+                <div className="flex items-center gap-2 text-sm text-gray-400">
+                  <Loader2 className="h-4 w-4 animate-spin" /> Loading news…
+                </div>
+              ) : (newsQ.data?.items.length ?? 0) === 0 ? (
+                <p className="text-sm text-gray-400">
+                  No news found{newsQ.data?.symbol ? ` for ${newsQ.data.symbol}` : ''}.
+                </p>
+              ) : (
+                <div className="space-y-3">
+                  {newsQ.data!.items.map(item => (
+                    <a
+                      key={item.id}
+                      href={item.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex gap-3 p-3 rounded-lg border border-gray-100 hover:border-gray-200 hover:bg-gray-50 transition-colors"
+                    >
+                      {item.thumbnail_url && (
+                        <img
+                          src={item.thumbnail_url}
+                          alt=""
+                          className="w-20 h-20 object-cover rounded-md flex-shrink-0 bg-gray-100"
+                          onError={e => { (e.target as HTMLImageElement).style.display = 'none' }}
+                        />
+                      )}
+                      <div className="min-w-0 flex-1">
+                        <p className="text-sm font-medium text-gray-900 leading-snug">{item.title}</p>
+                        {item.summary && (
+                          <p className="text-xs text-gray-500 mt-1 line-clamp-2">{item.summary}</p>
+                        )}
+                        <p className="text-xs text-gray-400 mt-1.5">
+                          {item.publisher}
+                          {item.published_at && (
+                            <> · {new Date(item.published_at).toLocaleDateString('en-CA', { year: 'numeric', month: 'short', day: 'numeric' })}</>
+                          )}
+                        </p>
+                      </div>
+                    </a>
+                  ))}
+                </div>
+              )}
             </div>
           )}
         </div>

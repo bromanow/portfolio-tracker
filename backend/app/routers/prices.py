@@ -23,30 +23,49 @@ router = APIRouter(prefix="/api/prices", tags=["prices"])
 _INDICATORS_CACHE: dict = {}
 _INDICATORS_TTL = 300  # 5 minutes
 
+
+# "country" tags which ones show in the Dashboard ticker bar for that market (mirrors
+# Yahoo Finance's Canada/US Markets toggle); country=None means "not shown in the ticker
+# bar" — kept around only because _COMPARISON_INDICES (Performance chart overlay) needs
+# their labels. Symbols verified live against Yahoo (^SPTTFS/^SPTTEN match the TSX capped
+# financial/energy sub-indices; CADUSD=X kept in both bars — this app's base currency is
+# CAD, so showing CAD/USD consistently is more useful here than flipping direction by market.
 _INDICATOR_DEFS = [
-    {"symbol": "^GSPTSE", "label": "S&P/TSX",    "currency": "CAD"},
-    {"symbol": "^GSPC",   "label": "S&P 500",    "currency": "USD"},
-    {"symbol": "^DJI",    "label": "Dow Jones",  "currency": "USD"},
-    {"symbol": "^IXIC",   "label": "NASDAQ",     "currency": "USD"},
-    {"symbol": "^RUT",    "label": "Russell 2K", "currency": "USD"},
-    {"symbol": "^VIX",    "label": "VIX",        "currency": "USD"},
-    {"symbol": "CADUSD=X","label": "CAD/USD",    "currency": ""},
-    {"symbol": "CL=F",    "label": "Crude Oil",  "currency": "USD"},
-    {"symbol": "GC=F",    "label": "Gold",       "currency": "USD"},
+    {"symbol": "^GSPTSE", "label": "S&P/TSX",                   "currency": "CAD", "country": "CA"},
+    {"symbol": "^SPTTFS", "label": "S&P/TSX Capped Financials", "currency": "CAD", "country": "CA"},
+    {"symbol": "^SPTTEN", "label": "S&P/TSX Capped Energy",     "currency": "CAD", "country": "CA"},
+    {"symbol": "CADUSD=X","label": "CAD/USD",                   "currency": "",    "country": "CA"},
+    {"symbol": "BTC-CAD", "label": "Bitcoin CAD",               "currency": "CAD", "country": "CA"},
+    {"symbol": "CL=F",    "label": "Crude Oil",                 "currency": "USD", "country": "CA"},
+
+    {"symbol": "^GSPC",   "label": "S&P 500",   "currency": "USD", "country": "US"},
+    {"symbol": "^DJI",    "label": "Dow Jones", "currency": "USD", "country": "US"},
+    {"symbol": "^IXIC",   "label": "NASDAQ",    "currency": "USD", "country": "US"},
+    {"symbol": "CADUSD=X","label": "CAD/USD",   "currency": "",    "country": "US"},
+    {"symbol": "BTC-USD", "label": "Bitcoin USD","currency": "USD","country": "US"},
+    {"symbol": "CL=F",    "label": "Crude Oil", "currency": "USD", "country": "US"},
+
+    # Not shown in the ticker bar — kept for the Performance chart's comparison-index overlay.
+    {"symbol": "^RUT", "label": "Russell 2K", "currency": "USD", "country": None},
+    {"symbol": "^VIX", "label": "VIX",        "currency": "USD", "country": None},
+    {"symbol": "GC=F", "label": "Gold",       "currency": "USD", "country": None},
 ]
 
 
 @router.get("/market-indicators")
-def get_market_indicators():
-    """Return live price + day change for major market indices. Cached 5 min."""
+def get_market_indicators(country: str = Query("CA", pattern="^(CA|US)$")):
+    """Return live price + day change for major market indices for one market
+    (Canada or US, mirroring Yahoo Finance's country toggle). Cached 5 min per country."""
     global _INDICATORS_CACHE
     now = _time.time()
-    if _INDICATORS_CACHE.get("_ts") and (now - _INDICATORS_CACHE["_ts"]) < _INDICATORS_TTL:
-        return _INDICATORS_CACHE["data"]
+    cached = _INDICATORS_CACHE.get(country)
+    if cached and (now - cached["_ts"]) < _INDICATORS_TTL:
+        return cached["data"]
 
     from app.services.price_service import _fetch_one
+    defs = [d for d in _INDICATOR_DEFS if d.get("country") == country]
     results = []
-    for ind in _INDICATOR_DEFS:
+    for ind in defs:
         data = _fetch_one(ind["symbol"])
         results.append({
             "symbol": ind["symbol"],
@@ -56,7 +75,7 @@ def get_market_indicators():
             "day_change": float(data["day_change"]) if data and data.get("day_change") else None,
             "day_change_pct": float(data["day_change_pct"]) if data and data.get("day_change_pct") else None,
         })
-    _INDICATORS_CACHE = {"data": results, "_ts": now}
+    _INDICATORS_CACHE[country] = {"data": results, "_ts": now}
     return results
 
 

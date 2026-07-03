@@ -507,8 +507,8 @@ export const getPositions = (params?: { account_id?: number; as_of?: string }) =
 export const getConsolidatedPositions = (params?: { as_of?: string; account_ids?: string }) =>
   api.get<ConsolidatedPosition[]>('/portfolio/positions/consolidated', { params }).then(r => r.data)
 
-export const getMarketIndicators = () =>
-  api.get<MarketIndicator[]>('/prices/market-indicators').then(r => r.data)
+export const getMarketIndicators = (country: 'CA' | 'US' = 'CA') =>
+  api.get<MarketIndicator[]>('/prices/market-indicators', { params: { country } }).then(r => r.data)
 
 export const getSummaryMetrics = (params?: { account_ids?: string; as_of?: string }) =>
   api.get<SummaryMetrics>('/portfolio/summary-metrics', { params }).then(r => r.data)

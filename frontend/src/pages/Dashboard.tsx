@@ -375,9 +375,10 @@ export default function Dashboard() {
   })
   const usdCadRate = usdCadData ? parseFloat(usdCadData.rate) : null
 
+  const [indicatorCountry, setIndicatorCountry] = useState<'CA' | 'US'>('CA')
   const { data: indicators = [] } = useQuery({
-    queryKey: ['market-indicators'],
-    queryFn: getMarketIndicators,
+    queryKey: ['market-indicators', indicatorCountry],
+    queryFn: () => getMarketIndicators(indicatorCountry),
     staleTime: 4 * 60 * 1000,
     refetchInterval: 5 * 60 * 1000,
   })
@@ -536,6 +537,20 @@ export default function Dashboard() {
       {/* ── Market Indicators bar ── */}
       <div className="bg-gray-900 rounded-xl overflow-x-auto">
         <div className="flex items-center gap-0 min-w-max px-2 py-1.5">
+          {/* Canada / US Markets toggle — mirrors Yahoo Finance's country switch */}
+          <div className="flex items-center gap-0.5 bg-gray-800 rounded-md p-0.5 mr-2 flex-shrink-0">
+            {(['CA', 'US'] as const).map(c => (
+              <button
+                key={c}
+                onClick={() => setIndicatorCountry(c)}
+                className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap transition-colors ${
+                  indicatorCountry === c ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                }`}
+              >
+                {c === 'CA' ? 'Canada' : 'US Markets'}
+              </button>
+            ))}
+          </div>
           {(indicators as MarketIndicator[]).map(ind => {
             const isUp = ind.day_change_pct != null && ind.day_change_pct > 0
             const isDown = ind.day_change_pct != null && ind.day_change_pct < 0
@@ -545,9 +560,11 @@ export default function Dashboard() {
             const priceStr = ind.price != null
               ? ind.symbol === 'CADUSD=X'
                 ? ind.price.toFixed(4)
-                : ind.price >= 1000
-                  ? ind.price.toLocaleString('en', { maximumFractionDigits: 0 })
-                  : ind.price.toFixed(2)
+                : ind.symbol.startsWith('BTC-')
+                  ? ind.price.toLocaleString('en', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+                  : ind.price >= 1000
+                    ? ind.price.toLocaleString('en', { maximumFractionDigits: 0 })
+                    : ind.price.toFixed(2)
               : '—'
             return (
               <div key={ind.symbol} className="flex items-center gap-2 px-3 py-1 border-r border-gray-700 last:border-0">

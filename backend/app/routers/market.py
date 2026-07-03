@@ -2,7 +2,8 @@
 
 Pulls from major index tickers rather than ETFs — verified live that ^GSPC/^DJI return
 genuine market-wide headlines ("Stock market today: ..."), while ETF tickers like SPY/QQQ
-skew toward ETF-comparison filler articles ("What Actually Drove IWD...").
+skew toward ETF-comparison filler articles ("What Actually Drove IWD..."). Includes both
+Canadian (^GSPTSE) and US (^GSPC/^DJI/^IXIC) coverage merged into one feed, deduped by URL.
 """
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from app.services.news_service import fetch_yahoo_news
 
 router = APIRouter(prefix="/api/market", tags=["market"])
 
-_MARKET_SYMBOLS = ["^GSPC", "^DJI", "^IXIC"]  # S&P 500, Dow, Nasdaq
+_MARKET_SYMBOLS = ["^GSPTSE", "^GSPC", "^DJI", "^IXIC"]  # S&P/TSX, S&P 500, Dow, Nasdaq
 
 
 @router.get("/news")
@@ -28,4 +29,4 @@ def get_market_news(current_user: User = Depends(get_current_user)):
             seen_urls.add(item["url"])
             items.append(item)
     items.sort(key=lambda i: i.get("published_at") or "", reverse=True)
-    return {"items": items[:10]}
+    return {"items": items[:12]}

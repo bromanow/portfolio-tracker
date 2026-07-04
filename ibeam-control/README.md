@@ -21,11 +21,15 @@ driven by a compose file in this repo) — you'll need to create it once by hand
 4. **Volumes**: mount the Docker socket **read-write** (start/stop needs write access):
    `/var/run/docker.sock:/var/run/docker.sock`
 5. **Environment variables**:
-   - `IBEAM_CONTAINER_NAME` — the exact container name of the running IBeam service.
-     Find it with `docker ps --format '{{.Names}}'` on the host and grep for the
-     `portfolio-ibeam` Coolify resource (it'll look like `l14lzwf7...-184356830589`, not
-     literally "ibeam" — Coolify hashes names). **This name changes if IBeam is ever
-     recreated/redeployed** — re-check it if start/stop calls start 404ing.
+   - `IBEAM_RESOURCE_NAME` — the **Coolify resource name** of the IBeam service, i.e.
+     `portfolio-ibeam` (not a literal Docker container name). The service resolves the actual
+     container at request time via Docker's `coolify.resourceName` label instead of a fixed
+     name, because Coolify renames the underlying container to a new per-deployment hash (e.g.
+     `l14lzwf7...-184356830589`) every time `portfolio-ibeam` is recreated/redeployed — the
+     label is the one thing that stays constant across redeploys. Set this once; it never needs
+     touching again, even after future IBeam redeploys. (The old `IBEAM_CONTAINER_NAME` var —
+     which held the literal, redeploy-fragile container name — still works as a fallback, but
+     prefer `IBEAM_RESOURCE_NAME` going forward.)
    - `CONTROL_TOKEN` — generate a random secret (e.g. `openssl rand -hex 32`); this is the
      shared secret the backend uses to authenticate to this service. Keep it out of git.
 6. Deploy. It listens on port 8375 internally.

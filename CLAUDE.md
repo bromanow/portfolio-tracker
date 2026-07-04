@@ -260,6 +260,30 @@ regress them):
 - **CAD+USD sub-accounts** with the same base name merge into one logical account on the
   Performance page (the returns endpoint strips the " (USD)" suffix).
 
+## Recent Work (as of 2026-07-03, commit `1488a6e`)
+Everything below is committed and deployed (Coolify auto-deploys on push to `main`) — pull
+latest and you're current, nothing left mid-flight:
+- **Dashboard news redesign**: `GET /api/market/news|top-stories|portfolio-news`
+  (`backend/app/routers/market.py`) replaced the old single "Market News" card with three
+  sections in `Dashboard.tsx` (`NewsList` now takes a `columns` 1/2/3 prop):
+  - *General Market* — follows the same Canada/US toggle as the ticker bar (`indicatorCountry`
+    state) via `?country=CA|US`.
+  - *Top Stories* — "trending" signal is cross-index URL overlap (story appears in 2+ of
+    `^GSPTSE/^SPTTFS/^SPTTEN/^GSPC/^DJI/^IXIC/^RUT` feeds) — Yahoo's own `editorsPick` flag was
+    tested live and is too sparse to build a section on.
+  - *Your Portfolio* — top 8 held securities ranked by today's `|day_change_pct|` (biggest
+    movers, NOT dollar value — a smaller position with real news shouldn't be excluded), via
+    `_yahoo_candidates()` so securities with no resolvable Yahoo ticker (e.g. PGF550, a Pender
+    mutual fund) are skipped rather than wasting a fetch.
+- **Dashboard brokerage/account → Holdings hyperlinks** (commit `ef015e9`): clicking a
+  brokerage or account row in the Dashboard's brokerage breakdown sets `FilterContext`
+  (`setFilterBrokerages`/`setFilterAccounts`) and navigates to `/holdings`, pre-filtered.
+- **Market indicator ticker bar Canada/US toggle**: `prices.py` `_INDICATOR_DEFS` tagged with
+  `country: "CA"|"US"`, `GET /market-indicators?country=`; defaults to `CA` on every fresh
+  Dashboard mount (already satisfies "Canada should be default on login").
+See auto-memory (`dev_workflow.md` topic) for the much larger statement-importer / Plaid /
+ACB history — that work predates this session and isn't repeated here.
+
 ## Roadmap (next up — discussed, not yet started)
 Two workstreams were planned before the snapshot data-fix detour:
 1. **Responsive / multi-device + PWA** — app is desktop-first; make it usable on iPhone/iPad

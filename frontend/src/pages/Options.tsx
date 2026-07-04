@@ -273,7 +273,7 @@ export default function Options() {
   const incSort = useSortTable<IncCol>('date', 'desc')
 
   const qc = useQueryClient()
-  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const accounts = rawAccounts as Account[]
   const { histAccountIds, hasFilter } = usePortfolioFilters(accounts)
 

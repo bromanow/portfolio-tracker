@@ -406,7 +406,7 @@ function PerformanceInner() {
   // Account list for filter panel
   const accountsQ = useQuery({
     queryKey: ['accounts'],
-    queryFn: getAccounts,
+    queryFn: () => getAccounts(),
     staleTime: 60_000,
   })
   const allAccounts: Account[] = accountsQ.data ?? []

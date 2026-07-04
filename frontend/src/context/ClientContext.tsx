@@ -24,7 +24,7 @@ export function ClientProvider({ children }: { children: React.ReactNode }) {
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],
-    queryFn: getClients,
+    queryFn: () => getClients(),
     staleTime: 60_000,
     enabled: isAuthenticated,
   })

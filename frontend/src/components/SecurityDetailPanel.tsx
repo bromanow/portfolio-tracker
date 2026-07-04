@@ -286,7 +286,7 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
   const [editTxnError, setEditTxnError] = useState<string | null>(null)
   const [editTickerInput, setEditTickerInput] = useState('')
 
-  const { data: editAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts, enabled: tab === 'transactions' })
+  const { data: editAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts(), enabled: tab === 'transactions' })
   const { data: editSecurities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities(), enabled: tab === 'transactions' })
 
   const updateTxnMutation = useMutation({

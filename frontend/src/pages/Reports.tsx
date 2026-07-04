@@ -128,7 +128,7 @@ function RealizedGainsReport() {
   const [accountId, setAccountId]       = useState('')
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [year, setYear]                 = useState('')
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accounts as Account[]
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 8 }, (_, i) => currentYear - i)
@@ -448,7 +448,7 @@ function IncomeReport() {
   const [accountId, setAccountId]             = useState('')
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [year, setYear]                       = useState('')
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accounts as Account[]
   const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 8 }, (_, i) => currentYear - i)
@@ -1059,7 +1059,7 @@ function PortfolioValueReport() {
   const [range, setRange]               = useState<PortfolioRange>('1Y')
   const [chartInterval, setChartInterval] = useState<'daily' | 'weekly' | 'monthly'>('weekly')
 
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const {
     brokerageFilter, setBrokerageFilter, brokerages,
     accountOptions, selectedAccountIds, setSelectedAccountIds, accountIds,
@@ -1248,7 +1248,7 @@ function PortfolioValueReport() {
 function PortfolioContinuityReport() {
   const [range, setRange] = useState<PortfolioRange>('ALL')
 
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const {
     brokerageFilter, setBrokerageFilter, brokerages,
     accountOptions, selectedAccountIds, setSelectedAccountIds, accountIds,
@@ -1499,7 +1499,7 @@ function CashStatementReport() {
   const [page,     setPage]     = useState(1)
   const [pageSize, setPageSize] = useState(50)
 
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const accts = accounts as Account[]
 
   // Unique brokerages
@@ -1803,7 +1803,7 @@ function MonthlyReturnsReport() {
   const [viewRefreshStatus, setViewRefreshStatus] = useState<'idle' | 'running' | 'done' | 'error'>('idle')
   const queryClient = useQueryClient()
 
-  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accountsData as Account[]
   const defaultAccountIds = useMemo(
     () => allAccts.map(a => String(a.id)).join(',') || undefined,
@@ -2122,7 +2122,7 @@ function ReturnDetailReport() {
     }
   }
 
-  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accountsData = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accountsData as Account[]
   const defaultAccountIds = useMemo(
     () => allAccts.map(a => String(a.id)).join(',') || undefined,
@@ -2608,7 +2608,7 @@ function FxRatesReport() {
 }
 
 function LedgerReport() {
-  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const accounts = rawAccounts as Account[]
   const queryClient = useQueryClient()
 

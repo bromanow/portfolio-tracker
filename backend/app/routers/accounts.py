@@ -1,6 +1,6 @@
 from datetime import date
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from app.database import get_db
@@ -69,6 +69,7 @@ def _get_accessible_client_ids(user: User, db: Session) -> Optional[list]:
 
 @router.get("")
 def list_accounts(
+    include_demo: bool = Query(False, description="Include sample/demo client accounts (Admin management screens only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -76,6 +77,15 @@ def list_accounts(
     client_ids = _get_accessible_client_ids(current_user, db)
     if client_ids is not None:
         q = q.filter(Account.client_id.in_(client_ids))
+    elif not include_demo:
+        # Admin (unrestricted) view — still hide sample/demo client accounts by default so
+        # they don't clutter the real portfolio's dashboards/filters. Surfaced only when a
+        # caller explicitly asks (Admin management screens).
+        demo_client_ids = [c.id for c in db.query(Client).filter(Client.is_demo == True).all()]  # noqa: E712
+        if demo_client_ids:
+            q = q.filter(
+                (Account.client_id.is_(None)) | (Account.client_id.notin_(demo_client_ids))
+            )
     accounts = q.order_by(Account.owner, Account.name).all()
     return [account_to_dict(a) for a in accounts]
 

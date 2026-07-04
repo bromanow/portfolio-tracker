@@ -11,6 +11,10 @@ class Client(Base):
     name: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)
     slug: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     active: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Sample/demo clients (e.g. for showing the app to someone without exposing real
+    # data) are excluded from the regular app's account/client listings by default —
+    # only surfaced when a caller explicitly asks for them (Admin management screens).
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
 
 

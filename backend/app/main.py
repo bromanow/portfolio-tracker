@@ -159,6 +159,7 @@ def _run_migrations(eng):
         ("scanner_results",  "dividend_yield",           "FLOAT"),
         ("ibkr_flex_configs", "last_sync_details",        "TEXT"),
         ("securities",        "in_screener_universe",     "BOOLEAN DEFAULT FALSE"),
+        ("clients",           "is_demo",                  "BOOLEAN DEFAULT FALSE"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

@@ -159,7 +159,7 @@ function SortTh({ label, col, sort, toggle, className = '' }: {
 // ─── Accounts Tab ────────────────────────────────────────────────────────────
 function AccountsTab() {
   const qc = useQueryClient()
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const { data: brokerages = [] } = useQuery({ queryKey: ['brokerages'], queryFn: getBrokerages })
   const [form, setForm] = useState({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '' })
   const [editing, setEditing] = useState<number | null>(null)
@@ -373,7 +373,7 @@ type OBEditState = {
 function OpeningBalancesTab() {
   const qc = useQueryClient()
   const { data: allBalances = [], isLoading } = useQuery({ queryKey: ['opening-balances'], queryFn: getOpeningBalances })
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   // Only show balances for accounts this user can access
   const accessibleIds = useMemo(() => new Set((accounts as Account[]).map(a => a.id)), [accounts])
   const balances = useMemo(
@@ -730,7 +730,7 @@ function OpeningBalancesTab() {
 // ─── Cash Opening Balances (sub-section of Opening Balances tab) ─────────────
 function CashOpeningsSection() {
   const qc = useQueryClient()
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const { data: cashOpenings = [] } = useQuery({ queryKey: ['cash-openings'], queryFn: getCashOpenings })
   const [form, setForm] = useState({ account_id: '', balance_date: new Date().toISOString().slice(0, 10), amount: '', currency: 'CAD', notes: '' })
 
@@ -1812,7 +1812,7 @@ function FxRatesTab() {
 // ─── Danger Zone Tab ──────────────────────────────────────────────────────────
 function DangerZoneTab() {
   const qc = useQueryClient()
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const [confirm, setConfirm] = useState<{
     type: 'all-transactions' | 'account-transactions' | 'all-imports'
     accountId?: number
@@ -2301,7 +2301,7 @@ function SystemTab() {
 // ─── Currency Split Tab ───────────────────────────────────────────────────────
 function CurrencySplitTab() {
   const qc = useQueryClient()
-  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const accounts = rawAccounts as Account[]
 
   const [sourceId, setSourceId] = useState<number | ''>('')
@@ -2644,7 +2644,7 @@ function MyAccountTab() {
 function UsersTab() {
   const qc = useQueryClient()
   const { data: users = [] } = useQuery({ queryKey: ['users'], queryFn: getUsers })
-  const { data: clients = [] } = useQuery({ queryKey: ['clients'], queryFn: getClients })
+  const { data: clients = [] } = useQuery({ queryKey: ['clients', 'admin'], queryFn: () => getClients(true) })
 
   const [showCreate, setShowCreate] = useState(false)
   const [newEmail, setNewEmail]     = useState('')

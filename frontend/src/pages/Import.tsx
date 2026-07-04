@@ -548,7 +548,7 @@ const MANUAL_TX_TYPES = [
 
 function ManualEntryPanel() {
   const qc = useQueryClient()
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const { data: securities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities() })
 
   const today = new Date().toISOString().slice(0, 10)
@@ -776,7 +776,7 @@ export default function Import() {
   const [editError, setEditError] = useState<string | null>(null)
 
   const { data: imports = [], isLoading } = useQuery({ queryKey: ['imports'], queryFn: getImports })
-  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const { data: securities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities() })
   const { data: preview, refetch: refetchPreview } = useQuery({
     queryKey: ['import-preview', previewBatchId],

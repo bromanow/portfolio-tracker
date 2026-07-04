@@ -24,7 +24,7 @@ export default function Holdings() {
   const { toDate: asOf } = useFilterContext()
   const [activeTab, setActiveTab] = useState<Tab>('positions')
 
-  const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const { data: cashBalances = [] } = useQuery({ queryKey: ['cash-balances', asOf],   queryFn: () => getCashBalances({ as_of: asOf }) })
   const { data: positions    = [] } = useQuery({ queryKey: ['positions', asOf],        queryFn: () => getPositions({ as_of: asOf }) })
 

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from typing import Optional
@@ -14,12 +14,14 @@ class ClientCreate(BaseModel):
     name: str
     slug: str
     active: bool = True
+    is_demo: bool = False
 
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
     slug: Optional[str] = None
     active: Optional[bool] = None
+    is_demo: Optional[bool] = None
 
 
 def client_to_dict(c: Client) -> dict:
@@ -28,17 +30,22 @@ def client_to_dict(c: Client) -> dict:
         "name": c.name,
         "slug": c.slug,
         "active": c.active,
+        "is_demo": c.is_demo,
         "created_at": c.created_at.isoformat() if c.created_at else None,
     }
 
 
 @router.get("")
 def list_clients(
+    include_demo: bool = Query(False, description="Include sample/demo clients (Admin management screens only)"),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     if current_user.role == "admin":
-        clients = db.query(Client).order_by(Client.name).all()
+        q = db.query(Client)
+        if not include_demo:
+            q = q.filter(Client.is_demo == False)  # noqa: E712
+        clients = q.order_by(Client.name).all()
     else:
         links = db.query(UserClient).filter(UserClient.user_id == current_user.id).all()
         client_ids = [lnk.client_id for lnk in links]

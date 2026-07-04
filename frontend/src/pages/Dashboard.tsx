@@ -391,7 +391,7 @@ export default function Dashboard() {
   usePreference('hideValues')
 
   // Data queries
-  const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const { data: positions    = [] } = useQuery({ queryKey: ['positions', toDate],       queryFn: () => getPositions({ as_of: toDate }) })
   const { data: cashBalances = [] } = useQuery({ queryKey: ['cash-balances', toDate],   queryFn: () => getCashBalances({ as_of: toDate }) })
   const { data: imports      = [] } = useQuery({ queryKey: ['imports'],                queryFn: getImports })

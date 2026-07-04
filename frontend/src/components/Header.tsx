@@ -60,7 +60,7 @@ export default function Header() {
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
 
   // Account filter state (global)
-  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const accounts = rawAccounts as Account[]
   const {
     filterBrokerages, setFilterBrokerages,

@@ -63,9 +63,11 @@ export interface Client {
   name: string
   slug: string
   active: boolean
+  is_demo: boolean
 }
 
-export const getClients = () => api.get<Client[]>('/clients').then(r => r.data)
+export const getClients = (includeDemo = false) =>
+  api.get<Client[]>('/clients', { params: includeDemo ? { include_demo: true } : {} }).then(r => r.data)
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 export interface Account {
@@ -84,7 +86,8 @@ export interface Account {
   ibkr_alias: string | null
 }
 
-export const getAccounts = () => api.get<Account[]>('/accounts').then(r => r.data)
+export const getAccounts = (includeDemo = false) =>
+  api.get<Account[]>('/accounts', { params: includeDemo ? { include_demo: true } : {} }).then(r => r.data)
 export const createAccount = (data: Partial<Account>) => api.post<Account>('/accounts', data).then(r => r.data)
 export const updateAccount = (id: number, data: Partial<Account>) => api.put<Account>(`/accounts/${id}`, data).then(r => r.data)
 export const deleteAccount = (id: number) => api.delete(`/accounts/${id}`).then(r => r.data)

@@ -186,7 +186,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
   // When true, selection covers ALL rows matching current filter (not just this page)
   const [selectAllMatching, setSelectAllMatching] = useState(false)
 
-  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })
+  const { data: rawAccounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const accounts = rawAccounts as Account[]
   const { data: securities = [] } = useQuery({ queryKey: ['securities'], queryFn: () => getSecurities() })
 

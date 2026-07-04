@@ -1421,4 +1421,56 @@ export const syncAllPlaid = () =>
 export const deletePlaidItem = (id: number) =>
   api.delete(`/plaid/items/${id}`).then(r => r.data)
 
+// ─── Fundamental Screener ─────────────────────────────────────────────────────
+
+export interface ScreenerStatus {
+  universe_size: number
+  with_fundamentals: number
+  last_fetched_at: string | null
+  refreshing: boolean
+}
+export interface ScreenerResult {
+  security_id: number
+  ticker: string
+  name: string | null
+  exchange: string | null
+  sector: string | null
+  industry: string | null
+  currency: string | null
+  market_cap: number | null
+  pe_ratio: number | null
+  forward_pe: number | null
+  peg_ratio: number | null
+  debt_to_equity: number | null
+  return_on_equity: number | null
+  revenue_growth: number | null
+  profit_margin: number | null
+  dividend_yield: number | null
+  price_to_book: number | null
+  beta: number | null
+  fetched_at: string | null
+}
+export interface ScreenerFilters {
+  sector?: string
+  min_pe?: number; max_pe?: number
+  min_debt_to_equity?: number; max_debt_to_equity?: number
+  min_roe_pct?: number; max_roe_pct?: number
+  min_revenue_growth_pct?: number; max_revenue_growth_pct?: number
+  min_dividend_yield_pct?: number; max_dividend_yield_pct?: number
+  min_market_cap?: number
+  sort_by?: string
+  sort_dir?: 'asc' | 'desc'
+}
+
+export const getScreenerStatus = () =>
+  api.get<ScreenerStatus>('/screener/status').then(r => r.data)
+export const seedScreenerUniverse = () =>
+  api.post<{ universe_tickers: number; newly_flagged: number; job_id: string; status: string; already_running: boolean }>('/screener/seed-universe', {}).then(r => r.data)
+export const refreshScreenerUniverse = () =>
+  api.post<{ job_id: string; status: string; already_running: boolean }>('/screener/refresh', {}).then(r => r.data)
+export const getScreenerResults = (filters: ScreenerFilters = {}) =>
+  api.get<ScreenerResult[]>('/screener/results', { params: filters }).then(r => r.data)
+export const getScreenerSectors = () =>
+  api.get<string[]>('/screener/sectors').then(r => r.data)
+
 export default api

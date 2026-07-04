@@ -35,6 +35,7 @@ from app.routers import option_retype as option_retype_router
 from app.routers import options_live as options_live_router
 from app.routers import ibeam_control as ibeam_control_router
 from app.routers import market as market_router
+from app.routers import screener as screener_router
 
 log = logging.getLogger(__name__)
 
@@ -157,6 +158,7 @@ def _run_migrations(eng):
         ("scanner_results",  "recommendation",          "VARCHAR(10)"),
         ("scanner_results",  "dividend_yield",           "FLOAT"),
         ("ibkr_flex_configs", "last_sync_details",        "TEXT"),
+        ("securities",        "in_screener_universe",     "BOOLEAN DEFAULT FALSE"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:
@@ -260,6 +262,7 @@ app.include_router(option_retype_router.router, dependencies=_auth)
 app.include_router(options_live_router.router, dependencies=_auth)
 app.include_router(ibeam_control_router.router, dependencies=_auth)
 app.include_router(market_router.router, dependencies=_auth)
+app.include_router(screener_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

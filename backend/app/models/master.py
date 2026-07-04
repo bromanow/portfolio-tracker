@@ -56,6 +56,7 @@ class Security(Base):
     is_option: Mapped[bool] = mapped_column(Boolean, default=False)
     fetch_ticker_override: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    in_screener_universe: Mapped[bool] = mapped_column(Boolean, default=False)
 
     __table_args__ = (UniqueConstraint("ticker", "exchange", name="uq_security_ticker_exchange"),)
 

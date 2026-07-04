@@ -7,7 +7,7 @@ import Holdings from './pages/Holdings'
 import Performance from './pages/Performance'
 import Activity from './pages/Activity'
 import SecurityDetail from './pages/SecurityDetail'
-import Scanner from './pages/Scanner'
+import Research from './pages/Research'
 import DataHealth from './pages/DataHealth'
 import Admin from './pages/Admin'
 
@@ -47,7 +47,7 @@ export default function App() {
         <Route path="holdings/security/:securityId" element={<SecurityDetail />} />
         <Route path="performance"  element={<Performance />} />
         <Route path="activity"     element={<Activity />} />
-        <Route path="scanner"      element={<Scanner />} />
+        <Route path="scanner"      element={<Research />} />
         <Route path="prices"       element={<Navigate to="/admin?tab=prices" replace />} />
         <Route path="data-health"  element={<DataHealth />} />
         <Route path="admin"        element={<Admin />} />

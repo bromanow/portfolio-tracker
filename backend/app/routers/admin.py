@@ -556,11 +556,13 @@ def delete_all_imports(db: Session = Depends(get_db)):
 
 @router.delete("/bulk/securities")
 def delete_unused_securities(db: Session = Depends(get_db)):
-    """Delete securities that have no transactions."""
+    """Delete securities that have no transactions.
+    Screener-universe securities (Fundamental Screener) are deliberately transaction-free —
+    excluded here so this cleanup can't wipe out the screener universe."""
     used_ids = {r[0] for r in db.query(Transaction.security_id).distinct().all() if r[0]}
     deleted = 0
     for s in db.query(Security).all():
-        if s.id not in used_ids:
+        if s.id not in used_ids and not s.in_screener_universe:
             _purge_security_dependents(db, s.id)   # prices / plaid mapping / options
             db.delete(s)
             deleted += 1

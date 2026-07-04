@@ -779,7 +779,7 @@ function loadFilters(): Filters {
   }
 }
 
-export default function Scanner() {
+export function CoveredCallScannerTool() {
   const [filters, setFilters] = useState<Filters>(loadFilters)
   useEffect(() => {
     localStorage.setItem(FILTERS_KEY, JSON.stringify(filters))
@@ -910,9 +910,8 @@ export default function Scanner() {
       {/* Header */}
       <div className="flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Covered Call Scanner</h1>
           {lastScanned && (
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-gray-400">
               Last scan: {lastScanned} · {meta?.tickers} tickers · {meta?.total_rows?.toLocaleString()} opportunities
             </p>
           )}

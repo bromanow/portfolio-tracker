@@ -155,11 +155,14 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
     # ── 6. Unused securities (no transactions reference them) ──────────────────
     # Orphans — typically Plaid listing a security it doesn't actually hold, or a security
     # left behind after a position fully closed. Harmless but clutter; safe to delete.
+    # Screener-universe securities (Fundamental Screener) are deliberately transaction-free —
+    # they exist only to hold cached fundamentals for stocks you don't hold — so they're
+    # excluded here rather than flagged as orphans.
     from app.models.transactions import Transaction as _Txn
     used_ids = {r[0] for r in db.query(_Txn.security_id).filter(_Txn.security_id.isnot(None)).distinct()}
     unused_securities = [
         {"security_id": s.id, "ticker": s.ticker, "name": s.name, "asset_class": s.asset_class}
-        for s in secs.values() if s.id not in used_ids
+        for s in secs.values() if s.id not in used_ids and not s.in_screener_universe
     ]
 
     def _check(key, title, severity, items, hint, action):

@@ -7,6 +7,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid,
 } from 'recharts'
 import { ChevronDown, ChevronRight } from 'lucide-react'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 const COLORS = [
   '#3B82F6', '#10B981', '#F59E0B', '#EF4444', '#8B5CF6',
@@ -23,6 +24,7 @@ const ASSET_CLASS_COLORS: Record<string, string> = {
 }
 
 function fmtCAD(n: number) {
+  if (getPref('hideValues')) return '••••••'
   if (Math.abs(n) >= 1e6) return `$${(n / 1e6).toFixed(1)}M`
   if (Math.abs(n) >= 1e3) return `$${(n / 1e3).toFixed(0)}K`
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 }).format(n)
@@ -159,6 +161,9 @@ interface Props {
 }
 
 export default function PortfolioAnalyticsPanel({ accountIds, asOf }: Props) {
+  // Subscribed only so this component re-renders when the header's eye-icon toggle
+  // flips — fmtCAD reads the pref directly via getPref().
+  usePreference('hideValues')
   const [expanded, setExpanded] = useState(false)
 
   const { data, isLoading } = useQuery({

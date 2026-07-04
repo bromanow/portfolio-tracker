@@ -10,6 +10,7 @@ import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics } 
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import NewsList from '../components/NewsList'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -17,6 +18,7 @@ function fmtCAD(val: string | number | null | undefined) {
   if (val === null || val === undefined) return '—'
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', {
     style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(n)
@@ -53,6 +55,7 @@ interface BrokerageRow {
 }
 
 function fmtUSD(val: number) {
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(val)
@@ -383,6 +386,9 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
 export default function Dashboard() {
   // Time range from global context (set via header)
   const { toDate } = useFilterContext()
+  // Subscribed only so this component (and its children) re-render when the header's
+  // eye-icon toggle flips — fmtCAD/fmtUSD read the pref directly via getPref().
+  usePreference('hideValues')
 
   // Data queries
   const { data: rawAccounts = [], isLoading: accountsLoading } = useQuery({ queryKey: ['accounts'], queryFn: getAccounts })

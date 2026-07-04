@@ -5,14 +5,14 @@ import {
   getPriceStatus, refreshAllPrices, getPriceJob, getAccounts, getScannerMeta,
 } from '../api/client'
 import type { Account } from '../api/client'
-import { RefreshCw, Clock, X, SlidersHorizontal, LogOut } from 'lucide-react'
+import { RefreshCw, Clock, X, SlidersHorizontal, LogOut, Eye, EyeOff } from 'lucide-react'
 import MultiSelectDropdown from './MultiSelectDropdown'
 import DatePicker from './DatePicker'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
-import { getPref } from '../hooks/usePreference'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // Pages that show portfolio account filters
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
@@ -54,6 +54,7 @@ export default function Header() {
   const showAccountFilters = ACCOUNT_FILTER_PATHS.has(location.pathname)
   const showTimeRange      = TIME_RANGE_PATHS.has(location.pathname)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
+  const [hideValues, setHideValues] = usePreference('hideValues')
 
   const qc = useQueryClient()
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
@@ -217,6 +218,15 @@ export default function Header() {
 
         {/* Right: price status + refresh */}
         <div className="flex items-center gap-3 ml-auto shrink-0">
+          <button
+            onClick={() => setHideValues(!hideValues)}
+            title={hideValues ? 'Show portfolio values' : 'Hide portfolio values'}
+            className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors ${
+              hideValues ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+            }`}
+          >
+            {hideValues ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
           <div
             title={ibeamConnected ? 'IBeam connected — live data available' : 'IBeam not connected'}
             className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${
@@ -254,6 +264,15 @@ export default function Header() {
       <header className="md:hidden bg-white border-b border-gray-200 flex items-center px-4 py-3 gap-3 shrink-0">
         {/* Page title */}
         <h1 className="flex-1 text-base font-semibold text-gray-900">{pageTitle}</h1>
+
+        {/* Hide/show portfolio values */}
+        <button
+          onClick={() => setHideValues(!hideValues)}
+          title={hideValues ? 'Show portfolio values' : 'Hide portfolio values'}
+          className={`p-1.5 rounded-lg ${hideValues ? 'text-blue-600' : 'text-gray-500'} hover:bg-gray-100`}
+        >
+          {hideValues ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+        </button>
 
         {/* Price refresh icon */}
         <button

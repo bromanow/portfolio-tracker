@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react'
 export const PREF_KEYS = {
   idleLogout: 'pref-idle-logout',
   refreshOnLogin: 'pref-refresh-on-login',
+  hideValues: 'pref-hide-values',
 } as const
 
 export type PrefKey = keyof typeof PREF_KEYS

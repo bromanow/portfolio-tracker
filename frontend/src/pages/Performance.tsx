@@ -15,6 +15,7 @@ import { getAccounts, getSnapshotFreshness } from '../api/client'
 import type { Account } from '../api/client'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import DatePicker from '../components/DatePicker'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -89,12 +90,14 @@ interface IndexHistory {
 
 const fmtCAD = (n: number | null | undefined) => {
   if (n == null) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', {
     style: 'currency', currency: 'CAD',
     minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(n)
 }
 const fmtShort = (n: number) => {
+  if (getPref('hideValues')) return '••••'
   const abs = Math.abs(n)
   if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M'
   if (abs >= 1e3) return (n / 1e3).toFixed(0) + 'K'
@@ -367,6 +370,9 @@ function SortTh({ label, col, sortCol, sortDir, onSort, right = false }: {
 type PageTab = 'performance' | 'reports'
 
 function PerformanceInner() {
+  // Subscribed only so this component re-renders when the header's eye-icon toggle
+  // flips — fmtCAD/fmtShort read the pref directly via getPref().
+  usePreference('hideValues')
   const queryClient = useQueryClient()
 
   // Chart controls

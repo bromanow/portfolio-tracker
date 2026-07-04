@@ -19,6 +19,7 @@ import {
 } from './TransactionEditModal'
 import type { EditState } from './TransactionEditModal'
 import NewsList from './NewsList'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -47,6 +48,7 @@ function fmtCAD(s: string | number | null | undefined): string {
   if (s == null || s === '') return '—'
   const n = typeof s === 'string' ? parseFloat(s) : s
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(n)
 }
 
@@ -54,6 +56,7 @@ function fmtCur(s: string | number | null | undefined, currency = 'CAD'): string
   if (s == null || s === '') return '—'
   const n = typeof s === 'string' ? parseFloat(s) : s
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency, minimumFractionDigits: 2 }).format(n)
 }
 
@@ -181,6 +184,9 @@ interface Props {
 }
 
 export default function SecurityDetailPanel({ position, allPositions, onClose }: Props) {
+  // Subscribed only so this component re-renders when the header's eye-icon toggle
+  // flips — fmtCAD/fmtCur read the pref directly via getPref().
+  usePreference('hideValues')
   const [tab, setTab] = useState<Tab>('overview')
   const [chartPeriod, setChartPeriod] = useState<ChartPeriod>('1y')
   const [txSortCol, setTxSortCol] = useState<'transaction_date' | 'transaction_type' | 'account_name' | 'quantity' | 'price' | 'cad_amount'>('transaction_date')

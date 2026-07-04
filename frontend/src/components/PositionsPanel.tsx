@@ -9,6 +9,7 @@ import {
 } from 'lucide-react'
 import { formatOptionTicker } from '../utils/optionFormat'
 import SecurityDetailPanel from './SecurityDetailPanel'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
@@ -16,18 +17,21 @@ function fmtCAD(val: string | number | null | undefined) {
   if (val === null || val === undefined || val === '') return '—'
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', {
     style: 'currency', currency: 'CAD', minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(n)
 }
 
 function fmtCAD0(val: number) {
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', {
     style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(val)
 }
 
 function fmtUSD(val: number) {
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency: 'USD', minimumFractionDigits: 2, maximumFractionDigits: 2,
   }).format(val)
@@ -195,6 +199,9 @@ interface PositionsPanelProps {
 }
 
 export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPanelProps) {
+  // Subscribed only so this component re-renders when the header's eye-icon toggle
+  // flips — fmtCAD/fmtCAD0/fmtUSD read the pref directly via getPref().
+  usePreference('hideValues')
   const navigate = useNavigate()
   const [expanded, setExpanded] = useState(false)
   const [expandedTickers, setExpandedTickers] = useState<Set<string>>(new Set())

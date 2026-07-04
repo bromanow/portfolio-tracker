@@ -20,6 +20,7 @@ import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, Cont
 import Transactions from './Transactions'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import DatePicker from '../components/DatePicker'
+import { getPref, usePreference } from '../hooks/usePreference'
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -27,6 +28,7 @@ function fmtCAD(val: number | string | null | undefined) {
   if (val === null || val === undefined || val === '') return '—'
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 }).format(n)
 }
 
@@ -769,7 +771,7 @@ function IncomeReport() {
                                 <td className="px-3 py-1.5">
                                   <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
                                 </td>
-                                <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {parseFloat(item.amount_native).toFixed(2)}</td>
+                                <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}</td>
                                 <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
                               </tr>
                             ))}
@@ -863,7 +865,7 @@ function IncomeReport() {
                                       </span>
                                     </td>
                                     <td className="pr-3 py-1 text-right text-xs text-gray-500 whitespace-nowrap font-mono">
-                                      {item.currency} {parseFloat(item.amount_native).toFixed(2)}
+                                      {item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}
                                     </td>
                                     <td className="pr-3 py-1 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
                                   </tr>
@@ -912,6 +914,7 @@ function fmtCAD0(val: number | string | null | undefined) {
   if (val === null || val === undefined || val === '') return '—'
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(n)
 }
 
@@ -919,11 +922,13 @@ function fmtCAD0Signed(val: number | string | null | undefined) {
   if (val === null || val === undefined || val === '') return '—'
   const n = typeof val === 'string' ? parseFloat(val) : val
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   const abs = new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(Math.abs(n))
   return n < 0 ? `(${abs})` : abs
 }
 
 function fmtCADAxis(val: number) {
+  if (getPref('hideValues')) return '••••'
   if (Math.abs(val) >= 1_000_000) return `$${(val / 1_000_000).toFixed(1)}M`
   if (Math.abs(val) >= 1_000)     return `$${(val / 1_000).toFixed(0)}K`
   return `$${val}`
@@ -1456,6 +1461,7 @@ const CASH_TYPE_COLORS: Record<string, string> = {
 function fmtAmt(val: string, decimals = 2) {
   const n = parseFloat(val)
   if (isNaN(n)) return '—'
+  if (getPref('hideValues')) return '••••••'
   return Math.abs(n).toLocaleString('en-CA', { minimumFractionDigits: decimals, maximumFractionDigits: decimals })
 }
 
@@ -1619,7 +1625,9 @@ function CashStatementReport() {
               <p className="text-xs text-gray-500 mb-1">Closing Balance</p>
               <p className={`text-xl font-bold font-mono ${closingBalance !== null && closingBalance < 0 ? 'text-red-600' : 'text-gray-900'}`}>
                 {closingBalance !== null
-                  ? <>{closingBalance < 0 ? '−' : ''}{Math.abs(closingBalance).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
+                  ? getPref('hideValues')
+                    ? '••••••'
+                    : <>{closingBalance < 0 ? '−' : ''}{Math.abs(closingBalance).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>
                   : '—'}
               </p>
               <p className="text-xs text-gray-400 mt-0.5">{statement.currency}</p>
@@ -1627,13 +1635,13 @@ function CashStatementReport() {
             <div className="bg-white border border-gray-200 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">Total Credits</p>
               <p className="text-xl font-bold font-mono text-emerald-600">
-                {totalCredits.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {getPref('hideValues') ? '••••••' : totalCredits.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
             <div className="bg-white border border-gray-200 rounded-xl p-4">
               <p className="text-xs text-gray-500 mb-1">Total Debits</p>
               <p className="text-xl font-bold font-mono text-red-600">
-                {Math.abs(totalDebits).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {getPref('hideValues') ? '••••••' : Math.abs(totalDebits).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
               </p>
             </div>
           </div>
@@ -1703,10 +1711,10 @@ function CashStatementReport() {
                       <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold">
                         <td colSpan={isSingle ? 3 : 4} className="px-4 py-3 text-gray-700">Closing Balance</td>
                         <td className="px-4 py-3 text-right font-mono text-sm text-red-600">
-                          {totalDebits !== 0 ? Math.abs(totalDebits).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                          {totalDebits !== 0 ? (getPref('hideValues') ? '••••••' : Math.abs(totalDebits).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : '—'}
                         </td>
                         <td className="px-4 py-3 text-right font-mono text-sm text-emerald-600">
-                          {totalCredits !== 0 ? totalCredits.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—'}
+                          {totalCredits !== 0 ? (getPref('hideValues') ? '••••••' : totalCredits.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })) : '—'}
                         </td>
                         {isSingle && (
                           <td className="px-4 py-3 text-right">
@@ -2758,6 +2766,9 @@ const REPORT_DEFS: {
 
 // ── Main Reports Page ─────────────────────────────────────────────────────────
 export default function Reports() {
+  // Subscribed only so this component (and the active report below) re-renders when
+  // the header's eye-icon toggle flips — the fmtCAD* helpers read the pref via getPref().
+  usePreference('hideValues')
   const [activeId, setActiveId] = useState<ReportId | null>(null)
   const [panelOpen, setPanelOpen] = useState(true)
 

@@ -49,7 +49,10 @@ def get_summary(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    summary = portfolio_svc.get_portfolio_summary(db, as_of=as_of)
+    allowed = get_user_account_ids(current_user, db)
+    summary = portfolio_svc.get_portfolio_summary(
+        db, as_of=as_of, account_ids=set(allowed) if allowed is not None else None,
+    )
     # Serialize
     summary["total_cost_cad"] = str(summary["total_cost_cad"])
     summary["as_of"] = summary["as_of"].isoformat() if hasattr(summary["as_of"], "isoformat") else str(summary["as_of"])
@@ -90,11 +93,14 @@ def get_acb(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
+    allowed = get_user_account_ids(current_user, db)
     if account_id is not None:
-        allowed = get_user_account_ids(current_user, db)
         if allowed is not None and account_id not in allowed:
             raise HTTPException(status_code=403, detail="Access denied to this account")
     acb_data = get_all_positions_acb(db, account_id=account_id, as_of=as_of)
+    if allowed is not None:
+        allowed_set = set(allowed)
+        acb_data = [item for item in acb_data if item["account_id"] in allowed_set]
     result = []
     for item in acb_data:
         serialized = {
@@ -117,7 +123,10 @@ def get_allocation(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
-    return portfolio_svc.get_asset_allocation(db, as_of=as_of)
+    allowed = get_user_account_ids(current_user, db)
+    return portfolio_svc.get_asset_allocation(
+        db, as_of=as_of, account_ids=set(allowed) if allowed is not None else None,
+    )
 
 
 @router.get("/positions/consolidated")
@@ -419,11 +428,14 @@ def get_cash_balances(
     current_user: User = Depends(get_current_user),
 ):
     """Return calculated cash balance per account."""
+    allowed = get_user_account_ids(current_user, db)
     if account_id is not None:
-        allowed = get_user_account_ids(current_user, db)
         if allowed is not None and account_id not in allowed:
             raise HTTPException(status_code=403, detail="Access denied to this account")
     rows = portfolio_svc.get_cash_balances(db, account_id=account_id, as_of=as_of)
+    if allowed is not None:
+        allowed_set = set(allowed)
+        rows = [r for r in rows if r["account_id"] in allowed_set]
     return [
         {**r, "balance": str(r["balance"])}
         for r in rows

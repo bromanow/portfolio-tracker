@@ -255,11 +255,13 @@ def get_positions(
     return positions
 
 
-def get_portfolio_summary(db: Session, as_of: Optional[date] = None) -> dict:
+def get_portfolio_summary(db: Session, as_of: Optional[date] = None, account_ids: Optional[set] = None) -> dict:
     """
     Summary of portfolio by account.
     """
     positions = get_positions(db, as_of=as_of)
+    if account_ids is not None:
+        positions = [p for p in positions if p["account_id"] in account_ids]
 
     by_account: dict[int, dict] = {}
     total_cost_cad = ZERO
@@ -348,9 +350,11 @@ def get_recent_transactions(db: Session, limit: int = 20) -> list[Transaction]:
     )
 
 
-def get_asset_allocation(db: Session, as_of: Optional[date] = None) -> list[dict]:
+def get_asset_allocation(db: Session, as_of: Optional[date] = None, account_ids: Optional[set] = None) -> list[dict]:
     """Group positions by asset class."""
     positions = get_positions(db, as_of=as_of)
+    if account_ids is not None:
+        positions = [p for p in positions if p["account_id"] in account_ids]
     by_class: dict[str, Decimal] = {}
 
     for pos in positions:

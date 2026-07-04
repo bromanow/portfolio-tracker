@@ -1,10 +1,7 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, ReferenceLine,
-} from 'recharts'
+import TechnicalChart from './TechnicalChart'
 import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals, Account, Security, Transaction } from '../api/client'
 import {
   getSecurityYahooDetail, getSecurityPriceHistory, getTransactions,
@@ -159,18 +156,6 @@ function RangeBar({ low, high, current, currency }: { low: number; high: number;
           style={{ left: `calc(${pct}% - 6px)` }}
         />
       </div>
-    </div>
-  )
-}
-
-// ─── Chart tooltip ────────────────────────────────────────────────────────────
-
-function ChartTooltip({ active, payload, label, currency }: { active?: boolean; payload?: { value: number }[]; label?: string; currency: string }) {
-  if (!active || !payload?.length) return null
-  return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs">
-      <div className="text-gray-500 mb-0.5">{label}</div>
-      <div className="font-semibold text-gray-800">{fmtCur(payload[0].value, currency)}</div>
     </div>
   )
 }
@@ -630,50 +615,7 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
                   <br />Run a historical price download from the Prices tab.
                 </div>
               ) : (
-                <>
-                  <ResponsiveContainer width="100%" height={280}>
-                    <LineChart data={chartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-                      <XAxis
-                        dataKey="date"
-                        tickFormatter={d => {
-                          const dt = new Date(d + 'T00:00:00')
-                          return dt.toLocaleDateString('en-CA', { month: 'short', year: '2-digit' })
-                        }}
-                        tick={{ fontSize: 10 }}
-                        interval="preserveStartEnd"
-                        minTickGap={40}
-                      />
-                      <YAxis
-                        tickFormatter={v => fmtCAD(v).replace('CA$', '$')}
-                        tick={{ fontSize: 10 }}
-                        width={70}
-                        domain={['auto', 'auto']}
-                      />
-                      <Tooltip content={<ChartTooltip currency={chartCurrency} />} />
-                      <Line
-                        type="monotone"
-                        dataKey="price"
-                        stroke="#2563eb"
-                        strokeWidth={1.5}
-                        dot={false}
-                        name="Price (CAD)"
-                      />
-                      {acbShare > 0 && (
-                        <ReferenceLine
-                          y={acbShare}
-                          stroke="#f97316"
-                          strokeDasharray="5 3"
-                          label={{ value: `Cost ${fmtCAD(acbShare).replace('CA$', '$')}`, position: 'insideTopRight', fontSize: 10, fill: '#f97316' }}
-                        />
-                      )}
-                    </LineChart>
-                  </ResponsiveContainer>
-                  <div className="flex items-center gap-4 mt-2 justify-center text-xs text-gray-400">
-                    <span className="flex items-center gap-1"><span className="inline-block w-6 h-0.5 bg-blue-600 rounded" /> Price (CAD)</span>
-                    {acbShare > 0 && <span className="flex items-center gap-1"><span className="inline-block w-6 h-0 border-t-2 border-dashed border-orange-400" /> Cost Basis</span>}
-                  </div>
-                </>
+                <TechnicalChart data={chartData} costBasis={acbShare} currency={chartCurrency} height={280} />
               )}
             </div>
           )}

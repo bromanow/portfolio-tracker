@@ -2,9 +2,7 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { ArrowLeft, Loader2, ExternalLink, TrendingUp, TrendingDown } from 'lucide-react'
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, ReferenceLine,
-} from 'recharts'
+import TechnicalChart from '../components/TechnicalChart'
 import {
   getConsolidatedPositions,
   getSecurityYahooDetail,
@@ -101,9 +99,6 @@ export default function SecurityDetail() {
   const qty       = position.total_quantity ? parseFloat(position.total_quantity) : null
   const transactions = (txQ.data as { items: Record<string, unknown>[] } | undefined)?.items ?? []
 
-  const chartMin = chartData.length ? Math.min(...chartData.map(d => d.price)) * 0.98 : 'auto'
-  const chartMax = chartData.length ? Math.max(...chartData.map(d => d.price)) * 1.02 : 'auto'
-
   return (
     <div className="space-y-4 pb-4">
       {/* Back nav */}
@@ -192,22 +187,7 @@ export default function SecurityDetail() {
         ) : chartData.length === 0 ? (
           <div className="flex items-center justify-center h-40 text-xs text-gray-400">No price data</div>
         ) : (
-          <ResponsiveContainer width="100%" height={200}>
-            <LineChart data={chartData} margin={{ top: 4, right: 4, bottom: 0, left: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
-              <XAxis dataKey="date" tick={{ fontSize: 9 }} tickFormatter={d => d.slice(5)} interval="preserveStartEnd" />
-              <YAxis domain={[chartMin, chartMax]} tick={{ fontSize: 9 }} width={55} tickFormatter={v => `$${v.toFixed(0)}`} />
-              <Tooltip
-                formatter={(v: number) => [fmtCAD(v), 'Price']}
-                labelStyle={{ fontSize: 11 }}
-                contentStyle={{ fontSize: 11 }}
-              />
-              {acbShare != null && (
-                <ReferenceLine y={acbShare} stroke="#f97316" strokeDasharray="4 2" strokeWidth={1} />
-              )}
-              <Line type="monotone" dataKey="price" dot={false} stroke="#2563eb" strokeWidth={1.5} />
-            </LineChart>
-          </ResponsiveContainer>
+          <TechnicalChart data={chartData} costBasis={acbShare} currency="CAD" height={200} />
         )}
       </div>
 

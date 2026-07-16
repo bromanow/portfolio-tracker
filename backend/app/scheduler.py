@@ -123,6 +123,54 @@ def _run_nightly_snapshot_recompute() -> str:
         db.close()
 
 
+# Tracks whether we've already emailed about the current outage, so a multi-day IBeam
+# outage sends one alert (not a fresh email every day) — reset on backend restart, which
+# means a redeploy landing mid-outage can send at most one extra duplicate, which is fine.
+_ibeam_down_alerted = False
+
+
+def _run_ibeam_health_check() -> str:
+    """
+    Email the admin if the IBeam container has gone missing (e.g. removed by the weekly
+    docker-prune cleanup while it was intentionally stopped between sessions — see
+    ibeam_control.py). Starting/restarting from the app UI can't fix that; only a Coolify
+    redeploy recreates the container, and nobody's watching the backend daily for it.
+    """
+    global _ibeam_down_alerted
+    from app.services import ibeam_control, email_service
+
+    if not ibeam_control.is_configured():
+        return "skipped — ibeam-control not configured"
+
+    status = ibeam_control.get_status()
+    is_down = status is None or "error" in status
+
+    if is_down and not _ibeam_down_alerted:
+        email_service.send_admin_alert(
+            "IBeam container is down",
+            "The portfolio-ibeam container could not be reached.\n\n"
+            f"ibeam-control status: {status}\n\n"
+            "This usually means the container was removed by the weekly docker-prune "
+            "cleanup while it was stopped between sessions, and needs a full redeploy in "
+            "Coolify (Portfolio project → portfolio-ibeam → Deploy) — starting/restarting "
+            "from the app won't work since there's no container left to act on.\n\n"
+            "You'll get one more email when it's healthy again; no repeat alerts while "
+            "this outage continues.",
+        )
+        _ibeam_down_alerted = True
+        return "ALERT emailed — IBeam container down"
+
+    if not is_down and _ibeam_down_alerted:
+        _ibeam_down_alerted = False
+        email_service.send_admin_alert(
+            "IBeam container recovered",
+            f"portfolio-ibeam is reachable again. ibeam-control status: {status}",
+        )
+        return "IBeam container recovered — alert cleared"
+
+    return f"ok (down={is_down})"
+
+
 def _run_nightly_snapshot_refresh() -> str:
     """Refresh mv_snapshot_monthly after the snapshot recompute populates new rows."""
     from app.database import SessionLocal
@@ -201,10 +249,21 @@ def start_scheduler():
             replace_existing=True, misfire_grace_time=3600,
         )
 
+    # IBeam container health check — daily, independent of the nightly batch above.
+    _scheduler.add_job(
+        _logged("IBeam health check", _run_ibeam_health_check),
+        CronTrigger(hour=13, minute=0, timezone="UTC"),   # ~9am ET
+        id="ibeam_health_check",
+        name="Daily IBeam container health check",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started — BOC FX 00:05 ET, Plaid 00:00 ET, IBKR sync 00:15 ET, "
-        "snapshot recompute 00:35 ET, view refresh 01:00 ET (Plaid: %s)",
+        "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam health check 09:00 ET "
+        "(Plaid: %s)",
         freq if plaid_trigger is not None else "off (manual only)",
     )
 

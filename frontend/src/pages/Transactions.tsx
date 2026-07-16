@@ -740,12 +740,20 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   const v = t.cad_amount != null ? parseFloat(t.cad_amount) : 0
                   return sum + (isNaN(v) ? 0 : v)
                 }, 0)
+                const qtyTotal = data.items.reduce((sum: number, t: Transaction) => {
+                  const v = t.quantity != null ? parseFloat(t.quantity) : 0
+                  return sum + (isNaN(v) ? 0 : v)
+                }, 0)
                 return (
                   <tfoot className="bg-gray-50 border-t-2 border-gray-200">
                     <tr>
-                      <td colSpan={8} className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <td colSpan={5} className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
                         Page Total
                       </td>
+                      <td className="px-3 py-2 text-right font-semibold text-gray-800">
+                        {qtyTotal.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
+                      </td>
+                      <td colSpan={2} />
                       <td className="px-3 py-2 text-right font-semibold text-gray-800">
                         {pageTotal.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>

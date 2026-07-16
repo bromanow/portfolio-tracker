@@ -168,6 +168,68 @@ def _cp_get(path: str, params: Optional[dict] = None) -> list | dict:
     return r.json()
 
 
+def _cp_post(path: str, json_body: dict) -> list | dict:
+    """POST one Client Portal API endpoint via the IBeam proxy."""
+    import httpx
+    url = f"{_IBEAM_BASE}/v1/api{path}"
+    r = httpx.post(url, json=json_body, verify=False, timeout=_CP_TIMEOUT)
+    r.raise_for_status()
+    return r.json()
+
+
+# ─── Market Scanner (prototype research tool) ─────────────────────────────────
+# IBKR's server-side scanner — the same engine behind TWS's own "Scanner" tool — lets you
+# screen its FULL live universe by a preset ranking metric (scan code) plus optional numeric
+# filters, without needing to already have a ticker list. Unlike the Fundamental Screener's
+# static, manually-curated universe (backend/app/data/screener_universe.py), this stays
+# current automatically. Trade-off: each scan is capped at 50 results (confirmed live), and
+# you pick from IBKR's preset scan codes/filters rather than writing an arbitrary query.
+_SCANNER_PARAMS_CACHE: dict = {}
+_SCANNER_PARAMS_CACHED_AT: float = 0.0
+_SCANNER_PARAMS_TTL = 24 * 3600  # static reference metadata — refetch at most daily
+
+
+def get_scanner_params(force_refresh: bool = False) -> dict:
+    """
+    Fetch (and cache) every instrument class, scan code, filter field, and location this
+    IBKR account can scan — sourced live from IBeam, not hardcoded, so it always reflects
+    what your actual market-data subscriptions allow.
+    """
+    global _SCANNER_PARAMS_CACHE, _SCANNER_PARAMS_CACHED_AT
+    import time as _t
+    now = _t.time()
+    if not force_refresh and _SCANNER_PARAMS_CACHE and (now - _SCANNER_PARAMS_CACHED_AT) < _SCANNER_PARAMS_TTL:
+        return _SCANNER_PARAMS_CACHE
+    data = _cp_get("/iserver/scanner/params")
+    _SCANNER_PARAMS_CACHE = data
+    _SCANNER_PARAMS_CACHED_AT = now
+    return data
+
+
+def run_scanner(instrument: str, location: str, scan_code: str, filters: list[dict]) -> list[dict]:
+    """
+    Run one IBKR Market Scanner query and return a flat list of matches, ranked in the
+    order IBKR returns them (that ranking IS the scan result — e.g. biggest gainer first
+    for TOP_PERC_GAIN — so callers shouldn't re-sort it).
+
+    filters: [{"code": "priceAbove", "value": 10}, ...] — valid codes come from
+    get_scanner_params()['filter_list'], scoped to the instrument's ['filters'] list.
+    """
+    body = {"instrument": instrument, "type": scan_code, "location": location, "filter": filters or []}
+    data = _cp_post("/iserver/scanner/run", body)
+    contracts = data.get("contracts", []) if isinstance(data, dict) else []
+    return [
+        {
+            "symbol": c.get("symbol"),
+            "company_name": c.get("company_name"),
+            "exchange": c.get("listing_exchange"),
+            "con_id": c.get("con_id"),
+            "sec_type": c.get("sec_type"),
+        }
+        for c in contracts
+    ]
+
+
 def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
     """
     Fetch a market-data snapshot for a batch of conIds (max 100).

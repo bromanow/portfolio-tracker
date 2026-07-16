@@ -1480,4 +1480,49 @@ export const getScreenerResults = (filters: ScreenerFilters = {}) =>
 export const getScreenerSectors = () =>
   api.get<string[]>('/screener/sectors').then(r => r.data)
 
+// ─── IBKR Market Scanner (prototype) ────────────────────────────────────────
+export interface ScannerInstrumentDef {
+  display_name: string
+  type: string
+  filters: string[]
+}
+export interface ScannerScanTypeDef {
+  display_name: string
+  code: string
+  instruments: string[]
+}
+export interface ScannerFilterDef {
+  group: string
+  display_name: string
+  code: string
+  type: string
+}
+export interface ScannerLocationNode {
+  display_name: string
+  type: string
+  locations?: ScannerLocationNode[]
+}
+export interface ScannerParams {
+  scan_type_list: ScannerScanTypeDef[]
+  instrument_list: ScannerInstrumentDef[]
+  filter_list: ScannerFilterDef[]
+  location_tree: ScannerLocationNode[]
+}
+export const getIbkrScannerParams = () =>
+  api.get<ScannerParams>('/ibkr-scanner/params').then(r => r.data)
+
+export interface IbkrScanResult {
+  symbol: string | null
+  company_name: string | null
+  exchange: string | null
+  con_id: number | null
+  sec_type: string | null
+}
+export const runIbkrScanner = (data: {
+  instrument: string
+  location: string
+  scan_code: string
+  filters: { code: string; value: number }[]
+}) => api.post<{ items: IbkrScanResult[] }>('/ibkr-scanner/run', data).then(r => r.data)
+
 export default api

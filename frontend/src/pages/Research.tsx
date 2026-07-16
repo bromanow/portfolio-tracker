@@ -1,9 +1,10 @@
 import { useState } from 'react'
-import { PanelLeftClose, PanelLeftOpen, ChevronRight, ScanSearch, SlidersHorizontal } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, ChevronRight, ScanSearch, SlidersHorizontal, Radar } from 'lucide-react'
 import { CoveredCallScannerTool } from './Scanner'
 import FundamentalScreener from '../components/FundamentalScreener'
+import IbkrScannerTool from '../components/IbkrScannerTool'
 
-type ToolId = 'covered-call-scanner' | 'fundamental-screener'
+type ToolId = 'covered-call-scanner' | 'fundamental-screener' | 'ibkr-scanner'
 
 const TOOL_DEFS: {
   id: ToolId
@@ -25,6 +26,13 @@ const TOOL_DEFS: {
     description: 'Sort and filter stocks by P/E, debt/equity, ROE, revenue growth, and more',
     icon: SlidersHorizontal,
     component: FundamentalScreener,
+  },
+  {
+    id: 'ibkr-scanner',
+    label: 'IBKR Market Scanner',
+    description: 'Live server-side scans of IBKR\'s full universe — no fixed ticker list needed (prototype)',
+    icon: Radar,
+    component: IbkrScannerTool,
   },
 ]
 

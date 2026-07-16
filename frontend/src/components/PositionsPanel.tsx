@@ -67,6 +67,40 @@ function pnlClass(val: string | number | null | undefined) {
   return 'text-gray-500'
 }
 
+function fmtRangeVal(n: number) {
+  return n.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+/** Low/high bar with a pin marking today's price at its position between them (native currency). */
+function RangeBar({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
+  if (low === null || high === null || current === null || !isFinite(low) || !isFinite(high) || high <= low) {
+    return <span className="text-gray-300 text-xs">—</span>
+  }
+  const pct = Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100))
+  return (
+    <div className="w-32">
+      <div className="relative h-4">
+        <div
+          className="absolute top-0 text-blue-600"
+          style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
+          title={fmtRangeVal(current)}
+        >
+          <svg width="11" height="14" viewBox="0 0 14 18" fill="currentColor">
+            <path d="M7 0C3.13 0 0 3.13 0 7c0 5.25 7 11 7 11s7-5.75 7-11c0-3.87-3.13-7-7-7z" />
+          </svg>
+        </div>
+        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums leading-none">
+        <span>{fmtRangeVal(low)}</span>
+        <span>{fmtRangeVal(high)}</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Colours ─────────────────────────────────────────────────────────────────
 
 const ACCOUNT_TYPE_COLORS: Record<string, string> = {
@@ -145,6 +179,7 @@ const COL_ORDER_KEY = 'holdings-col-order'
 const DEFAULT_COL_ORDER = [
   'ticker', 'asset_class', 'total_quantity', 'acb_per_share_cad', 'total_acb_cad',
   'current_price_cad', 'market_value_cad', 'day_gain_cad', 'day_change_pct',
+  'day_range', 'week52_range',
   'unrealized_pnl_cad', 'unrealized_pnl_pct',
 ]
 
@@ -470,6 +505,26 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       summary: c => (c.hasDay && c.mktForPct > 0)
         ? <span className={pnlClass(c.day)}>{fmtPct(String((c.day / c.mktForPct) * 100))}</span>
         : null,
+    },
+    day_range: {
+      col: 'day_range', label: 'Day Range', right: false, nowrap: true,
+      cell: pos => (
+        <RangeBar
+          low={pos.day_low ? parseFloat(pos.day_low) : null}
+          high={pos.day_high ? parseFloat(pos.day_high) : null}
+          current={pos.current_price ? parseFloat(pos.current_price) : null}
+        />
+      ),
+    },
+    week52_range: {
+      col: 'week52_range', label: '52-Wk Range', right: false, nowrap: true,
+      cell: pos => (
+        <RangeBar
+          low={pos.week52_low ? parseFloat(pos.week52_low) : null}
+          high={pos.week52_high ? parseFloat(pos.week52_high) : null}
+          current={pos.current_price ? parseFloat(pos.current_price) : null}
+        />
+      ),
     },
     unrealized_pnl_cad: {
       col: 'unrealized_pnl_cad', label: 'Total Gain ($)', right: true,

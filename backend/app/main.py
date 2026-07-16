@@ -146,6 +146,8 @@ def _run_migrations(eng):
         ("market_prices",    "beta",                    "REAL"),
         ("market_prices",    "dividend_yield",          "REAL"),
         ("market_prices",    "market_cap",              "REAL"),
+        ("market_prices",    "week52_high",             "NUMERIC(20, 8)"),
+        ("market_prices",    "week52_low",              "NUMERIC(20, 8)"),
         ("accounts",         "client_id",               "INTEGER REFERENCES clients(id)"),
         ("transactions",     "external_ref",            "VARCHAR(100)"),
         # Phase 2 scanner columns — Greeks from IBKR live data

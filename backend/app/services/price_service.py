@@ -602,6 +602,8 @@ def _fetch_one(yahoo_sym: str) -> Optional[dict]:
         prev_close = _d(getattr(fi, "previous_close", None))
         day_high = _d(getattr(fi, "day_high", None))
         day_low = _d(getattr(fi, "day_low", None))
+        week52_high = _d(getattr(fi, "year_high", None))
+        week52_low = _d(getattr(fi, "year_low", None))
 
         day_change: Optional[Decimal] = None
         day_change_pct: Optional[Decimal] = None
@@ -617,6 +619,8 @@ def _fetch_one(yahoo_sym: str) -> Optional[dict]:
             "prev_close": prev_close,
             "day_high": day_high,
             "day_low": day_low,
+            "week52_high": week52_high,
+            "week52_low": week52_low,
             "day_change": day_change,
             "day_change_pct": day_change_pct,
             "fetch_ticker": yahoo_sym,
@@ -684,6 +688,8 @@ def _upsert_price(db: Session, security_id: int, data: dict) -> MarketPrice:
     mp.prev_close = data.get("prev_close")
     mp.day_high = data.get("day_high")
     mp.day_low = data.get("day_low")
+    mp.week52_high = data.get("week52_high")
+    mp.week52_low = data.get("week52_low")
     mp.day_change = data.get("day_change")
     mp.day_change_pct = data.get("day_change_pct")
     mp.price_date = data.get("price_date")

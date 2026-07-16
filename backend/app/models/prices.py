@@ -31,6 +31,8 @@ class MarketPrice(Base):
     prev_close: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
     day_high: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
     day_low: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+    week52_high: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
+    week52_low: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)
     day_change: Mapped[Optional[Decimal]] = mapped_column(Numeric(20, 8), nullable=True)    # price - prev_close
     day_change_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 4), nullable=True)
 

@@ -260,6 +260,10 @@ export interface PriceFields {
   day_change?: string | null
   day_change_cad?: string | null
   day_gain_cad?: string | null
+  day_high?: string | null
+  day_low?: string | null
+  week52_high?: string | null
+  week52_low?: string | null
   price_date?: string | null
   fetched_at?: string | null
   fetch_ticker?: string | null

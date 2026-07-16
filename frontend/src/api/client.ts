@@ -1517,6 +1517,18 @@ export interface IbkrScanResult {
   exchange: string | null
   con_id: number | null
   sec_type: string | null
+  last_price: number | null
+  change: number | null
+  change_pct: number | null
+  day_high: number | null
+  day_low: number | null
+  open: number | null
+  prior_close: number | null
+  volume: string | null
+  avg_volume: string | null
+  week52_high: number | null
+  week52_low: number | null
+  industry: string | null
 }
 export const runIbkrScanner = (data: {
   instrument: string

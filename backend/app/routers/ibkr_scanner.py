@@ -51,6 +51,7 @@ def scanner_run(req: ScanRequest, current_user: User = Depends(get_current_user)
             req.instrument, req.location, req.scan_code,
             [f.model_dump() for f in req.filters],
         )
+        items = ibkr_service.enrich_scan_results(items)
     except Exception as exc:   # noqa: BLE001 — surface IBKR's own error text to the UI
         raise HTTPException(status_code=502, detail=f"IBKR scanner request failed: {exc}")
     return {"items": items}

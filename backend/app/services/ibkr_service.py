@@ -230,7 +230,58 @@ def run_scanner(instrument: str, location: str, scan_code: str, filters: list[di
     ]
 
 
-def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
+# Fields confirmed live against this account (2026-07) by sweeping IBKR's documented Client
+# Portal field-ID table against a known conId (AAPL) — several typically-"fundamental" fields
+# (7289 market cap, 7290 P/E, 7291 EPS, 7287 dividend yield %, 7718 beta) came back EMPTY,
+# meaning this account's data plan doesn't include IBKR's fundamentals bundle. Only fields
+# confirmed to actually return data are used here.
+#   31=Last  82=Change  83=Change%  70=Day High  71=Day Low  7295=Open  7741=Prior Close
+#   87=Volume (formatted, e.g. "62.9M")  7282=Avg Volume (formatted)
+#   7293=52-Wk High  7294=52-Wk Low  7280=Industry
+_CP_SCANNER_FIELDS = "31,82,83,70,71,7295,7741,87,7282,7293,7294,7280"
+
+
+def enrich_scan_results(items: list[dict]) -> list[dict]:
+    """
+    Attach a live market-data snapshot (price, change, day/52-week range, volume) to each
+    scan result. All scan results (<=50) fit in one batched Client Portal snapshot call —
+    no need for a per-symbol request.
+    """
+    conids = [it["con_id"] for it in items if it.get("con_id")]
+    if not conids:
+        return items
+    snap = _cp_snapshot(conids, fields=_CP_SCANNER_FIELDS)
+
+    def _num(v):
+        if v is None:
+            return None
+        try:
+            return float(str(v).replace(",", "").replace("+", "").replace("%", ""))
+        except ValueError:
+            return None
+
+    enriched = []
+    for it in items:
+        d = snap.get(str(it.get("con_id") or ""), {})
+        enriched.append({
+            **it,
+            "last_price": _num(d.get("31")),
+            "change": _num(d.get("82")),
+            "change_pct": _num(d.get("83")),
+            "day_high": _num(d.get("70")),
+            "day_low": _num(d.get("71")),
+            "open": _num(d.get("7295")),
+            "prior_close": _num(d.get("7741")),
+            "volume": d.get("87"),
+            "avg_volume": d.get("7282"),
+            "week52_high": _num(d.get("7293")),
+            "week52_low": _num(d.get("7294")),
+            "industry": d.get("7280"),
+        })
+    return enriched
+
+
+def _cp_snapshot(conids: list[int], retries: int = 2, fields: Optional[str] = None) -> dict[str, dict]:
     """
     Fetch a market-data snapshot for a batch of conIds (max 100).
     Returns a dict keyed by conId string.
@@ -239,6 +290,7 @@ def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
     the first response may contain empty/partial data.  We retry up to
     `retries` times with a 1-second pause between attempts.
     """
+    fields = fields or _CP_FIELDS
     conids_str = ",".join(str(c) for c in conids)
     result: dict[str, dict] = {}
 
@@ -246,7 +298,7 @@ def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
         try:
             data = _cp_get(
                 "/iserver/marketdata/snapshot",
-                {"conids": conids_str, "fields": _CP_FIELDS},
+                {"conids": conids_str, "fields": fields},
             )
         except Exception as exc:
             logger.debug("snapshot attempt %d failed: %s", attempt + 1, exc)
@@ -258,8 +310,8 @@ def _cp_snapshot(conids: list[int], retries: int = 2) -> dict[str, dict]:
             if cid:
                 result[cid] = item
 
-        # If we got useful data (at least bid or ask for any item) return now
-        if any("84" in v or "86" in v for v in result.values()):
+        # If we got real field data back (not just the conid echo), stop retrying
+        if any(len(v) > 2 for v in result.values()):
             break
 
         if attempt < retries:

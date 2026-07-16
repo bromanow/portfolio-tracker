@@ -28,6 +28,47 @@ const QUICK_SCANS = [
 
 interface FilterRow { code: string; value: string }
 
+function fmtPrice(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return n.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+}
+
+function fmtPct(n: number | null | undefined): string {
+  if (n == null) return '—'
+  return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
+}
+
+function pctClass(n: number | null | undefined): string {
+  if (n == null) return 'text-gray-400'
+  return n >= 0 ? 'text-emerald-600' : 'text-red-500'
+}
+
+/** Compact low—pin—high bar, mirroring the Holdings page's Day/52-Wk Range columns. */
+function RangeBar({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
+  if (low == null || high == null || current == null || !isFinite(low) || !isFinite(high) || high <= low) {
+    return <span className="text-gray-300 text-xs">—</span>
+  }
+  const pct = Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100))
+  return (
+    <div className="w-28">
+      <div className="relative h-4">
+        <div className="absolute top-0 text-blue-600" style={{ left: `${pct}%`, transform: 'translateX(-50%)' }} title={fmtPrice(current)}>
+          <svg width="11" height="14" viewBox="0 0 14 18" fill="currentColor">
+            <path d="M7 0C3.13 0 0 3.13 0 7c0 5.25 7 11 7 11s7-5.75 7-11c0-3.87-3.13-7-7-7z" />
+          </svg>
+        </div>
+        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-gray-200 rounded-full overflow-hidden">
+          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+        </div>
+      </div>
+      <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums leading-none">
+        <span>{fmtPrice(low)}</span>
+        <span>{fmtPrice(high)}</span>
+      </div>
+    </div>
+  )
+}
+
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function IbkrScannerTool() {
@@ -240,13 +281,20 @@ export default function IbkrScannerTool() {
           {results.length === 0 ? (
             <div className="p-8 text-center text-gray-400 text-sm">No matches</div>
           ) : (
+            <div className="overflow-x-auto">
             <table className="min-w-full text-sm divide-y divide-gray-100">
               <thead className="bg-gray-50">
                 <tr className="text-xs text-gray-500 uppercase">
-                  <th className="px-3 py-2 text-left w-12">#</th>
+                  <th className="px-3 py-2 text-left w-10">#</th>
                   <th className="px-3 py-2 text-left">Symbol</th>
                   <th className="px-3 py-2 text-left">Company</th>
                   <th className="px-3 py-2 text-left">Exchange</th>
+                  <th className="px-3 py-2 text-right">Price</th>
+                  <th className="px-3 py-2 text-right">Chg %</th>
+                  <th className="px-3 py-2 text-right">Volume</th>
+                  <th className="px-3 py-2 text-left">Day Range</th>
+                  <th className="px-3 py-2 text-left">52-Wk Range</th>
+                  <th className="px-3 py-2 text-left">Industry</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -254,12 +302,19 @@ export default function IbkrScannerTool() {
                   <tr key={r.con_id ?? i} className="hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-400">{i + 1}</td>
                     <td className="px-3 py-2 font-mono font-semibold text-blue-700">{r.symbol || '—'}</td>
-                    <td className="px-3 py-2 text-gray-700">{r.company_name || '—'}</td>
+                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.company_name || '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-500">{r.exchange || '—'}</td>
+                    <td className="px-3 py-2 text-right font-medium">{fmtPrice(r.last_price)}</td>
+                    <td className={`px-3 py-2 text-right font-medium ${pctClass(r.change_pct)}`}>{fmtPct(r.change_pct)}</td>
+                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{r.volume || '—'}</td>
+                    <td className="px-3 py-2"><RangeBar low={r.day_low} high={r.day_high} current={r.last_price} /></td>
+                    <td className="px-3 py-2"><RangeBar low={r.week52_low} high={r.week52_high} current={r.last_price} /></td>
+                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{r.industry || '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
+            </div>
           )}
         </div>
       )}

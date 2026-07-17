@@ -665,21 +665,32 @@ function IncomeReport() {
   )
   const historicalOverallYieldPct = totalPortfolioValueCad > 0 ? (totalAll / totalPortfolioValueCad) * 100 : null
   const projectedOverallYieldPct = totalPortfolioValueCad > 0 ? (projectedSubtotals.total / totalPortfolioValueCad) * 100 : null
-  // Always "top 20 by income" for the chart, independent of whatever column the TABLE is
-  // currently sorted by — sorting the table by Type or by Amount ascending must not change
-  // which securities the chart shows (alphabetically, "DIVIDEND" sorts before "INTEREST", so
-  // a Type-ascending table sort would otherwise push every interest row out of a naive slice).
-  const projectedChartData = useMemo(
-    () => [...projectedFiltered]
-      .sort((a, b) => parseFloat(b.projected_annual_income_cad || '0') - parseFloat(a.projected_annual_income_cad || '0'))
-      .slice(0, 20)
-      .map(r => ({
-        ticker: r.ticker,
-        DIVIDEND: isDividendType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
-        INTEREST: isInterestType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
-      })),
-    [projectedFiltered],
-  )
+  // Grouped BY SECURITY (summed across account-type splits — a security held in both RRSP
+  // and TFSA should appear as one bar, not two) — always "top 15 + Other by income",
+  // independent of whatever column the TABLE is currently sorted by (alphabetically,
+  // "DIVIDEND" sorts before "INTEREST", so a Type-ascending table sort would otherwise push
+  // every interest row out of a naive slice).
+  const projectedChartData = useMemo(() => {
+    const m = new Map<string, { ticker: string; DIVIDEND: number; INTEREST: number }>()
+    for (const r of projectedFiltered) {
+      const income = parseFloat(r.projected_annual_income_cad || '0')
+      const entry = m.get(r.ticker) || { ticker: r.ticker, DIVIDEND: 0, INTEREST: 0 }
+      if (isDividendType(r.rate_type)) entry.DIVIDEND += income
+      else if (isInterestType(r.rate_type)) entry.INTEREST += income
+      m.set(r.ticker, entry)
+    }
+    const bySecurity = [...m.values()].sort((a, b) => (b.DIVIDEND + b.INTEREST) - (a.DIVIDEND + a.INTEREST))
+    const top = bySecurity.slice(0, 15).map(r => ({ ticker: r.ticker, DIVIDEND: +r.DIVIDEND.toFixed(2), INTEREST: +r.INTEREST.toFixed(2) }))
+    const rest = bySecurity.slice(15)
+    if (rest.length > 0) {
+      top.push({
+        ticker: `Other (${rest.length})`,
+        DIVIDEND: +rest.reduce((s, r) => s + r.DIVIDEND, 0).toFixed(2),
+        INTEREST: +rest.reduce((s, r) => s + r.INTEREST, 0).toFixed(2),
+      })
+    }
+    return top
+  }, [projectedFiltered])
   const projectedPieData = useMemo(
     () => [
       { name: 'Dividend', value: +projectedSubtotals.dividend.toFixed(2), fill: COLORS[0] },
@@ -702,6 +713,24 @@ function IncomeReport() {
     () => projectedByAccountType.map(([type, value], i) => ({ name: type, value: +value.toFixed(2), fill: COLORS[i % COLORS.length] })),
     [projectedByAccountType],
   )
+
+  // Subtotal by security class (EQUITY/ETF/FUND/STRUCTURED_NOTE/MORTGAGE/etc.)
+  const projectedByClass = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of projectedFiltered) {
+      m.set(r.asset_class, (m.get(r.asset_class) || 0) + parseFloat(r.projected_annual_income_cad || '0'))
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [projectedFiltered])
+  const projectedClassPieData = useMemo(
+    () => projectedByClass.map(([cls, value], i) => ({ name: cls, value: +value.toFixed(2), fill: COLORS[i % COLORS.length] })),
+    [projectedByClass],
+  )
+
+  // Pie slice labels as currency, no decimals (e.g. "$3,498") — recharts calls this with
+  // the raw datum, not the formatted `value` prop, so the currency formatting has to happen
+  // inside the label renderer itself.
+  const pieCurrencyLabel = (props: Record<string, unknown>) => fmtCAD0(props.value as number)
 
   // Custom Treemap cell renderer
   const renderTreemapCell = (props: Record<string, unknown>) => {
@@ -855,7 +884,7 @@ function IncomeReport() {
                   <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
-                      <Pie data={historicalAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                      <Pie data={historicalAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={pieCurrencyLabel as never}>
                         {historicalAccountTypePieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                       </Pie>
                       <Tooltip formatter={(v: number) => fmtCAD(v)} />
@@ -1079,10 +1108,10 @@ function IncomeReport() {
               </div>
 
               {projectedChartData.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Projected Income by Security (top 20)</h3>
-                    <ResponsiveContainer width="100%" height={260}>
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Projected Income by Security (top 15 + Other)</h3>
+                    <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={projectedChartData} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                         <XAxis dataKey="ticker" tick={{ fontSize: 10 }} interval={0} angle={-40} textAnchor="end" height={60} />
@@ -1097,9 +1126,9 @@ function IncomeReport() {
 
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                     <h3 className="font-semibold text-gray-800 mb-3 text-sm">Dividend vs. Interest</h3>
-                    <ResponsiveContainer width="100%" height={260}>
+                    <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
-                        <Pie data={projectedPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                        <Pie data={projectedPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
                           {projectedPieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                         </Pie>
                         <Tooltip formatter={(v: number) => fmtCAD(v)} />
@@ -1110,10 +1139,23 @@ function IncomeReport() {
 
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                     <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
-                    <ResponsiveContainer width="100%" height={260}>
+                    <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
-                        <Pie data={projectedAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                        <Pie data={projectedAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
                           {projectedAccountTypePieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => fmtCAD(v)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Security Class</h3>
+                    <ResponsiveContainer width="100%" height={300}>
+                      <PieChart>
+                        <Pie data={projectedClassPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
+                          {projectedClassPieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
                         </Pie>
                         <Tooltip formatter={(v: number) => fmtCAD(v)} />
                         <Legend wrapperStyle={{ fontSize: 11 }} />

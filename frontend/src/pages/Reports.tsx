@@ -628,13 +628,20 @@ function IncomeReport() {
   )
   const historicalOverallYieldPct = totalPortfolioValueCad > 0 ? (totalAll / totalPortfolioValueCad) * 100 : null
   const projectedOverallYieldPct = totalPortfolioValueCad > 0 ? (projectedSubtotals.total / totalPortfolioValueCad) * 100 : null
+  // Always "top 20 by income" for the chart, independent of whatever column the TABLE is
+  // currently sorted by — sorting the table by Type or by Amount ascending must not change
+  // which securities the chart shows (alphabetically, "DIVIDEND" sorts before "INTEREST", so
+  // a Type-ascending table sort would otherwise push every interest row out of a naive slice).
   const projectedChartData = useMemo(
-    () => projectedSorted.slice(0, 20).map(r => ({
-      ticker: r.ticker,
-      DIVIDEND: isDividendType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
-      INTEREST: isInterestType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
-    })),
-    [projectedSorted],
+    () => [...projectedFiltered]
+      .sort((a, b) => parseFloat(b.projected_annual_income_cad || '0') - parseFloat(a.projected_annual_income_cad || '0'))
+      .slice(0, 20)
+      .map(r => ({
+        ticker: r.ticker,
+        DIVIDEND: isDividendType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+        INTEREST: isInterestType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+      })),
+    [projectedFiltered],
   )
   const projectedPieData = useMemo(
     () => [

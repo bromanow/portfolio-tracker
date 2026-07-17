@@ -473,7 +473,9 @@ function IncomeReport() {
     queryFn: () => getProjectedIncome({
       account_ids: accountId ? String(accountId) : defaultAccountIds,
     }),
-    enabled: reportMode === 'projected' && defaultAccountIds !== undefined,
+    // Always fetched (not just in Projected mode) — it's also the source of current
+    // portfolio value used for the Historical tab's Overall Yield calculation below.
+    enabled: defaultAccountIds !== undefined,
   })
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
@@ -596,10 +598,10 @@ function IncomeReport() {
       parseFloat(r.projected_annual_income_cad || '0') > 0),
     [projectedRows, brokerageFilter],
   )
+  const { sort: projSort, toggle: projToggle } = useSortState('projected_annual_income_cad', 'desc')
   const projectedSorted = useMemo(
-    () => [...projectedFiltered].sort((a, b) =>
-      parseFloat(b.projected_annual_income_cad || '0') - parseFloat(a.projected_annual_income_cad || '0')),
-    [projectedFiltered],
+    () => sortRows(projectedFiltered, projSort.col, projSort.dir),
+    [projectedFiltered, projSort],
   )
   const isDividendType = (t: string | null) => t === 'DIVIDEND' || t === 'DIVIDEND_EST'
   const isInterestType = (t: string | null) => t === 'INTEREST' || t === 'INTEREST_EST'
@@ -613,6 +615,19 @@ function IncomeReport() {
     }
     return { dividend, interest, total: dividend + interest }
   }, [projectedFiltered])
+
+  // Overall portfolio yield — same denominator for both Historical and Projected: the
+  // CURRENT total market value of every currently-held non-option security in the current
+  // Brokerage/Account scope (not just the income-producing ones — a growth stock still
+  // counts as capital that could have earned income, so it correctly dilutes the yield).
+  const totalPortfolioValueCad = useMemo(
+    () => projectedRows
+      .filter(r => !brokerageFilter || r.brokerage_name === brokerageFilter)
+      .reduce((s, r) => s + parseFloat(r.market_value_cad || '0'), 0),
+    [projectedRows, brokerageFilter],
+  )
+  const historicalOverallYieldPct = totalPortfolioValueCad > 0 ? (totalAll / totalPortfolioValueCad) * 100 : null
+  const projectedOverallYieldPct = totalPortfolioValueCad > 0 ? (projectedSubtotals.total / totalPortfolioValueCad) * 100 : null
   const projectedChartData = useMemo(
     () => projectedSorted.slice(0, 20).map(r => ({
       ticker: r.ticker,
@@ -723,9 +738,16 @@ function IncomeReport() {
         ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
         : (
           <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-3">
-              <span className="text-sm font-medium text-gray-700">{rows.length} income transactions · Total: </span>
-              <span className="font-bold text-base text-blue-700">{fmtCAD(totalAll)}</span>
+            <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
+              <span className="text-sm font-medium text-gray-700">
+                {rows.length} income transactions · Total: <span className="font-bold text-base text-blue-700">{fmtCAD(totalAll)}</span>
+              </span>
+              {historicalOverallYieldPct != null && (
+                <span className="text-sm text-gray-600">
+                  Overall Yield: <span className="font-semibold text-blue-700">{historicalOverallYieldPct.toFixed(2)}%</span>
+                  <span className="text-xs text-gray-400 ml-1">(vs. current portfolio value)</span>
+                </span>
+              )}
             </div>
 
             {byYear.length > 0 && (
@@ -971,6 +993,12 @@ function IncomeReport() {
                 <span className="text-sm text-gray-600">
                   Interest: <span className="font-semibold text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</span>
                 </span>
+                {projectedOverallYieldPct != null && (
+                  <span className="text-sm text-gray-600">
+                    Overall Yield: <span className="font-semibold text-blue-700">{projectedOverallYieldPct.toFixed(2)}%</span>
+                    <span className="text-xs text-gray-400 ml-1">(of current portfolio value)</span>
+                  </span>
+                )}
               </div>
 
               {projectedChartData.length > 0 && (
@@ -1010,12 +1038,12 @@ function IncomeReport() {
                   <table className="min-w-full text-sm divide-y divide-gray-100">
                     <thead className="bg-gray-50">
                       <tr className="text-xs text-gray-500 uppercase">
-                        <th className="px-3 py-2.5 text-left">Symbol</th>
-                        <th className="px-3 py-2.5 text-left">Name</th>
-                        <th className="px-3 py-2.5 text-right">Qty Held</th>
-                        <th className="px-3 py-2.5 text-left">Type</th>
-                        <th className="px-3 py-2.5 text-right">Rate</th>
-                        <th className="px-3 py-2.5 text-right">Projected Annual Income (CAD)</th>
+                        <SortTh label="Symbol" col="ticker" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
+                        <SortTh label="Name" col="security_name" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
+                        <SortTh label="Qty Held" col="quantity" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
+                        <SortTh label="Type" col="rate_type" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
+                        <SortTh label="Rate" col="rate_pct" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
+                        <SortTh label="Projected Annual Income (CAD)" col="projected_annual_income_cad" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">

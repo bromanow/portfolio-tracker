@@ -561,6 +561,7 @@ def get_investment_income(
             "year": txn.transaction_date.year,
             "account_id": txn.account_id,
             "account_name": acct.name if acct else "",
+            "account_type": acct.account_type if acct else None,
             "brokerage_name": (acct.brokerage.name if acct and acct.brokerage else ""),
             "ticker": sec.ticker if sec else "",
             "transaction_type": txn.transaction_type,

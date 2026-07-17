@@ -471,26 +471,44 @@ def get_projected_income(
         if rate is not None:
             projected = (mv * Decimal(str(rate)) / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-        # Dominant brokerage (largest quantity) — mirrors PositionsPanel.tsx's
-        # dominantBrokerage() for positions split across multiple accounts/brokerages.
-        best_brokerage, best_qty = "—", Decimal("-1")
+        # Split this position by account_type — same "accounts" breakdown Holdings uses to
+        # show the per-account split when a security row is expanded. Most positions live in
+        # a single account type (common case: 1 group, share=1.0, output unchanged from
+        # before). When a security spans multiple types (e.g. partly RRSP, partly TFSA),
+        # market value/income are allocated proportionally to each type's share of the
+        # total quantity — the tax treatment differs per account, so income needs to be
+        # attributed to the account it was actually earned in, not lumped under the security.
+        type_qty: dict = {}
+        type_brokerage_qty: dict = {}
         for a in p.get("accounts", []):
+            at = a.get("account_type") or "UNKNOWN"
             aq = abs(Decimal(a.get("quantity") or "0"))
-            if aq > best_qty:
-                best_qty, best_brokerage = aq, a.get("brokerage") or "—"
+            type_qty[at] = type_qty.get(at, Decimal("0")) + aq
+            bmap = type_brokerage_qty.setdefault(at, {})
+            b = a.get("brokerage") or "—"
+            bmap[b] = bmap.get(b, Decimal("0")) + aq
 
-        rows.append({
-            "security_id": p["security_id"],
-            "ticker": p["ticker"],
-            "security_name": p["security_name"],
-            "asset_class": asset_class,
-            "brokerage_name": best_brokerage,
-            "quantity": p["total_quantity"],
-            "market_value_cad": p["market_value_cad"],
-            "rate_type": rate_type,
-            "rate_pct": str(rate) if rate is not None else None,
-            "projected_annual_income_cad": str(projected) if projected is not None else None,
-        })
+        total_type_qty = sum(type_qty.values()) or Decimal("1")  # guard divide-by-zero
+
+        for at, tqty in type_qty.items():
+            share = tqty / total_type_qty
+            mv_share = (mv * share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            income_share = (projected * share).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) if projected is not None else None
+            best_brokerage = max(type_brokerage_qty[at].items(), key=lambda kv: kv[1])[0]
+
+            rows.append({
+                "security_id": p["security_id"],
+                "ticker": p["ticker"],
+                "security_name": p["security_name"],
+                "asset_class": asset_class,
+                "brokerage_name": best_brokerage,
+                "account_type": at,
+                "quantity": str(tqty),
+                "market_value_cad": str(mv_share),
+                "rate_type": rate_type,
+                "rate_pct": str(rate) if rate is not None else None,
+                "projected_annual_income_cad": str(income_share) if income_share is not None else None,
+            })
 
     rows.sort(key=lambda r: Decimal(r["projected_annual_income_cad"] or "0"), reverse=True)
     return rows

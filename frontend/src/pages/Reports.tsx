@@ -34,6 +34,26 @@ function fmtCAD(val: number | string | null | undefined) {
 
 const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4', '#f97316', '#84cc16', '#ec4899', '#6b7280']
 
+// Matches PositionsPanel.tsx's ACCOUNT_TYPE_COLORS — same badge styling everywhere account
+// type shows up, so RRSP/TFSA/etc. read consistently across Holdings and this report.
+const ACCOUNT_TYPE_COLORS: Record<string, string> = {
+  RRSP: 'bg-blue-100 text-blue-700',
+  TFSA: 'bg-green-100 text-green-700',
+  RESP: 'bg-yellow-100 text-yellow-700',
+  NON_REG: 'bg-gray-100 text-gray-600',
+  '401K': 'bg-purple-100 text-purple-700',
+  IRA: 'bg-indigo-100 text-indigo-700',
+  ROTH: 'bg-pink-100 text-pink-700',
+}
+function AccountTypeBadge({ type }: { type: string | null | undefined }) {
+  if (!type) return <span className="text-gray-300">—</span>
+  return (
+    <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${ACCOUNT_TYPE_COLORS[type] || 'bg-gray-100 text-gray-600'}`}>
+      {type}
+    </span>
+  )
+}
+
 type SortDir = 'asc' | 'desc'
 
 function useSortState(defaultCol: string, defaultDir: SortDir = 'asc') {
@@ -441,7 +461,7 @@ function RealizedGainsReport() {
 
 type IncomeTreeTx   = IncomeItem
 type IncomeTreeSec  = { key: string; ticker: string; total: number; transactions: IncomeTreeTx[] }
-type IncomeTreeAcct = { key: string; account: string; brokerage: string; total: number; securities: IncomeTreeSec[] }
+type IncomeTreeAcct = { key: string; account: string; account_type: string | null; brokerage: string; total: number; securities: IncomeTreeSec[] }
 type IncomeTreeBrok = { key: string; brokerage: string; total: number; accounts: IncomeTreeAcct[] }
 
 function IncomeReport() {
@@ -517,7 +537,7 @@ function IncomeReport() {
 
       const aKey = `${bKey}|${item.account_name}`
       let acct = brok.accounts.find(a => a.key === aKey)
-      if (!acct) { acct = { key: aKey, account: item.account_name, brokerage: bKey, total: 0, securities: [] }; brok.accounts.push(acct) }
+      if (!acct) { acct = { key: aKey, account: item.account_name, account_type: item.account_type, brokerage: bKey, total: 0, securities: [] }; brok.accounts.push(acct) }
 
       const sKey = `${aKey}|${item.ticker || '(none)'}`
       let sec = acct.securities.find(s => s.key === sKey)
@@ -572,6 +592,23 @@ function IncomeReport() {
       .slice(0, 20)
       .map(([name, size], i) => ({ name, size: +size.toFixed(2), fill: COLORS[i % COLORS.length] }))
   }, [filtered])
+
+  // Subtotal by account type (tax-impact view — RRSP/TFSA income has no immediate tax,
+  // NON_REG income is taxable now), sorted by dollar size (largest first).
+  const historicalByAccountType = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const item of filtered) {
+      const t = item.account_type || 'UNKNOWN'
+      m.set(t, (m.get(t) || 0) + parseFloat(item.amount_cad))
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [filtered])
+  const historicalAccountTypePieData = useMemo(
+    () => historicalByAccountType
+      .filter(([, v]) => v > 0)
+      .map(([type, value], i) => ({ name: type, value: +value.toFixed(2), fill: COLORS[i % COLORS.length] })),
+    [historicalByAccountType],
+  )
 
   // Security view groups
   const incomeSecurityGroups = useMemo(() => {
@@ -651,6 +688,21 @@ function IncomeReport() {
     [projectedSubtotals],
   )
 
+  // Subtotal by account type (tax-impact view — RRSP/TFSA income has no immediate tax,
+  // NON_REG income is taxable now), sorted by dollar size (largest first).
+  const projectedByAccountType = useMemo(() => {
+    const m = new Map<string, number>()
+    for (const r of projectedFiltered) {
+      const t = r.account_type || 'UNKNOWN'
+      m.set(t, (m.get(t) || 0) + parseFloat(r.projected_annual_income_cad || '0'))
+    }
+    return [...m.entries()].sort((a, b) => b[1] - a[1])
+  }, [projectedFiltered])
+  const projectedAccountTypePieData = useMemo(
+    () => projectedByAccountType.map(([type, value], i) => ({ name: type, value: +value.toFixed(2), fill: COLORS[i % COLORS.length] })),
+    [projectedByAccountType],
+  )
+
   // Custom Treemap cell renderer
   const renderTreemapCell = (props: Record<string, unknown>) => {
     const x = props.x as number, y = props.y as number
@@ -690,7 +742,7 @@ function IncomeReport() {
     )
   }
 
-  const COLS = 6  // chevron, name, date, type, native, cad
+  const COLS = 7  // chevron, name, account type, date, type, native, cad
 
   return (
     <div className="space-y-6">
@@ -758,7 +810,7 @@ function IncomeReport() {
             </div>
 
             {byYear.length > 0 && (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Bar chart — income by year & type, with total labels */}
                 <div className="bg-white rounded-xl border border-gray-200 p-4">
                   <h3 className="font-semibold text-gray-800 mb-3 text-sm">Income by Year &amp; Type</h3>
@@ -795,6 +847,20 @@ function IncomeReport() {
                     >
                       <Tooltip formatter={(v: number) => fmtCAD(v)} />
                     </Treemap>
+                  </ResponsiveContainer>
+                </div>
+
+                {/* Pie — income by account type (tax impact) */}
+                <div className="bg-white rounded-xl border border-gray-200 p-4">
+                  <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
+                  <ResponsiveContainer width="100%" height={220}>
+                    <PieChart>
+                      <Pie data={historicalAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label>
+                        {historicalAccountTypePieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                      </Pie>
+                      <Tooltip formatter={(v: number) => fmtCAD(v)} />
+                      <Legend wrapperStyle={{ fontSize: 11 }} />
+                    </PieChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -841,6 +907,7 @@ function IncomeReport() {
                     <tr className="text-xs text-gray-500 uppercase">
                       <th className="w-10 px-2 py-2.5" />
                       <th className="px-3 py-2.5 text-left font-semibold">Name / Description</th>
+                      <SortTh label="Account Type"  col="account_type"     sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
                       <SortTh label="Date"          col="date"             sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
                       <SortTh label="Type"          col="transaction_type" sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
                       <SortTh label="Native"        col="amount_native"    sort={sort} toggle={toggle} className="px-3 py-2.5 text-right" />
@@ -859,6 +926,7 @@ function IncomeReport() {
                               <tr key={i} className="hover:bg-gray-50">
                                 <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
                                 <td className="px-3 py-1.5 text-xs text-gray-600 whitespace-nowrap">{item.account_name}</td>
+                                <td className="px-3 py-1.5"><AccountTypeBadge type={item.account_type} /></td>
                                 <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
                                 <td className="px-3 py-1.5">
                                   <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
@@ -869,7 +937,7 @@ function IncomeReport() {
                             ))}
                             <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
                               <td className="px-3 py-1.5 text-blue-700" colSpan={1}>{secRows.length} txns</td>
-                              <td className="px-3 py-1.5 text-blue-800 font-mono" colSpan={4}>{ticker} subtotal</td>
+                              <td className="px-3 py-1.5 text-blue-800 font-mono" colSpan={5}>{ticker} subtotal</td>
                               <td className="px-3 py-1.5 text-right text-blue-700">{fmtCAD(total)}</td>
                             </tr>
                           </Fragment>
@@ -892,7 +960,7 @@ function IncomeReport() {
                               ? <ChevronDown className="h-4 w-4" />
                               : <ChevronRight className="h-4 w-4" />}
                           </td>
-                          <td className="px-3 py-2 font-semibold text-slate-800" colSpan={4}>
+                          <td className="px-3 py-2 font-semibold text-slate-800" colSpan={5}>
                             {brok.brokerage}
                             <span className="ml-2 text-xs font-normal text-slate-500">
                               {brok.accounts.length} account{brok.accounts.length !== 1 ? 's' : ''}
@@ -913,8 +981,9 @@ function IncomeReport() {
                                   ? <ChevronDown className="h-3.5 w-3.5" />
                                   : <ChevronRight className="h-3.5 w-3.5" />}
                               </td>
-                              <td className="pr-3 py-1.5 text-blue-800 text-sm" colSpan={4}>
+                              <td className="pr-3 py-1.5 text-blue-800 text-sm" colSpan={5}>
                                 {acct.account}
+                                <span className="ml-2"><AccountTypeBadge type={acct.account_type} /></span>
                                 <span className="ml-2 text-xs font-normal text-blue-400">
                                   {acct.securities.length} securit{acct.securities.length !== 1 ? 'ies' : 'y'}
                                 </span>
@@ -940,7 +1009,7 @@ function IncomeReport() {
                                   <td className="pr-3 py-1.5 text-xs text-gray-400">
                                     {sec.transactions.length} txn{sec.transactions.length !== 1 ? 's' : ''}
                                   </td>
-                                  <td className="pr-3 py-1.5 text-xs text-gray-400" colSpan={2} />
+                                  <td className="pr-3 py-1.5 text-xs text-gray-400" colSpan={3} />
                                   <td className="pr-3 py-1.5 text-right text-sm text-emerald-600 font-medium">{fmtCAD(sec.total)}</td>
                                 </tr>
 
@@ -950,6 +1019,7 @@ function IncomeReport() {
                                     <td className="pr-3 py-1 text-xs text-gray-600 whitespace-nowrap">
                                       {item.account_name}
                                     </td>
+                                    <td className="pr-3 py-1"><AccountTypeBadge type={item.account_type} /></td>
                                     <td className="pr-3 py-1 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
                                     <td className="pr-3 py-1">
                                       <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">
@@ -1009,7 +1079,7 @@ function IncomeReport() {
               </div>
 
               {projectedChartData.length > 0 && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="bg-white rounded-xl border border-gray-200 p-4">
                     <h3 className="font-semibold text-gray-800 mb-3 text-sm">Projected Income by Security (top 20)</h3>
                     <ResponsiveContainer width="100%" height={260}>
@@ -1037,6 +1107,19 @@ function IncomeReport() {
                       </PieChart>
                     </ResponsiveContainer>
                   </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <PieChart>
+                        <Pie data={projectedAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                          {projectedAccountTypePieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => fmtCAD(v)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
                 </div>
               )}
 
@@ -1048,6 +1131,7 @@ function IncomeReport() {
                         <SortTh label="Symbol" col="ticker" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Name" col="security_name" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Qty Held" col="quantity" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
+                        <SortTh label="Account Type" col="account_type" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Type" col="rate_type" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Rate" col="rate_pct" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
                         <SortTh label="Projected Annual Income (CAD)" col="projected_annual_income_cad" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
@@ -1055,13 +1139,14 @@ function IncomeReport() {
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {projectedSorted.length === 0 && (
-                        <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No current holdings found.</td></tr>
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No current holdings found.</td></tr>
                       )}
-                      {projectedSorted.map(r => (
-                        <tr key={r.security_id} className="hover:bg-gray-50">
+                      {projectedSorted.map((r, i) => (
+                        <tr key={`${r.security_id}-${r.account_type}-${i}`} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-mono font-semibold text-blue-700">{r.ticker}</td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.security_name || '—'}</td>
                           <td className="px-3 py-2 text-right text-gray-700">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                          <td className="px-3 py-2"><AccountTypeBadge type={r.account_type} /></td>
                           <td className="px-3 py-2">
                             {r.rate_type && (() => {
                               const estimated = r.rate_type.endsWith('_EST')
@@ -1088,17 +1173,26 @@ function IncomeReport() {
                     {projectedSorted.length > 0 && (
                       <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
                         <tr>
-                          <td className="px-4 py-2.5 text-gray-500" colSpan={3}>Dividend Subtotal</td>
+                          <td className="px-4 py-2.5 text-gray-500" colSpan={4}>Dividend Subtotal</td>
                           <td className="px-4 py-2.5" colSpan={2} />
                           <td className="px-4 py-2.5 text-right text-emerald-600">{fmtCAD(projectedSubtotals.dividend)}</td>
                         </tr>
                         <tr>
-                          <td className="px-4 py-2.5 text-gray-500" colSpan={3}>Interest Subtotal</td>
+                          <td className="px-4 py-2.5 text-gray-500" colSpan={4}>Interest Subtotal</td>
                           <td className="px-4 py-2.5" colSpan={2} />
                           <td className="px-4 py-2.5 text-right text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</td>
                         </tr>
+                        {projectedByAccountType.map(([type, value]) => (
+                          <tr key={type} className="border-t border-gray-100">
+                            <td className="px-4 py-2 text-gray-500 font-normal" colSpan={3}>
+                              <AccountTypeBadge type={type} /> <span className="ml-1">Subtotal</span>
+                            </td>
+                            <td className="px-4 py-2" colSpan={3} />
+                            <td className="px-4 py-2 text-right text-gray-700">{fmtCAD(value)}</td>
+                          </tr>
+                        ))}
                         <tr className="border-t border-gray-200">
-                          <td className="px-4 py-2.5 text-gray-700" colSpan={3}>Grand Total</td>
+                          <td className="px-4 py-2.5 text-gray-700" colSpan={4}>Grand Total</td>
                           <td className="px-4 py-2.5" colSpan={2} />
                           <td className="px-4 py-2.5 text-right text-blue-700">{fmtCAD(projectedSubtotals.total)}</td>
                         </tr>

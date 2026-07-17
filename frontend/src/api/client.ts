@@ -664,6 +664,7 @@ export interface IncomeItem {
   year: number
   account_id: number
   account_name: string
+  account_type: string | null
   brokerage_name: string
   ticker: string
   transaction_type: string
@@ -680,6 +681,7 @@ export interface ProjectedIncomeRow {
   security_name: string | null
   asset_class: string
   brokerage_name: string
+  account_type: string
   quantity: string
   market_value_cad: string | null
   rate_type: 'DIVIDEND' | 'INTEREST' | 'DIVIDEND_EST' | 'INTEREST_EST' | null

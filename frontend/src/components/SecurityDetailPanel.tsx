@@ -372,6 +372,11 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
               </div>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className="font-mono text-sm font-semibold text-blue-700">{position.ticker}</span>
+                {position.fetch_ticker && position.fetch_ticker !== position.ticker && (
+                  <span className="text-xs text-purple-500 font-mono" title="Actual Yahoo Finance lookup symbol">
+                    ↗{position.fetch_ticker}
+                  </span>
+                )}
                 {position.exchange && <span className="text-xs text-gray-400">{position.exchange}</span>}
                 {position.currency && <span className="text-xs text-gray-400">· {position.currency}</span>}
                 {yahoo?.sector && <span className="text-xs text-gray-400">· {yahoo.sector}</span>}

@@ -1,5 +1,7 @@
+import { useEffect, useRef } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
 import { useAuth } from './context/AuthContext'
+import { useFilterContext } from './context/FilterContext'
 import Layout from './components/Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
@@ -13,6 +15,21 @@ import Admin from './pages/Admin'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
   const { user, isLoading } = useAuth()
+  const { clearFilters } = useFilterContext()
+
+  // FilterProvider is mounted once at the app root (main.tsx) above the auth-gated routes,
+  // so its in-memory Brokerage/Account/Type filters otherwise survive a logout — and would
+  // leak into the next login, possibly a different user. Reset them on the logged-in →
+  // logged-out transition only (not on initial mount, when user starts null too).
+  const wasLoggedIn = useRef(false)
+  useEffect(() => {
+    if (user) {
+      wasLoggedIn.current = true
+    } else if (wasLoggedIn.current) {
+      clearFilters()
+      wasLoggedIn.current = false
+    }
+  }, [user, clearFilters])
 
   if (isLoading) {
     return (

@@ -1,7 +1,7 @@
 from datetime import date
 from decimal import Decimal
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
 from pydantic import BaseModel
 from sqlalchemy import func
 from sqlalchemy.exc import IntegrityError
@@ -625,3 +625,148 @@ def delete_type_override(override_id: int, db: Session = Depends(get_db)):
     db.delete(row)
     db.commit()
     return {"deleted": override_id}
+
+
+# ─── Note Details (structured notes, mortgages, etc.) ────────────────────────
+# Manually-maintained term-sheet fields + an optional attached PDF info sheet, per security.
+# Mirrors the statement-file storage pattern (routers/imports.py) but scoped to one security
+# with a single file, not a multi-file library.
+
+class NoteDetailsUpdate(BaseModel):
+    reference_asset: Optional[str] = None
+    payment_amount: Optional[str] = None
+    payment_frequency: Optional[str] = None
+    payment_barrier_pct: Optional[Decimal] = None
+    autocall_level_pct: Optional[Decimal] = None
+    barrier_level_pct: Optional[Decimal] = None
+    status: Optional[str] = None
+    product_category: Optional[str] = None
+    cusip_code: Optional[str] = None
+    adp_code: Optional[str] = None
+    issue_date: Optional[date] = None
+    maturity_date: Optional[date] = None
+    term_years: Optional[Decimal] = None
+
+
+def _note_details_to_dict(row) -> dict:
+    if row is None:
+        return {
+            "reference_asset": None, "payment_amount": None, "payment_frequency": None,
+            "payment_barrier_pct": None, "autocall_level_pct": None, "barrier_level_pct": None,
+            "status": None, "product_category": None, "cusip_code": None, "adp_code": None,
+            "issue_date": None, "maturity_date": None, "term_years": None,
+            "original_filename": None, "content_type": None, "byte_size": None, "uploaded_at": None,
+        }
+    return {
+        "reference_asset": row.reference_asset,
+        "payment_amount": row.payment_amount,
+        "payment_frequency": row.payment_frequency,
+        "payment_barrier_pct": str(row.payment_barrier_pct) if row.payment_barrier_pct is not None else None,
+        "autocall_level_pct": str(row.autocall_level_pct) if row.autocall_level_pct is not None else None,
+        "barrier_level_pct": str(row.barrier_level_pct) if row.barrier_level_pct is not None else None,
+        "status": row.status,
+        "product_category": row.product_category,
+        "cusip_code": row.cusip_code,
+        "adp_code": row.adp_code,
+        "issue_date": row.issue_date.isoformat() if row.issue_date else None,
+        "maturity_date": row.maturity_date.isoformat() if row.maturity_date else None,
+        "term_years": str(row.term_years) if row.term_years is not None else None,
+        "original_filename": row.original_filename,
+        "content_type": row.content_type,
+        "byte_size": row.byte_size,
+        "uploaded_at": row.uploaded_at.isoformat() if row.uploaded_at else None,
+    }
+
+
+@router.get("/{security_id}/note-details")
+def get_note_details(security_id: int, db: Session = Depends(get_db)):
+    from app.models.master import SecurityNoteDetails
+    row = db.query(SecurityNoteDetails).filter(SecurityNoteDetails.security_id == security_id).first()
+    return _note_details_to_dict(row)
+
+
+@router.put("/{security_id}/note-details")
+def update_note_details(security_id: int, data: NoteDetailsUpdate, db: Session = Depends(get_db)):
+    from app.models.master import SecurityNoteDetails
+    if not db.get(Security, security_id):
+        raise HTTPException(status_code=404, detail="Security not found")
+    row = db.query(SecurityNoteDetails).filter(SecurityNoteDetails.security_id == security_id).first()
+    if row is None:
+        row = SecurityNoteDetails(security_id=security_id)
+        db.add(row)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(row, field, value)
+    db.commit()
+    db.refresh(row)
+    return _note_details_to_dict(row)
+
+
+@router.post("/{security_id}/note-details/file")
+async def upload_note_details_file(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload (or replace) the info-sheet PDF attached to this security."""
+    from datetime import datetime
+    from app.models.master import SecurityNoteDetails
+    from app.services import note_document_store
+
+    if not db.get(Security, security_id):
+        raise HTTPException(status_code=404, detail="Security not found")
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF.")
+
+    data = await file.read()
+    row = db.query(SecurityNoteDetails).filter(SecurityNoteDetails.security_id == security_id).first()
+    if row is None:
+        row = SecurityNoteDetails(security_id=security_id)
+        db.add(row)
+    elif row.stored_filename:
+        note_document_store.remove(row.stored_filename)   # single-file semantics — replace, don't accumulate
+
+    stored = note_document_store.stored_name(file.filename or "note.pdf")
+    note_document_store.save(stored, data)
+    row.stored_filename = stored
+    row.original_filename = file.filename
+    row.content_type = file.content_type or "application/pdf"
+    row.byte_size = len(data)
+    row.uploaded_at = datetime.utcnow()
+    db.commit()
+    db.refresh(row)
+    return _note_details_to_dict(row)
+
+
+@router.get("/{security_id}/note-details/file")
+def view_note_details_file(security_id: int, db: Session = Depends(get_db)):
+    """Stream the stored info-sheet PDF inline (frontend fetches as a blob and opens it)."""
+    import os
+    from fastapi.responses import FileResponse
+    from app.models.master import SecurityNoteDetails
+    from app.services import note_document_store
+
+    row = db.query(SecurityNoteDetails).filter(SecurityNoteDetails.security_id == security_id).first()
+    if not row or not row.stored_filename:
+        raise HTTPException(status_code=404, detail="No info sheet on file for this security.")
+    fp = note_document_store.path_for(row.stored_filename)
+    if not os.path.exists(fp):
+        raise HTTPException(status_code=404, detail="File missing on disk (was the storage volume reset?).")
+    return FileResponse(
+        fp, media_type="application/pdf",
+        headers={"Content-Disposition": f'inline; filename="{row.original_filename or "note.pdf"}"'},
+    )
+
+
+@router.delete("/{security_id}/note-details/file")
+def delete_note_details_file(security_id: int, db: Session = Depends(get_db)):
+    """Remove just the attached PDF — the structured term-sheet fields are kept."""
+    from app.models.master import SecurityNoteDetails
+    from app.services import note_document_store
+
+    row = db.query(SecurityNoteDetails).filter(SecurityNoteDetails.security_id == security_id).first()
+    if not row or not row.stored_filename:
+        raise HTTPException(status_code=404, detail="No info sheet on file for this security.")
+    note_document_store.remove(row.stored_filename)
+    row.stored_filename = None
+    row.original_filename = None
+    row.content_type = None
+    row.byte_size = None
+    row.uploaded_at = None
+    db.commit()
+    return {"deleted": True}

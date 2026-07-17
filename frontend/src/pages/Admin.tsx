@@ -5,12 +5,14 @@ import PlaidConnect from '../components/PlaidConnect'
 import Prices from './Prices'
 import { usePreference } from '../hooks/usePreference'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff } from 'lucide-react'
+import { Trash2, AlertTriangle, X, Edit2, Check, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Sparkles, Plus, Pencil, Search, Power, RotateCcw, CheckCircle, WifiOff, Loader2, Database, Zap, KeyRound, UserPlus, ShieldCheck, ShieldOff, Eye, EyeOff, FileText, Upload, ExternalLink } from 'lucide-react'
 import DatePicker from '../components/DatePicker'
 import {
   getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount,
   getSecurities, createSecurity, updateSecurity, deleteSecurity, deleteUnusedSecurities, mergeSecurities,
   fetchSecurityYahooInfo, searchYahooSecurities,
+  getNoteDetails, updateNoteDetails, uploadNoteDetailsFile, openNoteDetailsFile, deleteNoteDetailsFile,
+  type NoteDetails,
   getBrokerages, createBrokerage, updateBrokerage, deleteBrokerage,
   getTypeMappings, createTypeMapping, updateTypeMapping, deleteTypeMapping,
   getFxRates, refreshFxRates,
@@ -999,6 +1001,45 @@ function SecuritiesTab() {
     onError: () => setYahooPicker(p => p ? { ...p, applyMsg: 'Error applying info', loading: false } : p),
   })
 
+  // ── Note Details modal state ────────────────────────────────────────────────
+  const [noteDetailsFor, setNoteDetailsFor] = useState<Security | null>(null)
+  const [noteDetailsForm, setNoteDetailsForm] = useState<Partial<NoteDetails>>({})
+  const [noteDetailsUploading, setNoteDetailsUploading] = useState(false)
+  const [noteDetailsError, setNoteDetailsError] = useState<string | null>(null)
+
+  const { data: noteDetailsData } = useQuery({
+    queryKey: ['note-details', noteDetailsFor?.id],
+    queryFn: () => getNoteDetails(noteDetailsFor!.id),
+    enabled: !!noteDetailsFor,
+  })
+  useEffect(() => {
+    if (noteDetailsData) setNoteDetailsForm(noteDetailsData)
+  }, [noteDetailsData])
+
+  const openNoteDetails = (sec: Security) => {
+    setNoteDetailsFor(sec)
+    setNoteDetailsForm({})
+    setNoteDetailsError(null)
+  }
+
+  const saveNoteDetailsMut = useMutation({
+    mutationFn: () => updateNoteDetails(noteDetailsFor!.id, noteDetailsForm),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }),
+    onError: () => setNoteDetailsError('Failed to save.'),
+  })
+
+  const uploadNoteFileMut = useMutation({
+    mutationFn: (file: File) => uploadNoteDetailsFile(noteDetailsFor!.id, file),
+    onMutate: () => setNoteDetailsUploading(true),
+    onSuccess: () => { setNoteDetailsUploading(false); qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }) },
+    onError: () => { setNoteDetailsUploading(false); setNoteDetailsError('Upload failed — please upload a PDF.') },
+  })
+
+  const deleteNoteFileMut = useMutation({
+    mutationFn: () => deleteNoteDetailsFile(noteDetailsFor!.id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }),
+  })
+
   const [histFetchStatus, setHistFetchStatus] = useState<Record<number, 'pending' | 'ok' | 'err'>>({})
   const [activeHistJobs, setActiveHistJobs] = useState<Record<number, string>>({})
   const fetchHistMut = useMutation({
@@ -1296,6 +1337,13 @@ function SecuritiesTab() {
                                   <Sparkles className="h-3.5 w-3.5" />
                                 </button>
                                 <button
+                                  onClick={() => openNoteDetails(s)}
+                                  title="Note details — term-sheet fields + info-sheet PDF"
+                                  className="text-indigo-400 hover:text-indigo-600"
+                                >
+                                  <FileText className="h-3.5 w-3.5" />
+                                </button>
+                                <button
                                   onClick={() => fetchHistMut.mutate(s.id)}
                                   disabled={histFetchStatus[s.id] === 'pending'}
                                   title="Re-download price history for this security from Yahoo Finance"
@@ -1453,6 +1501,153 @@ function SecuritiesTab() {
           </div>
         )
       })()}
+
+      {/* Note Details Modal */}
+      {noteDetailsFor && (
+        <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 bg-black/30 overflow-y-auto" onClick={() => setNoteDetailsFor(null)}>
+          <div className="bg-white rounded-xl shadow-2xl w-[640px] max-h-[85vh] flex flex-col my-8" onClick={e => e.stopPropagation()}>
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b">
+              <div className="flex items-center gap-2">
+                <FileText className="h-4 w-4 text-indigo-500" />
+                <span className="font-semibold text-sm text-gray-800">
+                  Note Details — {noteDetailsFor.ticker}
+                </span>
+              </div>
+              <button onClick={() => setNoteDetailsFor(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+            </div>
+
+            <div className="overflow-y-auto px-4 py-4 space-y-5">
+              {/* Info-sheet file section */}
+              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Info Sheet</p>
+                {noteDetailsForm.original_filename ? (
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm text-gray-700 truncate">{noteDetailsForm.original_filename}</span>
+                    <div className="flex gap-2 flex-shrink-0">
+                      <button
+                        onClick={() => openNoteDetailsFile(noteDetailsFor.id)}
+                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                      >
+                        <ExternalLink className="h-3 w-3" /> View
+                      </button>
+                      <label className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 cursor-pointer">
+                        <Upload className="h-3 w-3" /> Replace
+                        <input type="file" accept="application/pdf" className="hidden"
+                          onChange={e => { const f = e.target.files?.[0]; if (f) uploadNoteFileMut.mutate(f); e.target.value = '' }} />
+                      </label>
+                      <button
+                        onClick={() => deleteNoteFileMut.mutate()}
+                        className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                      >
+                        <Trash2 className="h-3 w-3" /> Remove
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg py-4 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 cursor-pointer transition-colors">
+                    {noteDetailsUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
+                    {noteDetailsUploading ? 'Uploading…' : 'Upload PDF info sheet'}
+                    <input type="file" accept="application/pdf" className="hidden"
+                      onChange={e => { const f = e.target.files?.[0]; if (f) uploadNoteFileMut.mutate(f); e.target.value = '' }} />
+                  </label>
+                )}
+              </div>
+
+              {/* Terms */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Terms</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs text-gray-500 col-span-2">Reference Asset
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.reference_asset ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, reference_asset: e.target.value }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Payment Amount
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="$10.74 per Note" value={noteDetailsForm.payment_amount ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, payment_amount: e.target.value }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Payment Frequency
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Monthly" value={noteDetailsForm.payment_frequency ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, payment_frequency: e.target.value }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Payment Barrier (%)
+                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.payment_barrier_pct ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, payment_barrier_pct: e.target.value || null }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Autocall Level (%)
+                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.autocall_level_pct ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, autocall_level_pct: e.target.value || null }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Barrier Level (%)
+                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.barrier_level_pct ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, barrier_level_pct: e.target.value || null }))} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Identifiers */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Identifiers</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <label className="text-xs text-gray-500">Status
+                    <select className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.status ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, status: e.target.value || null }))}>
+                      <option value="">—</option>
+                      <option>Active</option>
+                      <option>Called</option>
+                      <option>Matured</option>
+                    </select>
+                  </label>
+                  <label className="text-xs text-gray-500">Product Category
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Callable Contingent Coupon/ROC" value={noteDetailsForm.product_category ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, product_category: e.target.value }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">CUSIP Code
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.cusip_code ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, cusip_code: e.target.value }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">ADP Code
+                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.adp_code ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, adp_code: e.target.value }))} />
+                  </label>
+                </div>
+              </div>
+
+              {/* Dates */}
+              <div>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dates</p>
+                <div className="grid grid-cols-3 gap-3">
+                  <label className="text-xs text-gray-500">Issue Date
+                    <input type="date" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.issue_date ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, issue_date: e.target.value || null }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Maturity Date
+                    <input type="date" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.maturity_date ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, maturity_date: e.target.value || null }))} />
+                  </label>
+                  <label className="text-xs text-gray-500">Term (years)
+                    <input type="number" step="0.1" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.term_years ?? ''}
+                      onChange={e => setNoteDetailsForm(f => ({ ...f, term_years: e.target.value || null }))} />
+                  </label>
+                </div>
+              </div>
+
+              {noteDetailsError && <p className="text-xs text-red-600">{noteDetailsError}</p>}
+            </div>
+
+            <div className="flex items-center justify-end gap-2 px-4 py-3 border-t">
+              <button onClick={() => setNoteDetailsFor(null)} className="text-sm text-gray-500 px-3 py-1.5 rounded hover:bg-gray-100">Cancel</button>
+              <button
+                onClick={() => saveNoteDetailsMut.mutate()}
+                disabled={saveNoteDetailsMut.isPending}
+                className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50"
+              >
+                {saveNoteDetailsMut.isPending ? 'Saving…' : 'Save'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

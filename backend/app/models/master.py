@@ -243,6 +243,48 @@ class SecurityFundamentals(Base):
     source:     Mapped[str] = mapped_column(String(20), nullable=False, default="yahoo")
 
 
+class SecurityNoteDetails(Base):
+    """
+    Manually-maintained term-sheet details for a structured note (or other manually-priced
+    security), plus an optional attached PDF info sheet. One row per security, upserted from
+    the Admin -> Securities "Note Details" modal. Not fetched from any market-data source —
+    everything here is entered by hand from the issuer's info sheet.
+    """
+    __tablename__ = "security_note_details"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    security_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="CASCADE"),
+        nullable=False, unique=True, index=True,
+    )
+
+    # ── Terms ─────────────────────────────────────────────────────────────────
+    reference_asset:     Mapped[Optional[str]] = mapped_column(String(200), nullable=True)
+    payment_amount:      Mapped[Optional[str]] = mapped_column(String(50), nullable=True)   # e.g. "$10.74 per Note"
+    payment_frequency:   Mapped[Optional[str]] = mapped_column(String(30), nullable=True)    # e.g. "Monthly"
+    payment_barrier_pct: Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)
+    autocall_level_pct:  Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)
+    barrier_level_pct:   Mapped[Optional[Decimal]] = mapped_column(Numeric(6, 2), nullable=True)
+
+    # ── Identifiers ───────────────────────────────────────────────────────────
+    status:           Mapped[Optional[str]] = mapped_column(String(30), nullable=True)   # Active/Called/Matured
+    product_category: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    cusip_code:       Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    adp_code:         Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+
+    # ── Dates ─────────────────────────────────────────────────────────────────
+    issue_date:    Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    maturity_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    term_years:    Mapped[Optional[Decimal]] = mapped_column(Numeric(5, 2), nullable=True)
+
+    # ── Attached info-sheet PDF (single file — replaced, not versioned) ───────
+    stored_filename:    Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    original_filename:  Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content_type:       Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    byte_size:          Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    uploaded_at:        Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
 class SecuritySignals(Base):
     """
     Computed technical signals derived from the local historical_prices table.

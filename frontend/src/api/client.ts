@@ -137,6 +137,51 @@ export const mergeSecurities = (sourceId: number, targetId: number) =>
     '/admin/securities/merge', { source_security_id: sourceId, target_security_id: targetId }).then(r => r.data)
 export const deleteUnusedSecurities = () => api.delete('/admin/bulk/securities').then(r => r.data)
 
+// ─── Note Details (structured notes, mortgages, etc.) ────────────────────────
+export interface NoteDetails {
+  reference_asset: string | null
+  payment_amount: string | null
+  payment_frequency: string | null
+  payment_barrier_pct: string | null
+  autocall_level_pct: string | null
+  barrier_level_pct: string | null
+  status: string | null
+  product_category: string | null
+  cusip_code: string | null
+  adp_code: string | null
+  issue_date: string | null
+  maturity_date: string | null
+  term_years: string | null
+  original_filename: string | null
+  content_type: string | null
+  byte_size: number | null
+  uploaded_at: string | null
+}
+
+export const getNoteDetails = (securityId: number) =>
+  api.get<NoteDetails>(`/securities/${securityId}/note-details`).then(r => r.data)
+
+export const updateNoteDetails = (securityId: number, data: Partial<NoteDetails>) =>
+  api.put<NoteDetails>(`/securities/${securityId}/note-details`, data).then(r => r.data)
+
+export const uploadNoteDetailsFile = (securityId: number, file: File) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post<NoteDetails>(`/securities/${securityId}/note-details/file`, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
+export const openNoteDetailsFile = async (securityId: number) => {
+  const r = await api.get(`/securities/${securityId}/note-details/file`, { responseType: 'blob' })
+  const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+export const deleteNoteDetailsFile = (securityId: number) =>
+  api.delete<{ deleted: boolean }>(`/securities/${securityId}/note-details/file`).then(r => r.data)
+
 // ─── Transactions ────────────────────────────────────────────────────────────
 export interface Transaction {
   id: number

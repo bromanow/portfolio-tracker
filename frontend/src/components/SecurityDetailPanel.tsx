@@ -1,8 +1,8 @@
 import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown } from 'lucide-react'
+import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown, FileText } from 'lucide-react'
 import TechnicalChart from './TechnicalChart'
-import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals, Account, Security, Transaction } from '../api/client'
+import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals, Account, Security, Transaction, NoteDetails } from '../api/client'
 import {
   getSecurityYahooDetail, getSecurityPriceHistory, getTransactions,
   getSecurityFundamentals, refreshSecurityFundamentals,
@@ -10,6 +10,7 @@ import {
   getAccounts, getSecurities, updateTransaction,
   getTypeOverrides, deleteTypeOverride,
   getSecurityNews,
+  getNoteDetails, openNoteDetailsFile,
 } from '../api/client'
 import {
   TransactionEditModal, prepareTransactionUpdate, fmtApiError,
@@ -200,6 +201,21 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     staleTime: 30 * 60 * 1000,
   })
   const funds: StoredFundamentals | undefined = fundsQ.data
+
+  // Note details (structured notes etc.) — Overview section, only rendered if populated
+  const noteQ = useQuery({
+    queryKey: ['note-details', secId],
+    queryFn: () => getNoteDetails(secId!),
+    enabled: !!secId && tab === 'overview',
+    staleTime: 5 * 60 * 1000,
+  })
+  const note: NoteDetails | undefined = noteQ.data
+  const hasNoteDetails = !!note && (
+    note.reference_asset || note.payment_amount || note.payment_frequency ||
+    note.payment_barrier_pct || note.autocall_level_pct || note.barrier_level_pct ||
+    note.status || note.product_category || note.cusip_code || note.adp_code ||
+    note.issue_date || note.maturity_date || note.term_years || note.original_filename
+  )
 
   // Stored signals (Signals tab + Overview badge)
   const sigQ = useQuery({
@@ -494,6 +510,42 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
                       </div>
                     </div>
                   ) : null}
+                </section>
+              )}
+
+              {/* Note details (structured notes etc.) */}
+              {hasNoteDetails && note && (
+                <section>
+                  <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
+                    Note Details
+                    {note.original_filename && (
+                      <button
+                        onClick={() => openNoteDetailsFile(secId!)}
+                        className="ml-2 inline-flex items-center gap-1 text-blue-500 normal-case font-normal hover:underline"
+                      >
+                        <FileText className="h-3 w-3" /> {note.original_filename} <ExternalLink className="h-3 w-3" />
+                      </button>
+                    )}
+                  </h3>
+                  <div className="grid grid-cols-2 gap-x-6">
+                    <div>
+                      <StatRow label="Reference Asset" value={note.reference_asset || '—'} />
+                      <StatRow label="Payment Amount" value={note.payment_amount || '—'} />
+                      <StatRow label="Payment Frequency" value={note.payment_frequency || '—'} />
+                      <StatRow label="Payment Barrier" value={note.payment_barrier_pct ? `${parseFloat(note.payment_barrier_pct).toFixed(2)}%` : '—'} />
+                      <StatRow label="Autocall Level" value={note.autocall_level_pct ? `${parseFloat(note.autocall_level_pct).toFixed(2)}%` : '—'} />
+                      <StatRow label="Barrier Level" value={note.barrier_level_pct ? `${parseFloat(note.barrier_level_pct).toFixed(2)}%` : '—'} />
+                    </div>
+                    <div>
+                      <StatRow label="Status" value={note.status || '—'} />
+                      <StatRow label="Product Category" value={note.product_category || '—'} />
+                      <StatRow label="CUSIP" value={note.cusip_code || '—'} />
+                      <StatRow label="ADP Code" value={note.adp_code || '—'} />
+                      <StatRow label="Issue Date" value={note.issue_date || '—'} />
+                      <StatRow label="Maturity Date" value={note.maturity_date || '—'} />
+                      <StatRow label="Term" value={note.term_years ? `${parseFloat(note.term_years).toFixed(1)} years` : '—'} />
+                    </div>
+                  </div>
                 </section>
               )}
 

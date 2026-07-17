@@ -599,12 +599,15 @@ function IncomeReport() {
       parseFloat(b.projected_annual_income_cad || '0') - parseFloat(a.projected_annual_income_cad || '0')),
     [projectedFiltered],
   )
+  const isDividendType = (t: string | null) => t === 'DIVIDEND' || t === 'DIVIDEND_EST'
+  const isInterestType = (t: string | null) => t === 'INTEREST' || t === 'INTEREST_EST'
+
   const projectedSubtotals = useMemo(() => {
     let dividend = 0, interest = 0, unrated = 0
     for (const r of projectedFiltered) {
       const income = parseFloat(r.projected_annual_income_cad || '0')
-      if (r.rate_type === 'DIVIDEND') dividend += income
-      else if (r.rate_type === 'INTEREST') interest += income
+      if (isDividendType(r.rate_type)) dividend += income
+      else if (isInterestType(r.rate_type)) interest += income
       else unrated += 1
     }
     return { dividend, interest, total: dividend + interest, unrated }
@@ -612,8 +615,8 @@ function IncomeReport() {
   const projectedChartData = useMemo(
     () => projectedSorted.slice(0, 20).map(r => ({
       ticker: r.ticker,
-      DIVIDEND: r.rate_type === 'DIVIDEND' ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
-      INTEREST: r.rate_type === 'INTEREST' ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+      DIVIDEND: isDividendType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+      INTEREST: isInterestType(r.rate_type) ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
     })),
     [projectedSorted],
   )
@@ -1029,13 +1032,22 @@ function IncomeReport() {
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.security_name || '—'}</td>
                           <td className="px-3 py-2 text-right text-gray-700">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
                           <td className="px-3 py-2">
-                            {r.rate_type && (
-                              <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${
-                                r.rate_type === 'DIVIDEND' ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700'
-                              }`}>
-                                {r.rate_type === 'DIVIDEND' ? 'Dividend' : 'Interest'}
-                              </span>
-                            )}
+                            {r.rate_type && (() => {
+                              const estimated = r.rate_type.endsWith('_EST')
+                              const dividend = isDividendType(r.rate_type)
+                              return (
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${
+                                    estimated
+                                      ? 'bg-amber-50 text-amber-700 border border-dashed border-amber-300'
+                                      : dividend ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700'
+                                  }`}
+                                  title={estimated ? 'No live yield or manual rate on file — estimated from actual trailing-12-month payments instead' : undefined}
+                                >
+                                  {dividend ? 'Dividend' : 'Interest'}{estimated ? ' (Est.)' : ''}
+                                </span>
+                              )
+                            })()}
                           </td>
                           <td className="px-3 py-2 text-right text-gray-500">{r.rate_pct ? `${parseFloat(r.rate_pct).toFixed(2)}%` : '—'}</td>
                           <td className="px-3 py-2 text-right font-semibold text-emerald-600">{r.projected_annual_income_cad ? fmtCAD(r.projected_annual_income_cad) : '—'}</td>

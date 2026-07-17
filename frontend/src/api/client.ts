@@ -682,7 +682,7 @@ export interface ProjectedIncomeRow {
   brokerage_name: string
   quantity: string
   market_value_cad: string | null
-  rate_type: 'DIVIDEND' | 'INTEREST' | null
+  rate_type: 'DIVIDEND' | 'INTEREST' | 'DIVIDEND_EST' | 'INTEREST_EST' | null
   rate_pct: string | null
   projected_annual_income_cad: string | null
 }

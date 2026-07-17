@@ -340,6 +340,68 @@ def get_consolidated_positions(
     return result
 
 
+def _trailing_realized_yield(db: Session, security_id: int, market_value_cad: "Decimal", today) -> tuple:
+    """
+    Fallback for securities with no live market yield and no manual interest_rate: derive a
+    rate from actual DIVIDEND/INTEREST/DRIP payments received over the trailing 365 days,
+    annualized if less than a full year of history exists. Returns (rate_type, rate_pct) or
+    (None, None) if there's not enough history to extrapolate responsibly (< 60 days observed,
+    or no income at all) — this is deliberately conservative since it's standing in for a
+    number nothing else can supply.
+
+    NOT written back to MarketPrice.dividend_yield / Security.interest_rate — trailing
+    realized income reflects the PAST payout, not the current declared policy, so blending it
+    into those fields would go stale exactly when a payout changes. Kept as a separately
+    labeled, on-the-fly estimate instead (see rate_type's "_EST" suffix).
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+    from datetime import timedelta
+    from app.models.transactions import Transaction as _Txn
+
+    if market_value_cad <= 0:
+        return None, None
+
+    cutoff = today - timedelta(days=365)
+    txns = (
+        db.query(_Txn)
+        .filter(
+            _Txn.security_id == security_id,
+            _Txn.transaction_type.in_(["DIVIDEND", "INTEREST", "DRIP"]),
+            _Txn.transaction_date >= cutoff,
+        )
+        .all()
+    )
+
+    dividend_total = Decimal("0")
+    interest_total = Decimal("0")
+    earliest = None
+    for t in txns:
+        amt = t.cad_amount if t.cad_amount is not None else t.account_currency_amount
+        if amt is None:
+            continue
+        if t.transaction_type == "DRIP" and amt < 0:
+            continue   # iTrade DRIP purchase leg, not income — mirrors get_investment_income's rule
+        if t.transaction_type == "INTEREST":
+            interest_total += amt
+        else:
+            dividend_total += amt
+        if earliest is None or t.transaction_date < earliest:
+            earliest = t.transaction_date
+
+    total = dividend_total + interest_total
+    if total <= 0 or earliest is None:
+        return None, None
+
+    days_observed = max((today - earliest).days, 1)
+    if days_observed < 60:
+        return None, None   # too short a window to annualize responsibly
+
+    annualized = total * Decimal("365") / Decimal(days_observed)
+    rate_type = "INTEREST_EST" if interest_total >= dividend_total else "DIVIDEND_EST"
+    rate_pct = (annualized / market_value_cad * Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    return rate_type, rate_pct
+
+
 @router.get("/income/projected")
 def get_projected_income(
     account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
@@ -355,10 +417,13 @@ def get_projected_income(
     securities are already priced at par/unit ($100 for notes, $1 for mortgages/savings), so
     market_value_cad already equals face value for them — no separate face-value field needed.
 
-    Securities with no rate on file are still returned (income blank), so this report doubles
-    as an audit of missing-rate holdings rather than silently hiding them.
+    Securities with neither a live yield nor a manual rate fall back to a trailing-12-month
+    realized yield derived from actual income transactions (see _trailing_realized_yield) —
+    labeled DIVIDEND_EST / INTEREST_EST so it's never confused with a market-sourced number.
+    Anything still left blank after that genuinely has no rate and no payment history.
     """
     from decimal import Decimal, ROUND_HALF_UP
+    from datetime import date as _date
     from app.models.master import Security as _Security
     from app.models.prices import MarketPrice as _MarketPrice
 
@@ -377,6 +442,7 @@ def get_projected_income(
         for mp in db.query(_MarketPrice).filter(_MarketPrice.security_id.in_(sec_ids)).all()
     }
 
+    today = _date.today()
     rows = []
     for p in positions:
         if p["asset_class"] == "OPTION":
@@ -397,6 +463,9 @@ def get_projected_income(
             rate = interest_rates.get(p["security_id"])
         else:
             rate_type, rate = None, None
+
+        if rate is None:
+            rate_type, rate = _trailing_realized_yield(db, p["security_id"], mv, today)
 
         projected = None
         if rate is not None:

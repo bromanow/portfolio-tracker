@@ -563,6 +563,7 @@ def get_investment_income(
             "account_name": acct.name if acct else "",
             "account_type": acct.account_type if acct else None,
             "brokerage_name": (acct.brokerage.name if acct and acct.brokerage else ""),
+            "security_id": txn.security_id,
             "ticker": sec.ticker if sec else "",
             "transaction_type": txn.transaction_type,
             "amount_cad": str(amount_cad) if amount_cad is not None else "0",

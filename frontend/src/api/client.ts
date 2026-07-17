@@ -113,6 +113,7 @@ export interface Security {
 
 export const getSecurities = (params?: { search?: string; asset_class?: string }) =>
   api.get<Security[]>('/securities', { params }).then(r => r.data)
+export const getSecurity = (id: number) => api.get<Security>(`/securities/${id}`).then(r => r.data)
 export const createSecurity = (data: Partial<Security>) => api.post<Security>('/securities', data).then(r => r.data)
 export const updateSecurity = (id: number, data: Partial<Security>) => api.put<Security>(`/securities/${id}`, data).then(r => r.data)
 export interface YahooSearchResult {
@@ -666,6 +667,7 @@ export interface IncomeItem {
   account_name: string
   account_type: string | null
   brokerage_name: string
+  security_id: number | null
   ticker: string
   transaction_type: string
   amount_cad: string

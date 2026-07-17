@@ -611,17 +611,34 @@ function IncomeReport() {
   )
 
   // Security view groups
+  // Two-level: Security → Account. A security held across multiple accounts (e.g. DE in
+  // both TFSA and RRSP) gets one subtotal per account rather than a single blended figure.
   const incomeSecurityGroups = useMemo(() => {
-    const m = new Map<string, { ticker: string; rows: IncomeItem[]; total: number }>()
+    type AcctGroup = { key: string; account: string; rows: IncomeItem[]; total: number }
+    type SecGroup = { key: string; ticker: string; total: number; accounts: AcctGroup[] }
+    const secMap = new Map<string, SecGroup>()
     for (const item of filtered) {
-      const key = item.ticker || '(none)'
-      if (!m.has(key)) m.set(key, { ticker: key, rows: [], total: 0 })
-      const entry = m.get(key)!
-      entry.rows.push(item)
-      entry.total += parseFloat(item.amount_cad)
+      const sKey = item.ticker || '(none)'
+      if (!secMap.has(sKey)) secMap.set(sKey, { key: sKey, ticker: sKey, total: 0, accounts: [] })
+      const sec = secMap.get(sKey)!
+
+      const aKey = item.account_name
+      let acct = sec.accounts.find(a => a.key === aKey)
+      if (!acct) { acct = { key: aKey, account: aKey, rows: [], total: 0 }; sec.accounts.push(acct) }
+
+      const amt = parseFloat(item.amount_cad)
+      sec.total += amt
+      acct.total += amt
+      acct.rows.push(item)
     }
-    return [...m.values()].sort((a, b) => b.total - a.total)
-      .map(e => ({ ...e, rows: sortRows(e.rows, sort.col, sort.dir) }))
+    return [...secMap.values()]
+      .sort((a, b) => b.total - a.total)
+      .map(sec => ({
+        ...sec,
+        accounts: sec.accounts
+          .sort((a, b) => b.total - a.total)
+          .map(a => ({ ...a, rows: sortRows(a.rows, sort.col, sort.dir) })),
+      }))
   }, [filtered, sort])
 
   const totalAll      = rows.reduce((s, i)     => s + parseFloat(i.amount_cad), 0)
@@ -949,26 +966,42 @@ function IncomeReport() {
                         {incomeSecurityGroups.length === 0 && (
                           <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No income transactions found.</td></tr>
                         )}
-                        {incomeSecurityGroups.map(({ ticker, rows: secRows, total }) => (
-                          <Fragment key={ticker}>
-                            {secRows.map((item, i) => (
-                              <tr key={i} className="hover:bg-gray-50">
-                                <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
-                                <td className="px-3 py-1.5 text-xs text-gray-600 whitespace-nowrap">{item.account_name}</td>
-                                <td className="px-3 py-1.5"><AccountTypeBadge type={item.account_type} /></td>
-                                <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
-                                <td className="px-3 py-1.5">
-                                  <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
-                                </td>
-                                <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}</td>
-                                <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
-                              </tr>
-                            ))}
-                            <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
-                              <td className="px-3 py-1.5 text-blue-700" colSpan={1}>{secRows.length} txns</td>
-                              <td className="px-3 py-1.5 text-blue-800 font-mono" colSpan={5}>{ticker} subtotal</td>
-                              <td className="px-3 py-1.5 text-right text-blue-700">{fmtCAD(total)}</td>
+                        {incomeSecurityGroups.map(sec => (
+                          <Fragment key={sec.key}>
+                            {/* Security header */}
+                            <tr className="bg-slate-100">
+                              <td className="px-3 py-2" />
+                              <td className="px-3 py-2 font-mono font-semibold text-slate-800 text-sm" colSpan={5}>
+                                {sec.ticker}
+                                <span className="ml-2 text-xs font-normal text-slate-500">
+                                  {sec.accounts.length} account{sec.accounts.length !== 1 ? 's' : ''}
+                                </span>
+                              </td>
+                              <td className="px-3 py-2 text-right font-bold text-blue-700">{fmtCAD(sec.total)}</td>
                             </tr>
+
+                            {sec.accounts.map(acct => (
+                              <Fragment key={acct.key}>
+                                {acct.rows.map((item, i) => (
+                                  <tr key={i} className="hover:bg-gray-50">
+                                    <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
+                                    <td className="px-3 py-1.5 font-mono text-xs font-medium text-blue-700 whitespace-nowrap">{item.ticker}</td>
+                                    <td className="px-3 py-1.5"><AccountTypeBadge type={item.account_type} /></td>
+                                    <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
+                                    <td className="px-3 py-1.5">
+                                      <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
+                                    </td>
+                                    <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}</td>
+                                    <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
+                                  </tr>
+                                ))}
+                                <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
+                                  <td className="px-3 py-1.5 text-blue-700" colSpan={1}>{acct.rows.length} txns</td>
+                                  <td className="px-3 py-1.5 text-blue-800" colSpan={5}>{acct.account} subtotal</td>
+                                  <td className="px-3 py-1.5 text-right text-blue-700">{fmtCAD(acct.total)}</td>
+                                </tr>
+                              </Fragment>
+                            ))}
                           </Fragment>
                         ))}
                       </>

@@ -591,7 +591,9 @@ function IncomeReport() {
   // ── Projected Income (current holdings × dividend yield / interest rate) ──────
   const projectedRows = projectedIncome as ProjectedIncomeRow[]
   const projectedFiltered = useMemo(
-    () => projectedRows.filter(r => !brokerageFilter || r.brokerage_name === brokerageFilter),
+    () => projectedRows.filter(r =>
+      (!brokerageFilter || r.brokerage_name === brokerageFilter) &&
+      parseFloat(r.projected_annual_income_cad || '0') > 0),
     [projectedRows, brokerageFilter],
   )
   const projectedSorted = useMemo(
@@ -603,14 +605,13 @@ function IncomeReport() {
   const isInterestType = (t: string | null) => t === 'INTEREST' || t === 'INTEREST_EST'
 
   const projectedSubtotals = useMemo(() => {
-    let dividend = 0, interest = 0, unrated = 0
+    let dividend = 0, interest = 0
     for (const r of projectedFiltered) {
       const income = parseFloat(r.projected_annual_income_cad || '0')
       if (isDividendType(r.rate_type)) dividend += income
       else if (isInterestType(r.rate_type)) interest += income
-      else unrated += 1
     }
-    return { dividend, interest, total: dividend + interest, unrated }
+    return { dividend, interest, total: dividend + interest }
   }, [projectedFiltered])
   const projectedChartData = useMemo(
     () => projectedSorted.slice(0, 20).map(r => ({
@@ -970,11 +971,6 @@ function IncomeReport() {
                 <span className="text-sm text-gray-600">
                   Interest: <span className="font-semibold text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</span>
                 </span>
-                {projectedSubtotals.unrated > 0 && (
-                  <span className="text-xs text-amber-600">
-                    {projectedSubtotals.unrated} holding{projectedSubtotals.unrated !== 1 ? 's' : ''} missing a yield/rate
-                  </span>
-                )}
               </div>
 
               {projectedChartData.length > 0 && (

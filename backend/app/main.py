@@ -162,6 +162,7 @@ def _run_migrations(eng):
         ("scanner_results",  "dividend_yield",           "FLOAT"),
         ("ibkr_flex_configs", "last_sync_details",        "TEXT"),
         ("securities",        "in_screener_universe",     "BOOLEAN DEFAULT FALSE"),
+        ("securities",        "interest_rate",            "NUMERIC(10, 6)"),
         ("clients",           "is_demo",                  "BOOLEAN DEFAULT FALSE"),
     ]
     with eng.connect() as conn:

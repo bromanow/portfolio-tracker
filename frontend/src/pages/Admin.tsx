@@ -1061,7 +1061,7 @@ function SecuritiesTab() {
           <select className="border rounded px-3 py-1.5 text-sm" value={assetClassFilter}
             onChange={e => { setAssetClassFilter(e.target.value); setPage(1) }}>
             <option value="">All</option>
-            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME'].map(t => <option key={t} value={t}>{t}</option>)}
+            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT'].map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         {(assetClassFilter === 'OPTION' || assetClassFilter === '') && (
@@ -1140,7 +1140,7 @@ function SecuritiesTab() {
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <select className="border rounded px-3 py-1.5 text-sm" value={form.asset_class}
             onChange={e => setForm(f => ({ ...f, asset_class: e.target.value }))}>
-            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME'].map(t => <option key={t}>{t}</option>)}
+            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT'].map(t => <option key={t}>{t}</option>)}
           </select>
           <select className="border rounded px-3 py-1.5 text-sm" value={form.currency}
             onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
@@ -1163,6 +1163,7 @@ function SecuritiesTab() {
               <SortTh label="Asset Class" col="asset_class" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Exchange" col="exchange" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Currency" col="currency" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
+              <SortTh label="Interest Rate (%)" col="interest_rate" sort={sort} toggle={toggle} className="px-3 py-3 text-right" />
               <SortTh label="Txns" col="transaction_count" sort={sort} toggle={toggle} className="px-3 py-3 text-right" />
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
@@ -1218,7 +1219,7 @@ function SecuritiesTab() {
                             </td>
                             <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.asset_class ?? s.asset_class}
                               onChange={e => setEditData(d => ({ ...d, asset_class: e.target.value }))}>
-                              {['EQUITY', 'ETF', 'MUTUAL_FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME'].map(t => <option key={t}>{t}</option>)}
+                              {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT'].map(t => <option key={t}>{t}</option>)}
                             </select></td>
                             <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-24"
                               list="exchange-options"
@@ -1227,6 +1228,13 @@ function SecuritiesTab() {
                               onChange={e => setEditData(d => ({ ...d, currency: e.target.value }))}>
                               <option>CAD</option><option>USD</option>
                             </select></td>
+                            <td className="px-3 py-2 text-right">
+                              <input type="number" step="0.01" className="border rounded px-2 py-1 text-xs w-20 text-right"
+                                placeholder="—"
+                                title="Annual coupon/interest rate (%) — for structured notes, mortgages, and other manually-priced interest-bearing securities. Used by the Projected Income report."
+                                value={editData.interest_rate ?? (s.interest_rate ?? '')}
+                                onChange={e => setEditData(d => ({ ...d, interest_rate: e.target.value || null }))} />
+                            </td>
                             <td className="px-3 py-2 text-right text-xs text-gray-400">{s.transaction_count}</td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex gap-2 justify-end">
@@ -1268,6 +1276,7 @@ function SecuritiesTab() {
                             <td className="px-3 py-2.5 text-xs text-gray-500">{s.asset_class}</td>
                             <td className="px-3 py-2.5 text-xs text-gray-500">{s.exchange || '—'}</td>
                             <td className="px-3 py-2.5 text-xs">{s.currency || '—'}</td>
+                            <td className="px-3 py-2.5 text-right text-xs text-gray-600">{s.interest_rate ? `${s.interest_rate}%` : '—'}</td>
                             <td className="px-3 py-2.5 text-right">
                               <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
                                 s.transaction_count === 0 ? 'text-gray-400 bg-gray-100' :
@@ -1307,10 +1316,10 @@ function SecuritiesTab() {
                     )
                   })}
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={7} className="px-3 py-8 text-center text-sm text-gray-400">No securities match the current filters.</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-400">No securities match the current filters.</td></tr>
                   )}
                   <tr>
-                    <td colSpan={7} className="px-3 py-2 border-t border-gray-200 bg-gray-50">
+                    <td colSpan={8} className="px-3 py-2 border-t border-gray-200 bg-gray-50">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center gap-2 text-xs text-gray-500">
                           <span>Rows per page:</span>

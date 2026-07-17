@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -22,6 +23,7 @@ class SecurityCreate(BaseModel):
     country: Optional[str] = None
     currency: Optional[str] = None
     is_option: bool = False
+    interest_rate: Optional[Decimal] = None
 
 
 class SecurityUpdate(BaseModel):
@@ -35,6 +37,7 @@ class SecurityUpdate(BaseModel):
     currency: Optional[str] = None
     fetch_ticker_override: Optional[str] = None
     description: Optional[str] = None
+    interest_rate: Optional[Decimal] = None
 
 
 def security_to_dict(s: Security, transaction_count: int = 0) -> dict:
@@ -52,6 +55,7 @@ def security_to_dict(s: Security, transaction_count: int = 0) -> dict:
         "transaction_count": transaction_count,
         "fetch_ticker_override": s.fetch_ticker_override,
         "description": s.description,
+        "interest_rate": str(s.interest_rate) if s.interest_rate is not None else None,
     }
 
 

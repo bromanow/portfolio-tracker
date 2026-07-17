@@ -340,6 +340,93 @@ def get_consolidated_positions(
     return result
 
 
+@router.get("/income/projected")
+def get_projected_income(
+    account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Projected ANNUAL income by currently-held security: dividend income (equities/ETFs/funds,
+    via MarketPrice.dividend_yield) and interest income (structured notes/mortgages/savings/
+    fixed income, via the manually-maintained Security.interest_rate) — both stored as
+    percentages, both applied the same way: projected_annual_income_cad = market_value_cad *
+    rate / 100. That formula works uniformly because manually-priced interest-bearing
+    securities are already priced at par/unit ($100 for notes, $1 for mortgages/savings), so
+    market_value_cad already equals face value for them — no separate face-value field needed.
+
+    Securities with no rate on file are still returned (income blank), so this report doubles
+    as an audit of missing-rate holdings rather than silently hiding them.
+    """
+    from decimal import Decimal, ROUND_HALF_UP
+    from app.models.master import Security as _Security
+    from app.models.prices import MarketPrice as _MarketPrice
+
+    positions = get_consolidated_positions(as_of=None, account_ids=account_ids, db=db, current_user=current_user)
+
+    DIVIDEND_CLASSES = {"EQUITY", "ETF", "FUND", "MUTUAL_FUND"}
+    INTEREST_CLASSES = {"STRUCTURED_NOTE", "MORTGAGE", "SAVINGS_ACCOUNT", "FIXED_INCOME"}
+
+    sec_ids = [p["security_id"] for p in positions if p.get("security_id")]
+    interest_rates = {
+        s.id: s.interest_rate
+        for s in db.query(_Security).filter(_Security.id.in_(sec_ids)).all()
+    }
+    dividend_yields = {
+        mp.security_id: mp.dividend_yield
+        for mp in db.query(_MarketPrice).filter(_MarketPrice.security_id.in_(sec_ids)).all()
+    }
+
+    rows = []
+    for p in positions:
+        if p["asset_class"] == "OPTION":
+            continue
+        qty = Decimal(p["total_quantity"] or "0")
+        if qty <= 0:
+            continue
+        mv = Decimal(p["market_value_cad"]) if p.get("market_value_cad") else None
+        if mv is None or mv <= 0:
+            continue
+
+        asset_class = p["asset_class"]
+        if asset_class in DIVIDEND_CLASSES:
+            rate_type = "DIVIDEND"
+            rate = dividend_yields.get(p["security_id"])
+        elif asset_class in INTEREST_CLASSES:
+            rate_type = "INTEREST"
+            rate = interest_rates.get(p["security_id"])
+        else:
+            rate_type, rate = None, None
+
+        projected = None
+        if rate is not None:
+            projected = (mv * Decimal(str(rate)) / Decimal("100")).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+        # Dominant brokerage (largest quantity) — mirrors PositionsPanel.tsx's
+        # dominantBrokerage() for positions split across multiple accounts/brokerages.
+        best_brokerage, best_qty = "—", Decimal("-1")
+        for a in p.get("accounts", []):
+            aq = abs(Decimal(a.get("quantity") or "0"))
+            if aq > best_qty:
+                best_qty, best_brokerage = aq, a.get("brokerage") or "—"
+
+        rows.append({
+            "security_id": p["security_id"],
+            "ticker": p["ticker"],
+            "security_name": p["security_name"],
+            "asset_class": asset_class,
+            "brokerage_name": best_brokerage,
+            "quantity": p["total_quantity"],
+            "market_value_cad": p["market_value_cad"],
+            "rate_type": rate_type,
+            "rate_pct": str(rate) if rate is not None else None,
+            "projected_annual_income_cad": str(projected) if projected is not None else None,
+        })
+
+    rows.sort(key=lambda r: Decimal(r["projected_annual_income_cad"] or "0"), reverse=True)
+    return rows
+
+
 @router.get("/summary-metrics")
 def get_summary_metrics(
     account_ids: Optional[str] = Query(None),

@@ -108,6 +108,7 @@ export interface Security {
   transaction_count: number
   fetch_ticker_override: string | null
   description: string | null
+  interest_rate: string | null
 }
 
 export const getSecurities = (params?: { search?: string; asset_class?: string }) =>
@@ -619,6 +620,21 @@ export interface IncomeItem {
 }
 export const getInvestmentIncome = (params?: { account_id?: number; account_ids?: string; year?: number; brokerage_name?: string }) =>
   api.get<IncomeItem[]>('/portfolio/income', { params }).then(r => r.data)
+
+export interface ProjectedIncomeRow {
+  security_id: number
+  ticker: string
+  security_name: string | null
+  asset_class: string
+  brokerage_name: string
+  quantity: string
+  market_value_cad: string | null
+  rate_type: 'DIVIDEND' | 'INTEREST' | null
+  rate_pct: string | null
+  projected_annual_income_cad: string | null
+}
+export const getProjectedIncome = (params?: { account_ids?: string }) =>
+  api.get<ProjectedIncomeRow[]>('/portfolio/income/projected', { params }).then(r => r.data)
 export const getAcbReport = (params?: { account_id?: number; as_of?: string }) =>
   api.get('/portfolio/acb', { params }).then(r => r.data)
 export const getAssetAllocation = (params?: { as_of?: string }) =>

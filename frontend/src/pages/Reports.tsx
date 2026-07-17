@@ -2,7 +2,7 @@ import { useState, useMemo, useEffect, Fragment, useCallback } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, LabelList,
-  Treemap, Cell, ResponsiveContainer, LineChart, Line,
+  Treemap, Cell, ResponsiveContainer, LineChart, Line, Pie, PieChart,
 } from 'recharts'
 import {
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight, ChevronLeft,
@@ -11,12 +11,12 @@ import {
   Download, FileText, List,
 } from 'lucide-react'
 import {
-  getRealizedPnl, getInvestmentIncome, getAccounts, getCashStatement,
+  getRealizedPnl, getInvestmentIncome, getProjectedIncome, getAccounts, getCashStatement,
   getPortfolioHistory, getPortfolioContinuity,
   getMonthlyReturns, getReturnsDetail, getFxRates,
   computeSnapshots, purgeSnapshots, refreshSnapshotViews, getSnapshotViewStatus,
 } from '../api/client'
-import type { Account, IncomeItem, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
+import type { Account, IncomeItem, ProjectedIncomeRow, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import Transactions from './Transactions'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import DatePicker from '../components/DatePicker'
@@ -445,12 +445,13 @@ type IncomeTreeAcct = { key: string; account: string; brokerage: string; total: 
 type IncomeTreeBrok = { key: string; brokerage: string; total: number; accounts: IncomeTreeAcct[] }
 
 function IncomeReport() {
+  const currentYear = new Date().getFullYear()
   const [accountId, setAccountId]             = useState('')
   const [brokerageFilter, setBrokerageFilter] = useState('')
-  const [year, setYear]                       = useState('')
+  const [year, setYear]                       = useState(String(currentYear))
+  const [reportMode, setReportMode] = useState<'historical' | 'projected'>('historical')
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accounts as Account[]
-  const currentYear = new Date().getFullYear()
   const years = Array.from({ length: 8 }, (_, i) => currentYear - i)
 
   // Default account_ids to all user accounts so non-admin users are always scoped
@@ -465,7 +466,14 @@ function IncomeReport() {
       account_ids: accountId ? String(accountId) : defaultAccountIds,
       year: year ? Number(year) : undefined,
     }),
-    enabled: defaultAccountIds !== undefined,
+    enabled: reportMode === 'historical' && defaultAccountIds !== undefined,
+  })
+  const { data: projectedIncome = [], isLoading: projectedLoading } = useQuery({
+    queryKey: ['projected-income', accountId, defaultAccountIds],
+    queryFn: () => getProjectedIncome({
+      account_ids: accountId ? String(accountId) : defaultAccountIds,
+    }),
+    enabled: reportMode === 'projected' && defaultAccountIds !== undefined,
   })
   const { sort, toggle } = useSortState('date', 'desc')
   const [tickerFilter, setTickerFilter] = useState('')
@@ -580,6 +588,43 @@ function IncomeReport() {
   const totalAll      = rows.reduce((s, i)     => s + parseFloat(i.amount_cad), 0)
   const totalFiltered = filtered.reduce((s, i) => s + parseFloat(i.amount_cad), 0)
 
+  // ── Projected Income (current holdings × dividend yield / interest rate) ──────
+  const projectedRows = projectedIncome as ProjectedIncomeRow[]
+  const projectedFiltered = useMemo(
+    () => projectedRows.filter(r => !brokerageFilter || r.brokerage_name === brokerageFilter),
+    [projectedRows, brokerageFilter],
+  )
+  const projectedSorted = useMemo(
+    () => [...projectedFiltered].sort((a, b) =>
+      parseFloat(b.projected_annual_income_cad || '0') - parseFloat(a.projected_annual_income_cad || '0')),
+    [projectedFiltered],
+  )
+  const projectedSubtotals = useMemo(() => {
+    let dividend = 0, interest = 0, unrated = 0
+    for (const r of projectedFiltered) {
+      const income = parseFloat(r.projected_annual_income_cad || '0')
+      if (r.rate_type === 'DIVIDEND') dividend += income
+      else if (r.rate_type === 'INTEREST') interest += income
+      else unrated += 1
+    }
+    return { dividend, interest, total: dividend + interest, unrated }
+  }, [projectedFiltered])
+  const projectedChartData = useMemo(
+    () => projectedSorted.slice(0, 20).map(r => ({
+      ticker: r.ticker,
+      DIVIDEND: r.rate_type === 'DIVIDEND' ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+      INTEREST: r.rate_type === 'INTEREST' ? +(parseFloat(r.projected_annual_income_cad || '0')).toFixed(2) : 0,
+    })),
+    [projectedSorted],
+  )
+  const projectedPieData = useMemo(
+    () => [
+      { name: 'Dividend', value: +projectedSubtotals.dividend.toFixed(2), fill: COLORS[0] },
+      { name: 'Interest', value: +projectedSubtotals.interest.toFixed(2), fill: COLORS[1] },
+    ].filter(d => d.value > 0),
+    [projectedSubtotals],
+  )
+
   // Custom Treemap cell renderer
   const renderTreemapCell = (props: Record<string, unknown>) => {
     const x = props.x as number, y = props.y as number
@@ -623,6 +668,16 @@ function IncomeReport() {
 
   return (
     <div className="space-y-6">
+      {/* Mode toggle */}
+      <div className="flex gap-1">
+        {(['historical', 'projected'] as const).map(m => (
+          <button key={m} onClick={() => setReportMode(m)}
+            className={`px-3 py-1.5 text-sm rounded-lg border capitalize ${reportMode === m ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+            {m === 'historical' ? 'Historical' : 'Projected'}
+          </button>
+        ))}
+      </div>
+
       {/* Parameters */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
@@ -639,24 +694,28 @@ function IncomeReport() {
             {allAccts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
         </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">Year</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={year} onChange={e => setYear(e.target.value)}>
-            <option value="">All years</option>
-            {years.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">From Date</label>
-          <DatePicker value={dateFrom || ''} onChange={setDateFrom} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
-        </div>
-        <div>
-          <label className="block text-xs text-gray-500 mb-1">To Date</label>
-          <DatePicker value={dateTo || ''} onChange={setDateTo} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
-        </div>
+        {reportMode === 'historical' && (
+          <>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">Year</label>
+              <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={year} onChange={e => setYear(e.target.value)}>
+                <option value="">All years</option>
+                {years.map(y => <option key={y} value={y}>{y}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">From Date</label>
+              <DatePicker value={dateFrom || ''} onChange={setDateFrom} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
+            </div>
+            <div>
+              <label className="block text-xs text-gray-500 mb-1">To Date</label>
+              <DatePicker value={dateTo || ''} onChange={setDateTo} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
+            </div>
+          </>
+        )}
       </div>
 
-      {isLoading
+      {reportMode === 'historical' && (isLoading
         ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
         : (
           <div className="space-y-6">
@@ -891,7 +950,123 @@ function IncomeReport() {
               </div>
             </div>
           </div>
-        )}
+        ))}
+
+      {reportMode === 'projected' && (
+        projectedLoading
+          ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
+          : (
+            <div className="space-y-6">
+              <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
+                <span className="text-sm font-medium text-gray-700">
+                  Projected Annual Income: <span className="font-bold text-base text-blue-700">{fmtCAD(projectedSubtotals.total)}</span>
+                </span>
+                <span className="text-sm text-gray-600">
+                  Dividend: <span className="font-semibold text-emerald-600">{fmtCAD(projectedSubtotals.dividend)}</span>
+                </span>
+                <span className="text-sm text-gray-600">
+                  Interest: <span className="font-semibold text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</span>
+                </span>
+                {projectedSubtotals.unrated > 0 && (
+                  <span className="text-xs text-amber-600">
+                    {projectedSubtotals.unrated} holding{projectedSubtotals.unrated !== 1 ? 's' : ''} missing a yield/rate
+                  </span>
+                )}
+              </div>
+
+              {projectedChartData.length > 0 && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Projected Income by Security (top 20)</h3>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={projectedChartData} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
+                        <XAxis dataKey="ticker" tick={{ fontSize: 10 }} interval={0} angle={-40} textAnchor="end" height={60} />
+                        <YAxis tick={{ fontSize: 10 }} tickFormatter={v => `$${v}`} />
+                        <Tooltip formatter={(v: number) => fmtCAD(v)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                        <Bar dataKey="DIVIDEND" name="Dividend" stackId="a" fill={COLORS[0]} />
+                        <Bar dataKey="INTEREST" name="Interest" stackId="a" fill={COLORS[1]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+
+                  <div className="bg-white rounded-xl border border-gray-200 p-4">
+                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Dividend vs. Interest</h3>
+                    <ResponsiveContainer width="100%" height={260}>
+                      <PieChart>
+                        <Pie data={projectedPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={90} label>
+                          {projectedPieData.map((d, i) => <Cell key={i} fill={d.fill} />)}
+                        </Pie>
+                        <Tooltip formatter={(v: number) => fmtCAD(v)} />
+                        <Legend wrapperStyle={{ fontSize: 11 }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+
+              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-sm divide-y divide-gray-100">
+                    <thead className="bg-gray-50">
+                      <tr className="text-xs text-gray-500 uppercase">
+                        <th className="px-3 py-2.5 text-left">Symbol</th>
+                        <th className="px-3 py-2.5 text-left">Name</th>
+                        <th className="px-3 py-2.5 text-right">Qty Held</th>
+                        <th className="px-3 py-2.5 text-left">Type</th>
+                        <th className="px-3 py-2.5 text-right">Rate</th>
+                        <th className="px-3 py-2.5 text-right">Projected Annual Income (CAD)</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {projectedSorted.length === 0 && (
+                        <tr><td colSpan={6} className="px-4 py-8 text-center text-gray-400">No current holdings found.</td></tr>
+                      )}
+                      {projectedSorted.map(r => (
+                        <tr key={r.security_id} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 font-mono font-semibold text-blue-700">{r.ticker}</td>
+                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.security_name || '—'}</td>
+                          <td className="px-3 py-2 text-right text-gray-700">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                          <td className="px-3 py-2">
+                            {r.rate_type && (
+                              <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${
+                                r.rate_type === 'DIVIDEND' ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700'
+                              }`}>
+                                {r.rate_type === 'DIVIDEND' ? 'Dividend' : 'Interest'}
+                              </span>
+                            )}
+                          </td>
+                          <td className="px-3 py-2 text-right text-gray-500">{r.rate_pct ? `${parseFloat(r.rate_pct).toFixed(2)}%` : '—'}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-600">{r.projected_annual_income_cad ? fmtCAD(r.projected_annual_income_cad) : '—'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    {projectedSorted.length > 0 && (
+                      <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
+                        <tr>
+                          <td className="px-4 py-2.5 text-gray-500" colSpan={3}>Dividend Subtotal</td>
+                          <td className="px-4 py-2.5" colSpan={2} />
+                          <td className="px-4 py-2.5 text-right text-emerald-600">{fmtCAD(projectedSubtotals.dividend)}</td>
+                        </tr>
+                        <tr>
+                          <td className="px-4 py-2.5 text-gray-500" colSpan={3}>Interest Subtotal</td>
+                          <td className="px-4 py-2.5" colSpan={2} />
+                          <td className="px-4 py-2.5 text-right text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</td>
+                        </tr>
+                        <tr className="border-t border-gray-200">
+                          <td className="px-4 py-2.5 text-gray-700" colSpan={3}>Grand Total</td>
+                          <td className="px-4 py-2.5" colSpan={2} />
+                          <td className="px-4 py-2.5 text-right text-blue-700">{fmtCAD(projectedSubtotals.total)}</td>
+                        </tr>
+                      </tfoot>
+                    )}
+                  </table>
+                </div>
+              </div>
+            </div>
+          )
+      )}
     </div>
   )
 }

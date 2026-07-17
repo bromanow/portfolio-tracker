@@ -171,6 +171,24 @@ def _run_ibeam_health_check() -> str:
     return f"ok (down={is_down})"
 
 
+def _run_weekly_fundamentals_refresh() -> str:
+    """
+    Refresh Yahoo fundamentals (dividend yield, beta, market cap, etc.) for all non-option
+    securities, keeping MarketPrice.dividend_yield fresh for the Projected Income report.
+    This calls yfinance's heavier ticker.info() per security (unlike the fast_info-based
+    price refresh, which has no dividend-yield field at all) — deliberately weekly, not
+    nightly, to avoid rate-limiting/slowing down the regular price refresh."""
+    from app.database import SessionLocal
+    from app.services.signals_service import refresh_fundamentals_all
+
+    db = SessionLocal()
+    try:
+        result = refresh_fundamentals_all(db)
+        return str(result)
+    finally:
+        db.close()
+
+
 def _run_nightly_snapshot_refresh() -> str:
     """Refresh mv_snapshot_monthly after the snapshot recompute populates new rows."""
     from app.database import SessionLocal
@@ -259,11 +277,22 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
+    # Fundamentals (dividend yield, beta, market cap) — weekly, not nightly, since it's a
+    # much heavier per-security fetch than the regular price refresh (see docstring).
+    _scheduler.add_job(
+        _logged("Fundamentals refresh", _run_weekly_fundamentals_refresh),
+        CronTrigger(day_of_week="sun", hour=5, minute=30, timezone="UTC"),
+        id="weekly_fundamentals_refresh",
+        name="Weekly fundamentals refresh (dividend yield, beta, market cap)",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started — BOC FX 00:05 ET, Plaid 00:00 ET, IBKR sync 00:15 ET, "
-        "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam health check 09:00 ET "
-        "(Plaid: %s)",
+        "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam health check 09:00 ET, "
+        "fundamentals refresh Sun 01:30 ET (Plaid: %s)",
         freq if plaid_trigger is not None else "off (manual only)",
     )
 

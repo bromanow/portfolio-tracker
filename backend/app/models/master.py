@@ -58,6 +58,12 @@ class Security(Base):
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     in_screener_universe: Mapped[bool] = mapped_column(Boolean, default=False)
 
+    # Manually-maintained annual coupon/interest rate, stored as a percentage (e.g. 8.5 = 8.5%),
+    # matching MarketPrice.dividend_yield's convention. For securities with no live market-data
+    # yield (structured notes, private mortgages, HISA "savings account" funds) — used by the
+    # Projected Income report the same way dividend_yield is used for equities/ETFs/funds.
+    interest_rate: Mapped[Optional[Decimal]] = mapped_column(Numeric(10, 6), nullable=True)
+
     __table_args__ = (UniqueConstraint("ticker", "exchange", name="uq_security_ticker_exchange"),)
 
     option_contract: Mapped[Optional["OptionContract"]] = relationship("OptionContract", back_populates="security", foreign_keys="OptionContract.security_id", uselist=False)

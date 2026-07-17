@@ -1,5 +1,6 @@
-import { useState, useMemo, useEffect, useRef } from 'react'
+import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useDropzone } from 'react-dropzone'
 import { useAuth } from '../context/AuthContext'
 import PlaidConnect from '../components/PlaidConnect'
 import Prices from './Prices'
@@ -1012,32 +1013,73 @@ function SecuritiesTab() {
     queryFn: () => getNoteDetails(noteDetailsFor!.id),
     enabled: !!noteDetailsFor,
   })
+  // Only seed the form from the fetched row ONCE per open — a background refetch (e.g.
+  // after uploading a file) must not clobber fields the user just got auto-filled/edited.
+  const noteDetailsInitialized = useRef(false)
   useEffect(() => {
-    if (noteDetailsData) setNoteDetailsForm(noteDetailsData)
+    if (noteDetailsData && !noteDetailsInitialized.current) {
+      setNoteDetailsForm(noteDetailsData)
+      noteDetailsInitialized.current = true
+    }
   }, [noteDetailsData])
 
   const openNoteDetails = (sec: Security) => {
     setNoteDetailsFor(sec)
     setNoteDetailsForm({})
     setNoteDetailsError(null)
+    noteDetailsInitialized.current = false
   }
 
   const saveNoteDetailsMut = useMutation({
     mutationFn: () => updateNoteDetails(noteDetailsFor!.id, noteDetailsForm),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] })
+      setNoteDetailsFor(null)   // save and close
+    },
     onError: () => setNoteDetailsError('Failed to save.'),
   })
 
   const uploadNoteFileMut = useMutation({
     mutationFn: (file: File) => uploadNoteDetailsFile(noteDetailsFor!.id, file),
-    onMutate: () => setNoteDetailsUploading(true),
-    onSuccess: () => { setNoteDetailsUploading(false); qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }) },
+    onMutate: () => { setNoteDetailsUploading(true); setNoteDetailsError(null) },
+    onSuccess: (data) => {
+      setNoteDetailsUploading(false)
+      const { extracted, ...fileMeta } = data
+      setNoteDetailsForm(f => ({
+        ...f,
+        original_filename: fileMeta.original_filename,
+        content_type: fileMeta.content_type,
+        byte_size: fileMeta.byte_size,
+        uploaded_at: fileMeta.uploaded_at,
+        // Merge only the fields Gemini actually found — never overwrite with a null and
+        // wipe out something the user already typed.
+        ...(extracted ? Object.fromEntries(Object.entries(extracted).filter(([, v]) => v != null)) : {}),
+      }))
+      qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] })
+    },
     onError: () => { setNoteDetailsUploading(false); setNoteDetailsError('Upload failed — please upload a PDF.') },
   })
 
   const deleteNoteFileMut = useMutation({
     mutationFn: () => deleteNoteDetailsFile(noteDetailsFor!.id),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] }),
+    onSuccess: () => {
+      setNoteDetailsForm(f => ({ ...f, original_filename: null, content_type: null, byte_size: null, uploaded_at: null }))
+      qc.invalidateQueries({ queryKey: ['note-details', noteDetailsFor?.id] })
+    },
+  })
+
+  // Drag-and-drop for the info-sheet PDF — click-to-browse stays on the plain <input>
+  // labels below (noClick/noKeyboard so dropzone only handles the drag/drop gesture,
+  // and clicking "View"/"Remove" inside the same container doesn't open a file dialog).
+  const onDropNoteFile = useCallback((files: File[]) => { if (files.length) uploadNoteFileMut.mutate(files[0]) },
+    [uploadNoteFileMut])
+  const { getRootProps: getNoteDropRootProps, isDragActive: isNoteDragActive } = useDropzone({
+    onDrop: onDropNoteFile,
+    accept: { 'application/pdf': ['.pdf'] },
+    multiple: false,
+    noClick: true,
+    noKeyboard: true,
+    disabled: noteDetailsUploading,
   })
 
   const [histFetchStatus, setHistFetchStatus] = useState<Record<number, 'pending' | 'ok' | 'err'>>({})
@@ -1518,9 +1560,17 @@ function SecuritiesTab() {
             </div>
 
             <div className="overflow-y-auto px-4 py-4 space-y-5">
-              {/* Info-sheet file section */}
-              <div className="bg-gray-50 rounded-lg p-3 border border-gray-200">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Info Sheet</p>
+              {/* Info-sheet file section — whole box is a drop target (click-to-browse
+                  stays on the labels below, via noClick) */}
+              <div
+                {...getNoteDropRootProps()}
+                className={`rounded-lg p-3 border transition-colors ${
+                  isNoteDragActive ? 'bg-blue-50 border-blue-400 border-dashed' : 'bg-gray-50 border-gray-200'
+                }`}
+              >
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                  Info Sheet {isNoteDragActive && <span className="text-blue-600 normal-case font-normal">— drop PDF to upload</span>}
+                </p>
                 {noteDetailsForm.original_filename ? (
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-sm text-gray-700 truncate">{noteDetailsForm.original_filename}</span>

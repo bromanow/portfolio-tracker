@@ -158,18 +158,26 @@ export interface NoteDetails {
   uploaded_at: string | null
 }
 
+export type NoteDetailsExtracted = Pick<NoteDetails,
+  'reference_asset' | 'payment_amount' | 'payment_frequency' | 'payment_barrier_pct' |
+  'autocall_level_pct' | 'barrier_level_pct' | 'status' | 'product_category' |
+  'cusip_code' | 'adp_code' | 'issue_date' | 'maturity_date' | 'term_years'>
+
 export const getNoteDetails = (securityId: number) =>
   api.get<NoteDetails>(`/securities/${securityId}/note-details`).then(r => r.data)
 
 export const updateNoteDetails = (securityId: number, data: Partial<NoteDetails>) =>
   api.put<NoteDetails>(`/securities/${securityId}/note-details`, data).then(r => r.data)
 
+/** Uploads the info-sheet PDF and, best-effort, extracts its term-sheet fields (Gemini) —
+ *  returned as `extracted` for the caller to merge into its edit form, not auto-saved. */
 export const uploadNoteDetailsFile = (securityId: number, file: File) => {
   const fd = new FormData()
   fd.append('file', file)
-  return api.post<NoteDetails>(`/securities/${securityId}/note-details/file`, fd, {
-    headers: { 'Content-Type': 'multipart/form-data' },
-  }).then(r => r.data)
+  return api.post<NoteDetails & { extracted: NoteDetailsExtracted | null }>(
+    `/securities/${securityId}/note-details/file`, fd,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  ).then(r => r.data)
 }
 
 export const openNoteDetailsFile = async (securityId: number) => {

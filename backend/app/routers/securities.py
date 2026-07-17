@@ -1,3 +1,4 @@
+import logging
 from datetime import date
 from decimal import Decimal
 from typing import Optional
@@ -10,6 +11,7 @@ from app.database import get_db
 from app.models.master import Security
 from app.models.transactions import Transaction
 
+logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/api/securities", tags=["securities"])
 
 
@@ -703,10 +705,16 @@ def update_note_details(security_id: int, data: NoteDetailsUpdate, db: Session =
 
 @router.post("/{security_id}/note-details/file")
 async def upload_note_details_file(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
-    """Upload (or replace) the info-sheet PDF attached to this security."""
+    """
+    Upload (or replace) the info-sheet PDF attached to this security, and best-effort
+    extract its term-sheet fields via Gemini (see gemini_note_details.py). Extraction is
+    returned as a separate "extracted" suggestion, NOT written to the saved term-sheet
+    fields — the caller (Admin UI) merges it into the edit form for review, and only the
+    user's own explicit Save persists it. Only the file itself is persisted here.
+    """
     from datetime import datetime
     from app.models.master import SecurityNoteDetails
-    from app.services import note_document_store
+    from app.services import note_document_store, gemini_note_details
 
     if not db.get(Security, security_id):
         raise HTTPException(status_code=404, detail="Security not found")
@@ -730,7 +738,18 @@ async def upload_note_details_file(security_id: int, file: UploadFile = File(...
     row.uploaded_at = datetime.utcnow()
     db.commit()
     db.refresh(row)
-    return _note_details_to_dict(row)
+
+    extracted = None
+    if gemini_note_details.is_configured():
+        try:
+            parsed = gemini_note_details.parse_note_pdf(data)
+            extracted = {
+                k: (str(v) if v is not None else None) for k, v in parsed.items()
+            }
+        except Exception as exc:   # noqa: BLE001 — extraction is a nice-to-have, never blocks the upload
+            logger.warning("gemini_note_details parse failed for security %s: %s", security_id, exc)
+
+    return {**_note_details_to_dict(row), "extracted": extracted}
 
 
 @router.get("/{security_id}/note-details/file")

@@ -15,32 +15,13 @@ import {
   getPortfolioHistory, getPortfolioContinuity,
   getMonthlyReturns, getReturnsDetail, getFxRates,
   computeSnapshots, purgeSnapshots, refreshSnapshotViews, getSnapshotViewStatus,
-  getConsolidatedPositions, getSecurity,
 } from '../api/client'
-import type { Account, IncomeItem, ProjectedIncomeRow, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate, ConsolidatedPosition } from '../api/client'
+import type { Account, IncomeItem, ProjectedIncomeRow, CashStatementRow, PortfolioHistoryPoint, ContinuityReport, MonthlyReturnRow, ReturnDetailRow, FXRate } from '../api/client'
 import Transactions from './Transactions'
 import MultiSelectDropdown from '../components/MultiSelectDropdown'
 import DatePicker from '../components/DatePicker'
-import SecurityDetailPanel from '../components/SecurityDetailPanel'
+import TickerLink from '../components/TickerLink'
 import { getPref, usePreference } from '../hooks/usePreference'
-
-// Ticker shown anywhere in this report — opens the security detail card. Securities that
-// aren't currently held (e.g. sold off, only present in historical income) still open via a
-// stub position (qty/ACB zeroed) built from a plain security lookup instead of the
-// consolidated-positions list.
-function TickerLink({ securityId, ticker, onOpen, className }: {
-  securityId: number | null; ticker: string; onOpen: (id: number) => void; className?: string
-}) {
-  if (!securityId) return <span className={className}>{ticker}</span>
-  return (
-    <button
-      onClick={e => { e.stopPropagation(); onOpen(securityId) }}
-      className={`hover:underline hover:text-blue-800 ${className || ''}`}
-    >
-      {ticker}
-    </button>
-  )
-}
 
 // ── Shared helpers ────────────────────────────────────────────────────────────
 
@@ -159,7 +140,7 @@ function PaginationBar({ page, totalPages, pageSize, totalRows, setPage, setPage
 
 // ── Realized Gains ────────────────────────────────────────────────────────────
 type GainRow = {
-  date: string; ticker: string; quantity: string
+  date: string; ticker: string; security_id: number | null; quantity: string
   proceeds_cad: string; acb_cad: string; gain_cad: string
   account_id: number; account_name: string; brokerage_name: string
 }
@@ -402,7 +383,7 @@ function RealizedGainsReport() {
                                   <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{g.brokerage_name}</td>
                                   <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap max-w-[10rem] truncate">{g.account_name}</td>
                                   <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{g.date}</td>
-                                  <td className="px-4 py-2 font-mono font-semibold text-blue-700">{g.ticker}</td>
+                                  <td className="px-4 py-2 font-mono font-semibold"><TickerLink securityId={g.security_id} ticker={g.ticker} className="text-blue-700" /></td>
                                   <td className="px-4 py-2 text-right text-gray-600">{parseFloat(g.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
                                   <td className="px-4 py-2 text-right">{fmtCAD(g.proceeds_cad)}</td>
                                   <td className="px-4 py-2 text-right text-gray-500">{fmtCAD(g.acb_cad)}</td>
@@ -435,7 +416,7 @@ function RealizedGainsReport() {
                                   <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap">{g.brokerage_name}</td>
                                   <td className="px-4 py-2 text-xs text-gray-500 whitespace-nowrap max-w-[10rem] truncate" title={acctName}>{acctName}</td>
                                   <td className="px-4 py-2 text-gray-600 text-xs whitespace-nowrap">{g.date}</td>
-                                  <td className="px-4 py-2 font-mono font-semibold text-blue-700">{g.ticker}</td>
+                                  <td className="px-4 py-2 font-mono font-semibold"><TickerLink securityId={g.security_id} ticker={g.ticker} className="text-blue-700" /></td>
                                   <td className="px-4 py-2 text-right text-gray-600">{parseFloat(g.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
                                   <td className="px-4 py-2 text-right">{fmtCAD(g.proceeds_cad)}</td>
                                   <td className="px-4 py-2 text-right text-gray-500">{fmtCAD(g.acb_cad)}</td>
@@ -490,37 +471,6 @@ function IncomeReport() {
   const [brokerageFilter, setBrokerageFilter] = useState('')
   const [year, setYear]                       = useState(String(currentYear))
   const [reportMode, setReportMode] = useState<'historical' | 'projected'>('historical')
-
-  // Security detail card — opened by clicking any ticker in this report. Reuses the same
-  // panel Holdings uses; securities not currently held (sold-off positions still showing up
-  // in Historical income) fall back to a zeroed stub built from a plain security lookup
-  // instead of the consolidated-positions list.
-  const [openSecurityId, setOpenSecurityId] = useState<number | null>(null)
-  const { data: allPositionsForCard = [] } = useQuery({
-    queryKey: ['consolidated-positions'],
-    queryFn: () => getConsolidatedPositions({}),
-    staleTime: 2 * 60 * 1000,
-    enabled: openSecurityId !== null,
-  })
-  const heldPositionForCard = (allPositionsForCard as ConsolidatedPosition[]).find(p => p.security_id === openSecurityId) || null
-  const { data: fallbackSecurity } = useQuery({
-    queryKey: ['security', openSecurityId],
-    queryFn: () => getSecurity(openSecurityId!),
-    enabled: openSecurityId !== null && !heldPositionForCard,
-  })
-  const selectedCardPosition: ConsolidatedPosition | null = heldPositionForCard || (fallbackSecurity ? {
-    security_id: fallbackSecurity.id,
-    ticker: fallbackSecurity.ticker,
-    security_name: fallbackSecurity.name,
-    asset_class: fallbackSecurity.asset_class,
-    exchange: fallbackSecurity.exchange,
-    currency: fallbackSecurity.currency || 'CAD',
-    total_quantity: '0',
-    total_acb_cad: '0',
-    acb_per_share_cad: '0',
-    account_count: 0,
-    accounts: [],
-  } : null)
 
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts'], queryFn: () => getAccounts() })
   const allAccts = accounts as Account[]
@@ -1024,7 +974,7 @@ function IncomeReport() {
                             <tr className="bg-slate-100">
                               <td className="px-3 py-2" />
                               <td className="px-3 py-2 font-mono font-semibold text-slate-800 text-sm" colSpan={5}>
-                                <TickerLink securityId={sec.security_id} ticker={sec.ticker} onOpen={setOpenSecurityId} />
+                                <TickerLink securityId={sec.security_id} ticker={sec.ticker} />
                                 <span className="ml-2 text-xs font-normal text-slate-500">
                                   {sec.accounts.length} account{sec.accounts.length !== 1 ? 's' : ''}
                                 </span>
@@ -1038,7 +988,7 @@ function IncomeReport() {
                                   <tr key={i} className="hover:bg-gray-50">
                                     <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
                                     <td className="px-3 py-1.5 font-mono text-xs font-medium whitespace-nowrap">
-                                      <TickerLink securityId={item.security_id} ticker={item.ticker} onOpen={setOpenSecurityId} className="text-blue-700" />
+                                      <TickerLink securityId={item.security_id} ticker={item.ticker} className="text-blue-700" />
                                     </td>
                                     <td className="px-3 py-1.5"><AccountTypeBadge type={item.account_type} /></td>
                                     <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
@@ -1120,7 +1070,7 @@ function IncomeReport() {
                                       : <ChevronRight className="h-3 w-3" />}
                                   </td>
                                   <td className="pr-3 py-1.5 font-mono font-semibold text-blue-700 text-sm">
-                                    <TickerLink securityId={sec.security_id} ticker={sec.ticker} onOpen={setOpenSecurityId} />
+                                    <TickerLink securityId={sec.security_id} ticker={sec.ticker} />
                                   </td>
                                   <td className="pr-3 py-1.5 text-xs text-gray-400">
                                     {sec.transactions.length} txn{sec.transactions.length !== 1 ? 's' : ''}
@@ -1273,7 +1223,7 @@ function IncomeReport() {
                       {projectedSorted.map((r, i) => (
                         <tr key={`${r.security_id}-${r.account_type}-${i}`} className="hover:bg-gray-50">
                           <td className="px-3 py-2 font-mono font-semibold">
-                            <TickerLink securityId={r.security_id} ticker={r.ticker} onOpen={setOpenSecurityId} className="text-blue-700" />
+                            <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-blue-700" />
                           </td>
                           <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.security_name || '—'}</td>
                           <td className="px-3 py-2 text-right text-gray-700">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
@@ -1336,13 +1286,6 @@ function IncomeReport() {
           )
       )}
 
-      {selectedCardPosition && (
-        <SecurityDetailPanel
-          position={selectedCardPosition}
-          allPositions={allPositionsForCard as ConsolidatedPosition[]}
-          onClose={() => setOpenSecurityId(null)}
-        />
-      )}
     </div>
   )
 }
@@ -2143,7 +2086,7 @@ function CashStatementReport() {
                               <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${badgeColor}`}>{label}</span>
                             </td>
                             <td className="px-4 py-2.5 text-gray-600 max-w-xs truncate">
-                              {row.ticker && <span className="font-mono font-medium text-gray-800 mr-1.5">{row.ticker}</span>}
+                              {row.ticker && <span className="mr-1.5"><TickerLink ticker={row.ticker} className="font-mono font-medium text-gray-800" /></span>}
                               {row.description}
                             </td>
                             <ImpactCells row={row} />

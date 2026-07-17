@@ -11,6 +11,7 @@ import {
   ChevronsUpDown, Star, Briefcase, AlertTriangle, Wifi, WifiOff,
   ChevronRight, Zap, RotateCcw, Info,
 } from 'lucide-react'
+import TickerLink from '../components/TickerLink'
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
 
@@ -355,7 +356,7 @@ function WatchlistPanel() {
               className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full"
               title={item.company_name ?? item.ticker}
             >
-              {item.ticker}
+              <TickerLink ticker={item.ticker} />
               <button
                 onClick={() => removeMut.mutate(item.ticker)}
                 className="text-gray-400 hover:text-red-500 ml-0.5"
@@ -660,7 +661,7 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                 {/* Ticker */}
                 <td className="px-3 py-2 text-left whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
-                    <span className="font-semibold text-gray-900">{r.ticker}</span>
+                    <TickerLink ticker={r.ticker} className="font-semibold text-gray-900" />
                     {r.in_portfolio && (
                       <span className="text-[10px] font-medium bg-blue-100 text-blue-600 px-1 py-0.5 rounded"
                         title={`${r.portfolio_qty} shares · ${r.portfolio_contracts} contracts`}>

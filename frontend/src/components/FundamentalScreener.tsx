@@ -6,6 +6,7 @@ import {
 } from '../api/client'
 import type { ScreenerResult } from '../api/client'
 import { RefreshCw, Database, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle } from 'lucide-react'
+import TickerLink from './TickerLink'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
 
@@ -314,7 +315,9 @@ export default function FundamentalScreener() {
                   <tbody className="divide-y divide-gray-50">
                     {results.map(r => (
                       <tr key={r.security_id} className="hover:bg-gray-50">
-                        <td className="px-3 py-2 font-mono font-medium text-gray-800 whitespace-nowrap">{r.ticker}</td>
+                        <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">
+                          <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-gray-800" />
+                        </td>
                         <td className="px-3 py-2 text-gray-600 max-w-[220px] truncate" title={r.name ?? ''}>{r.name ?? '—'}</td>
                         <td className="px-3 py-2 text-gray-500 whitespace-nowrap">{r.sector ?? '—'}</td>
                         <td className="px-3 py-2 text-right font-mono text-gray-700">${fmtLarge(r.market_cap)}</td>

@@ -8,7 +8,7 @@ import {
   TrendingUp, TrendingDown,
 } from 'lucide-react'
 import { formatOptionTicker } from '../utils/optionFormat'
-import SecurityDetailPanel from './SecurityDetailPanel'
+import { useSecurityCard } from '../context/SecurityCardContext'
 import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
@@ -243,7 +243,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   const [cashExpanded, setCashExpanded] = useState(false)
   const [sortCol, setSortCol] = useState('total_acb_cad')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
-  const [selectedPosition, setSelectedPosition] = useState<ConsolidatedPosition | null>(null)
+  const { open: openSecurityCard } = useSecurityCard()
   const [groupBy, setGroupBy] = useState<GroupMode>('none')
   const cycleGroup = () => setGroupBy(g => GROUP_MODES[(GROUP_MODES.indexOf(g) + 1) % GROUP_MODES.length])
   const [collapsedClasses, setCollapsedClasses] = useState<Set<string>>(new Set())
@@ -300,8 +300,8 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
     // On mobile (< md = 768px) navigate to full-page detail; on desktop open slide-over
     if (pos.security_id && window.innerWidth < 768) {
       navigate(`/holdings/security/${pos.security_id}`)
-    } else {
-      setSelectedPosition(pos)
+    } else if (pos.security_id) {
+      openSecurityCard(pos.security_id)
     }
   }
 
@@ -1025,13 +1025,6 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
         </div>
       )}
 
-      {selectedPosition && (
-        <SecurityDetailPanel
-          position={selectedPosition}
-          allPositions={sorted}
-          onClose={() => setSelectedPosition(null)}
-        />
-      )}
     </div>
   )
 }

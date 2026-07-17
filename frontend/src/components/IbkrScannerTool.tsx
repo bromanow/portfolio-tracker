@@ -3,6 +3,7 @@ import { useQuery, useMutation } from '@tanstack/react-query'
 import { getIbkrScannerParams, runIbkrScanner } from '../api/client'
 import type { ScannerLocationNode } from '../api/client'
 import { Loader2, Play, Plus, X, AlertTriangle } from 'lucide-react'
+import TickerLink from './TickerLink'
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -301,7 +302,9 @@ export default function IbkrScannerTool() {
                 {results.map((r, i) => (
                   <tr key={r.con_id ?? i} className="hover:bg-gray-50">
                     <td className="px-3 py-2 text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-mono font-semibold text-blue-700">{r.symbol || '—'}</td>
+                    <td className="px-3 py-2 font-mono font-semibold text-blue-700">
+                      {r.symbol ? <TickerLink ticker={r.symbol} /> : '—'}
+                    </td>
                     <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.company_name || '—'}</td>
                     <td className="px-3 py-2 text-xs text-gray-500">{r.exchange || '—'}</td>
                     <td className="px-3 py-2 text-right font-medium">{fmtPrice(r.last_price)}</td>

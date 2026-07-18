@@ -963,6 +963,12 @@ def get_portfolio_analytics(
         id_set = set(authorized_ids)
         positions = [p for p in positions if p.get("account_id") in id_set]
 
+    # Sector/country/currency/top-holdings breakdowns don't meaningfully apply to personal
+    # assets/liabilities (a house has no sector; a mortgage's negative value would corrupt
+    # every percentage-based chart here) — exclude them, same as the /risk endpoint.
+    PERSONAL_ASSET_CLASSES = {"REAL_ESTATE", "LIFE_INSURANCE", "OTHER_ASSET", "LIABILITY"}
+    positions = [p for p in positions if p.get("asset_class") not in PERSONAL_ASSET_CLASSES]
+
     sec_ids = {p["security_id"] for p in positions if p.get("security_id")}
     sec_map: dict = {}
     if sec_ids:
@@ -1049,6 +1055,11 @@ def get_portfolio_risk(
     if authorized_ids is not None:
         id_set = set(authorized_ids)
         positions = [p for p in positions if p.get("account_id") in id_set]
+
+    # Beta/volatility/HHI/currency-exposure are meaningless for non-tradeable personal
+    # assets and liabilities (a house or a mortgage balance has no "beta") — exclude them.
+    PERSONAL_ASSET_CLASSES = {"REAL_ESTATE", "LIFE_INSURANCE", "OTHER_ASSET", "LIABILITY"}
+    positions = [p for p in positions if p.get("asset_class") not in PERSONAL_ASSET_CLASSES]
 
     sec_ids = {p["security_id"] for p in positions if p.get("security_id")}
     if not sec_ids:

@@ -325,6 +325,88 @@ class SecuritySignals(Base):
     computed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
 
+class PersonalAssetDetails(Base):
+    """
+    Master data + attached PDF for a non-tradeable "personal asset" or liability — real
+    estate, life insurance, other misc assets, and liabilities (e.g. a mortgage owed).
+    One row per security_id, modeled directly on SecurityNoteDetails' shape/conventions
+    (sparse nullable columns covering the union of fields across classes, one attached PDF,
+    upserted from the Admin -> Personal Assets tab). The underlying Security/Transaction/
+    MarketPrice rows carry the actual valuation (quantity=1, price=current value, negative
+    for LIABILITY) — this table only carries descriptive detail on top of that.
+    """
+    __tablename__ = "personal_asset_details"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    security_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="CASCADE"),
+        nullable=False, unique=True, index=True,
+    )
+
+    # ── Real estate ───────────────────────────────────────────────────────────
+    property_type:    Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # Primary Residence/Rental Property/Land
+    property_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    purchase_date:    Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+    purchase_price:   Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+
+    # ── Life insurance ────────────────────────────────────────────────────────
+    policy_number:    Mapped[Optional[str]] = mapped_column(String(60), nullable=True)
+    insurer_name:     Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    beneficiary:      Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    death_benefit_cad: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+
+    # ── Liability ─────────────────────────────────────────────────────────────
+    # Security.interest_rate (already exists) covers the rate; these cover the rest.
+    lender_name:           Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+    original_principal_cad: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    maturity_date:          Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    # ── Asset <-> liability linking ───────────────────────────────────────────
+    # Points at the OTHER side of a pair (e.g. a house's row points at its mortgage's
+    # security_id, or vice versa). Not enforced symmetric at the DB level — the read path
+    # checks both directions (WHERE security_id = X OR linked_security_id = X).
+    linked_security_id: Mapped[Optional[int]] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="SET NULL"), nullable=True,
+    )
+
+    # ── Corporate ownership ───────────────────────────────────────────────────
+    is_corporate: Mapped[bool] = mapped_column(Boolean, default=False)
+    entity_name:  Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
+
+    # ── Manual Zillow reference (not auto-applied to MarketPrice) ─────────────
+    zillow_estimate_cad:  Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    zillow_estimate_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)
+
+    notes: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+
+    # ── Attached PDF (single file — replaced, not versioned) ──────────────────
+    stored_filename:   Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    original_filename: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    content_type:      Mapped[Optional[str]] = mapped_column(String(80), nullable=True)
+    byte_size:         Mapped[Optional[int]] = mapped_column(Integer, nullable=True)
+    uploaded_at:       Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+
+
+class PersonalAssetIncomeEntry(Base):
+    """
+    One rent/expense/other-income entry for a REAL_ESTATE personal asset. Deliberately NOT
+    part of the transactions table — these are informational cash flows for computing a
+    property's net operating income, not brokerage transactions needing ACB/cash-neutral
+    handling.
+    """
+    __tablename__ = "personal_asset_income_entries"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    security_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("securities.id", ondelete="CASCADE"),
+        nullable=False, index=True,
+    )
+    entry_date:  Mapped[date] = mapped_column(Date, nullable=False)
+    category:    Mapped[str] = mapped_column(String(20), nullable=False)  # RENT/EXPENSE/OTHER_INCOME
+    amount_cad:  Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+
+
 # Avoid circular imports - import Transaction here for relationship
 from app.models.transactions import Transaction  # noqa: E402
 from app.models.options import OptionContract  # noqa: E402

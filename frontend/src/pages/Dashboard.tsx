@@ -408,6 +408,20 @@ export default function Dashboard() {
       : (positions as Position[])
   }, [positions, effectiveAccountIds, accountsLoading])
 
+  // Personal assets/liabilities (real estate, life insurance, other, mortgages) share the
+  // same Security/Position pipeline as everything else, but are kept out of the existing
+  // "Total Value" investment figure — that number should keep meaning exactly what it always
+  // has. They get their own Net Worth breakout below instead.
+  const PERSONAL_ASSET_CLASSES = new Set(['REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'])
+  const investmentPositions = useMemo(
+    () => filteredPositions.filter(p => !PERSONAL_ASSET_CLASSES.has(p.asset_class)),
+    [filteredPositions],
+  )
+  const personalAssetPositions = useMemo(
+    () => filteredPositions.filter(p => PERSONAL_ASSET_CLASSES.has(p.asset_class)),
+    [filteredPositions],
+  )
+
   const filteredCash = useMemo(() => {
     if (accountsLoading) return []
     return effectiveAccountIds.size > 0
@@ -449,28 +463,43 @@ export default function Dashboard() {
   const pendingImports = imports.filter((i: { status: string }) => i.status === 'PENDING')
 
   // ── Summary totals (with no-price fallback) ───────────────────────────────
+  // Investment-only (excludes personal assets/liabilities) — "Total Value" keeps meaning
+  // exactly what it always has; personal assets/liabilities get their own card below.
   const { totalSecurities, totalPnl, fallbackCount } = useMemo(() => {
     let securities = 0, pnl = 0, fallback = 0
-    for (const p of filteredPositions) {
+    for (const p of investmentPositions) {
       const bv = parseFloat(p.total_acb_cad || '0')
       if (p.market_value_cad) { const mv = parseFloat(p.market_value_cad); securities += mv; pnl += mv - bv }
       else { securities += bv; fallback++ }
     }
     return { totalSecurities: securities, totalPnl: pnl, fallbackCount: fallback }
-  }, [filteredPositions])
+  }, [investmentPositions])
 
-  const totalBookValue = filteredPositions.reduce((s, p) => s + parseFloat(p.total_acb_cad || '0'), 0)
+  const totalBookValue = investmentPositions.reduce((s, p) => s + parseFloat(p.total_acb_cad || '0'), 0)
   const totalCash      = filteredCash.reduce((s, c) => s + parseFloat(c.balance_cad || '0'), 0)
   const totalValue     = totalSecurities + totalCash
-  const hasPrices      = filteredPositions.some(p => p.market_value_cad)
+  const hasPrices      = investmentPositions.some(p => p.market_value_cad)
 
   const { totalDayGain, hasDayGain } = useMemo(() => {
     let total = 0, hasAny = false
-    for (const p of filteredPositions) {
+    for (const p of investmentPositions) {
       if (p.day_gain_cad) { total += parseFloat(p.day_gain_cad); hasAny = true }
     }
     return { totalDayGain: total, hasDayGain: hasAny }
-  }, [filteredPositions])
+  }, [investmentPositions])
+
+  // ── Net worth breakout (personal assets/liabilities) ──────────────────────
+  const { totalPersonalAssets, totalLiabilities } = useMemo(() => {
+    let assets = 0, liabilities = 0
+    for (const p of personalAssetPositions) {
+      const mv = parseFloat(p.market_value_cad || p.total_acb_cad || '0')
+      if (p.asset_class === 'LIABILITY') liabilities += mv   // already negative
+      else assets += mv
+    }
+    return { totalPersonalAssets: assets, totalLiabilities: liabilities }
+  }, [personalAssetPositions])
+  const netWorth = totalValue + totalPersonalAssets + totalLiabilities
+  const hasPersonalAssets = personalAssetPositions.length > 0
 
   const allAcctIds = useMemo(() => {
     const ids = new Set<number>()
@@ -658,7 +687,7 @@ export default function Dashboard() {
           <div className="text-center pb-3 mb-3 border-b border-blue-200">
             <div className="text-xs text-blue-500 uppercase tracking-wide">Total Value</div>
             <div className="text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
-            <div className="text-[11px] text-blue-400 mt-0.5">{filteredPositions.length} positions · {allAcctIds.length} accounts</div>
+            <div className="text-[11px] text-blue-400 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
@@ -782,7 +811,7 @@ export default function Dashboard() {
             </div>
           )}
           <div className="ml-auto text-right">
-            <div className="text-xs text-blue-400">{filteredPositions.length} positions</div>
+            <div className="text-xs text-blue-400">{investmentPositions.length} positions</div>
             <div className="text-xs text-blue-400">{allAcctIds.length} accounts</div>
           </div>
         </div>
@@ -792,6 +821,32 @@ export default function Dashboard() {
           </p>
         )}
       </div>
+
+      {hasPersonalAssets && (
+        <div className="bg-white border border-gray-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
+          <div className="text-xs text-gray-400 uppercase tracking-wide mb-3">Net Worth</div>
+          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide">Investment Portfolio</div>
+              <div className="text-xl font-bold text-gray-800">{fmtCAD(totalValue)}</div>
+            </div>
+            <div>
+              <div className="text-xs text-gray-500 uppercase tracking-wide">Personal Assets</div>
+              <div className="text-xl font-bold text-gray-800">{fmtCAD(totalPersonalAssets)}</div>
+            </div>
+            {totalLiabilities !== 0 && (
+              <div>
+                <div className="text-xs text-gray-500 uppercase tracking-wide">Liabilities</div>
+                <div className="text-xl font-bold text-red-500">{fmtCAD(totalLiabilities)}</div>
+              </div>
+            )}
+            <div className="md:border-l md:border-gray-200 md:pl-8">
+              <div className="text-xs text-gray-500 uppercase tracking-wide">Net Worth</div>
+              <div className="text-2xl font-bold text-gray-900">{fmtCAD(netWorth)}</div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Brokerage breakdown ── */}
       <div>

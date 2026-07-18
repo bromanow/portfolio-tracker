@@ -37,6 +37,7 @@ from app.routers import ibeam_control as ibeam_control_router
 from app.routers import market as market_router
 from app.routers import screener as screener_router
 from app.routers import ibkr_scanner as ibkr_scanner_router
+from app.routers import personal_assets as personal_assets_router
 
 log = logging.getLogger(__name__)
 
@@ -269,6 +270,7 @@ app.include_router(ibeam_control_router.router, dependencies=_auth)
 app.include_router(market_router.router, dependencies=_auth)
 app.include_router(screener_router.router, dependencies=_auth)
 app.include_router(ibkr_scanner_router.router, dependencies=_auth)
+app.include_router(personal_assets_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

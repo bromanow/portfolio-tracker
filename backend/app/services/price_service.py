@@ -52,7 +52,10 @@ YAHOO_EXCHANGE_MAP: dict[str, str] = {
 
 # Asset classes we never price (options use complex symbology; FX is priced differently;
 # structured notes and savings accounts are OTC/proprietary with no public feed)
-SKIP_ASSET_CLASSES = {"OPTION", "CURRENCY", "STRUCTURED_NOTE", "SAVINGS_ACCOUNT"}
+SKIP_ASSET_CLASSES = {
+    "OPTION", "CURRENCY", "STRUCTURED_NOTE", "SAVINGS_ACCOUNT",
+    "REAL_ESTATE", "LIFE_INSURANCE", "OTHER_ASSET", "LIABILITY",
+}
 
 _OPTION_RE = _re.compile(
     r"^(CALL|PUT)\s+\.?([\w\-]+)\s+(\d{2}/\d{2}/\d{2})\s+([\d\.]+)\s*$",

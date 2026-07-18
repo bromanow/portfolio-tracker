@@ -7,6 +7,7 @@ import SystemTab from './admin/SystemTab'
 import MyAccountTab from './admin/MyAccountTab'
 import AccountsTab from './admin/AccountsTab'
 import OpeningBalancesTab from './admin/OpeningBalancesTab'
+import PersonalAssetsTab from './admin/PersonalAssetsTab'
 import CurrencySplitTab from './admin/CurrencySplitTab'
 import SecuritiesTab from './admin/SecuritiesTab'
 import OptionRetypeTab from './admin/OptionRetypeTab'
@@ -19,7 +20,7 @@ import IBeamTab from './admin/IBeamTab'
 import UsersTab from './admin/UsersTab'
 import DangerZoneTab from './admin/DangerZoneTab'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'prices' | 'expired-options' | 'option-types' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'ibeam' | 'plaid'
+type TabId = 'system' | 'accounts' | 'securities' | 'prices' | 'expired-options' | 'option-types' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'ibeam' | 'plaid' | 'personal-assets'
 
 // Grouped for the left-hand sub-page nav (section header → tabs).
 const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly?: boolean }[] }[] = [
@@ -30,6 +31,7 @@ const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly
   { heading: 'Data', tabs: [
     { id: 'accounts',         label: 'Accounts' },
     { id: 'opening-balances', label: 'Opening Balances' },
+    { id: 'personal-assets',  label: 'Personal Assets & Liabilities' },
     { id: 'securities',       label: 'Securities',       adminOnly: true },
     { id: 'prices',           label: 'Prices',           adminOnly: true },
     { id: 'option-types',     label: 'Fix Option Types', adminOnly: true },
@@ -104,6 +106,7 @@ export default function Admin() {
           {tab === 'my-account' && <MyAccountTab />}
           {tab === 'accounts' && <AccountsTab />}
           {tab === 'opening-balances' && <OpeningBalancesTab />}
+          {tab === 'personal-assets' && <PersonalAssetsTab />}
           {tab === 'currency-split' && isAdmin && <CurrencySplitTab />}
           {tab === 'securities' && <SecuritiesTab />}
           {tab === 'prices' && isAdmin && <Prices />}

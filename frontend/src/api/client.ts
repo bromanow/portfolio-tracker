@@ -1605,4 +1605,114 @@ export const runIbkrScanner = (data: {
   filters: { code: string; value: number }[]
 }) => api.post<{ items: IbkrScanResult[] }>('/ibkr-scanner/run', data).then(r => r.data)
 
+// ─── Personal Assets & Liabilities (net worth) ────────────────────────────────
+
+export type PersonalAssetClass = 'REAL_ESTATE' | 'LIFE_INSURANCE' | 'OTHER_ASSET' | 'LIABILITY'
+
+export interface PersonalAsset {
+  security_id: number
+  ticker: string
+  name: string | null
+  asset_class: PersonalAssetClass
+  interest_rate: string | null
+  owner: string | null
+  current_value_cad: string | null
+  value_updated_at: string | null
+  property_type: string | null
+  property_address: string | null
+  purchase_date: string | null
+  purchase_price: string | null
+  policy_number: string | null
+  insurer_name: string | null
+  beneficiary: string | null
+  death_benefit_cad: string | null
+  lender_name: string | null
+  original_principal_cad: string | null
+  maturity_date: string | null
+  linked_security_id: number | null
+  linked_name: string | null
+  is_corporate: boolean
+  entity_name: string | null
+  zillow_estimate_cad: string | null
+  zillow_estimate_date: string | null
+  notes: string | null
+  original_filename: string | null
+  content_type: string | null
+  byte_size: number | null
+  uploaded_at: string | null
+}
+
+export interface PersonalAssetCreate {
+  asset_class: PersonalAssetClass
+  name: string
+  owner: string
+  value: number
+  acquired_date?: string
+  interest_rate?: number
+  property_type?: string
+  property_address?: string
+  purchase_date?: string
+  purchase_price?: number
+  policy_number?: string
+  insurer_name?: string
+  beneficiary?: string
+  death_benefit_cad?: number
+  lender_name?: string
+  original_principal_cad?: number
+  maturity_date?: string
+  linked_security_id?: number
+  is_corporate?: boolean
+  entity_name?: string
+  zillow_estimate_cad?: number
+  zillow_estimate_date?: string
+  notes?: string
+}
+
+export type PersonalAssetUpdate = Partial<Omit<PersonalAssetCreate, 'asset_class' | 'owner' | 'name'>>
+
+export interface PersonalAssetIncomeEntry {
+  id: number
+  entry_date: string
+  category: 'RENT' | 'EXPENSE' | 'OTHER_INCOME'
+  amount_cad: string
+  description: string | null
+}
+
+export const getPersonalAssets = () =>
+  api.get<PersonalAsset[]>('/personal-assets').then(r => r.data)
+
+export const createPersonalAsset = (data: PersonalAssetCreate) =>
+  api.post<{ security_id: number; ticker: string }>('/personal-assets', data).then(r => r.data)
+
+export const updatePersonalAsset = (securityId: number, data: PersonalAssetUpdate) =>
+  api.put(`/personal-assets/${securityId}`, data).then(r => r.data)
+
+export const uploadPersonalAssetFile = (securityId: number, file: File) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post(`/personal-assets/${securityId}/file`, fd, {
+    headers: { 'Content-Type': 'multipart/form-data' },
+  }).then(r => r.data)
+}
+
+export const openPersonalAssetFile = async (securityId: number) => {
+  const r = await api.get(`/personal-assets/${securityId}/file`, { responseType: 'blob' })
+  const url = URL.createObjectURL(new Blob([r.data], { type: 'application/pdf' }))
+  window.open(url, '_blank')
+  setTimeout(() => URL.revokeObjectURL(url), 60_000)
+}
+
+export const deletePersonalAssetFile = (securityId: number) =>
+  api.delete(`/personal-assets/${securityId}/file`).then(r => r.data)
+
+export const getPersonalAssetIncomeEntries = (securityId: number) =>
+  api.get<PersonalAssetIncomeEntry[]>(`/personal-assets/${securityId}/income-entries`).then(r => r.data)
+
+export const createPersonalAssetIncomeEntry = (securityId: number, data: {
+  entry_date: string; category: 'RENT' | 'EXPENSE' | 'OTHER_INCOME'; amount_cad: number; description?: string
+}) => api.post<{ id: number }>(`/personal-assets/${securityId}/income-entries`, data).then(r => r.data)
+
+export const deletePersonalAssetIncomeEntry = (securityId: number, entryId: number) =>
+  api.delete(`/personal-assets/${securityId}/income-entries/${entryId}`).then(r => r.data)
+
 export default api

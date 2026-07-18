@@ -4,9 +4,10 @@ import {
   getPersonalAssets, createPersonalAsset, updatePersonalAsset,
   uploadPersonalAssetFile, openPersonalAssetFile, deletePersonalAssetFile,
   getPersonalAssetIncomeEntries, createPersonalAssetIncomeEntry, deletePersonalAssetIncomeEntry,
+  getSecurityPriceHistory, addHistoricalPrice,
 } from '../../api/client'
-import type { PersonalAsset, PersonalAssetClass } from '../../api/client'
-import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2 } from 'lucide-react'
+import type { PersonalAsset, PersonalAssetClass, PersonalAssetCreate } from '../../api/client'
+import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock } from 'lucide-react'
 
 const CLASS_LABELS: Record<PersonalAssetClass, string> = {
   REAL_ESTATE: 'Real Estate',
@@ -16,6 +17,7 @@ const CLASS_LABELS: Record<PersonalAssetClass, string> = {
 }
 
 const PROPERTY_TYPES = ['Primary Residence', 'Rental Property', 'Land']
+const today = () => new Date().toISOString().slice(0, 10)
 
 function fmtCAD(v: string | null): string {
   if (v == null) return '—'
@@ -71,7 +73,7 @@ function IncomeLedger({ securityId }: { securityId: number }) {
     queryKey: ['personal-asset-income', securityId],
     queryFn: () => getPersonalAssetIncomeEntries(securityId),
   })
-  const [form, setForm] = useState({ entry_date: new Date().toISOString().slice(0, 10), category: 'RENT' as const, amount_cad: '', description: '' })
+  const [form, setForm] = useState({ entry_date: today(), category: 'RENT' as const, amount_cad: '', description: '' })
 
   const addMut = useMutation({
     mutationFn: () => createPersonalAssetIncomeEntry(securityId, {
@@ -142,153 +144,282 @@ function IncomeLedger({ securityId }: { securityId: number }) {
   )
 }
 
-// ─── Add/edit form ────────────────────────────────────────────────────────────
+// ─── Value history (every asset class) — dated value points over time ────────
+function ValueHistory({ asset }: { asset: PersonalAsset }) {
+  const qc = useQueryClient()
+  const { data: points = [] } = useQuery({
+    queryKey: ['personal-asset-history', asset.security_id],
+    queryFn: () => getSecurityPriceHistory(asset.security_id, 'max'),
+  })
+  const [entryDate, setEntryDate] = useState(today())
+  const [amount, setAmount] = useState('')
+
+  const isLiability = asset.asset_class === 'LIABILITY'
+  const latestDate = points.length ? points[points.length - 1].date : null
+
+  const addMut = useMutation({
+    mutationFn: () => {
+      const magnitude = Math.abs(parseFloat(amount || '0'))
+      const signed = isLiability ? -magnitude : magnitude
+      const isCurrentOrFuture = !latestDate || entryDate >= latestDate
+      return isCurrentOrFuture
+        // today-or-newest -> also updates the live current value
+        ? updatePersonalAsset(asset.security_id, { value: magnitude, as_of: entryDate })
+        // backdated -> historical point only, current value untouched
+        : addHistoricalPrice(asset.security_id, { price_date: entryDate, price: signed, currency: 'CAD' })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personal-asset-history', asset.security_id] })
+      qc.invalidateQueries({ queryKey: ['personal-assets'] })
+      setAmount('')
+    },
+  })
+
+  return (
+    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <Clock className="h-3.5 w-3.5" /> Value History
+      </div>
+      <div className="flex flex-wrap gap-2 items-end text-xs">
+        <input type="date" className="border rounded px-2 py-1" value={entryDate}
+          onChange={e => setEntryDate(e.target.value)} />
+        <input className="border rounded px-2 py-1 w-32" placeholder={isLiability ? 'Amount owed' : 'Value'}
+          value={amount} onChange={e => setAmount(e.target.value)} />
+        <button onClick={() => addMut.mutate()} disabled={!amount || addMut.isPending}
+          className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-40">Add value point</button>
+      </div>
+      <div className="divide-y divide-gray-200 max-h-48 overflow-auto">
+        {[...points].reverse().map(p => (
+          <div key={p.date} className="flex items-center justify-between py-1.5 text-xs">
+            <span className="text-gray-400">{p.date}</span>
+            <span className="font-medium">{p.close_cad != null ? fmtCAD(String(Math.abs(p.close_cad))) : '—'}</span>
+          </div>
+        ))}
+        {points.length === 0 && <p className="text-xs text-gray-400 py-2">No value history yet.</p>}
+      </div>
+    </div>
+  )
+}
+
+// ─── Shared field set for both Add and Edit forms ────────────────────────────
+interface FieldState {
+  assetClass: PersonalAssetClass
+  name: string
+  owner: string
+  value: string
+  acquiredDate: string
+  interestRate: string
+  propertyType: string
+  addressStreet: string
+  addressCity: string
+  addressProvince: string
+  addressPostalCode: string
+  addressCountry: string
+  policyNumber: string
+  insurerName: string
+  lenderName: string
+  maturityDate: string
+  isCorporate: boolean
+  entityName: string
+  zillowEstimate: string
+  linkedId: number | null
+  notes: string
+}
+
+function blankFields(assetClass: PersonalAssetClass = 'REAL_ESTATE'): FieldState {
+  return {
+    assetClass, name: '', owner: '', value: '', acquiredDate: today(), interestRate: '',
+    propertyType: PROPERTY_TYPES[0], addressStreet: '', addressCity: '', addressProvince: '',
+    addressPostalCode: '', addressCountry: '', policyNumber: '', insurerName: '', lenderName: '',
+    maturityDate: '', isCorporate: false, entityName: '', zillowEstimate: '', linkedId: null, notes: '',
+  }
+}
+
+function fieldsFromAsset(a: PersonalAsset): FieldState {
+  return {
+    assetClass: a.asset_class, name: a.name || '', owner: a.owner || '',
+    value: a.current_value_cad ? Math.abs(parseFloat(a.current_value_cad)).toString() : '',
+    acquiredDate: a.acquired_date || today(),
+    interestRate: a.interest_rate || '',
+    propertyType: a.property_type || PROPERTY_TYPES[0],
+    addressStreet: a.address_street || '', addressCity: a.address_city || '',
+    addressProvince: a.address_province || '', addressPostalCode: a.address_postal_code || '',
+    addressCountry: a.address_country || '',
+    policyNumber: a.policy_number || '', insurerName: a.insurer_name || '',
+    lenderName: a.lender_name || '', maturityDate: a.maturity_date || '',
+    isCorporate: a.is_corporate, entityName: a.entity_name || '',
+    zillowEstimate: a.zillow_estimate_cad || '', linkedId: a.linked_security_id, notes: a.notes || '',
+  }
+}
+
+function AssetFields({ f, setF, assets, excludeId, lockClass }: {
+  f: FieldState; setF: (fn: (f: FieldState) => FieldState) => void
+  assets: PersonalAsset[]; excludeId?: number; lockClass?: boolean
+}) {
+  const set = <K extends keyof FieldState>(k: K, v: FieldState[K]) => setF(prev => ({ ...prev, [k]: v }))
+  return (
+    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div>
+        <label className="text-xs text-gray-500">Type</label>
+        <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.assetClass} disabled={lockClass}
+          onChange={e => set('assetClass', e.target.value as PersonalAssetClass)}>
+          {(Object.keys(CLASS_LABELS) as PersonalAssetClass[]).map(c => (
+            <option key={c} value={c}>{CLASS_LABELS[c]}</option>
+          ))}
+        </select>
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Name</label>
+        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.name} onChange={e => set('name', e.target.value)}
+          placeholder={f.assetClass === 'LIABILITY' ? 'e.g. Mortgage - 123 Main St' : 'e.g. 123 Main St'} />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Owner</label>
+        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)} placeholder="Brian" />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'} (CAD)</label>
+        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.value} onChange={e => set('value', e.target.value)} placeholder="650000" />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Acquired / Setup Date</label>
+        <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={f.acquiredDate}
+          onChange={e => set('acquiredDate', e.target.value)} />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Interest Rate % (optional)</label>
+        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.interestRate} onChange={e => set('interestRate', e.target.value)} placeholder="4.5" />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500 flex items-center gap-1"><Link2 className="h-3 w-3" /> Link to existing asset/liability</label>
+        <LinkPicker assets={assets} value={f.linkedId} onChange={id => set('linkedId', id)} excludeId={excludeId} />
+      </div>
+
+      {f.assetClass === 'REAL_ESTATE' && (
+        <>
+          <div>
+            <label className="text-xs text-gray-500">Property Type</label>
+            <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.propertyType} onChange={e => set('propertyType', e.target.value)}>
+              {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Street</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressStreet} onChange={e => set('addressStreet', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">City</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressCity} onChange={e => set('addressCity', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Province / State</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressProvince} onChange={e => set('addressProvince', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Postal / ZIP Code</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressPostalCode} onChange={e => set('addressPostalCode', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Country</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressCountry} onChange={e => set('addressCountry', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Zillow Estimate (CAD, optional)</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.zillowEstimate} onChange={e => set('zillowEstimate', e.target.value)}
+              placeholder="Paste from Zillow" />
+          </div>
+        </>
+      )}
+
+      {f.assetClass === 'LIFE_INSURANCE' && (
+        <>
+          <div>
+            <label className="text-xs text-gray-500">Policy Number</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.policyNumber} onChange={e => set('policyNumber', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Insurer</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.insurerName} onChange={e => set('insurerName', e.target.value)} />
+          </div>
+        </>
+      )}
+
+      {f.assetClass === 'LIABILITY' && (
+        <>
+          <div>
+            <label className="text-xs text-gray-500">Lender</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.lenderName} onChange={e => set('lenderName', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Maturity Date</label>
+            <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={f.maturityDate} onChange={e => set('maturityDate', e.target.value)} />
+          </div>
+        </>
+      )}
+
+      <div className="flex items-end gap-2">
+        <label className="flex items-center gap-2 text-xs text-gray-600">
+          <input type="checkbox" checked={f.isCorporate} onChange={e => set('isCorporate', e.target.checked)} />
+          Held via a corporation
+        </label>
+      </div>
+      {f.isCorporate && (
+        <div>
+          <label className="text-xs text-gray-500">Entity Name</label>
+          <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.entityName} onChange={e => set('entityName', e.target.value)}
+            placeholder="e.g. Romanow Holdings Inc." />
+        </div>
+      )}
+
+      <div className="sm:col-span-3">
+        <label className="text-xs text-gray-500">Notes</label>
+        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.notes} onChange={e => set('notes', e.target.value)} />
+      </div>
+    </div>
+  )
+}
+
+function fieldsToPayload(f: FieldState): Omit<PersonalAssetCreate, 'asset_class' | 'name' | 'owner' | 'value'> {
+  return {
+    acquired_date: f.acquiredDate || undefined,
+    interest_rate: f.interestRate ? parseFloat(f.interestRate) : undefined,
+    property_type: f.assetClass === 'REAL_ESTATE' ? f.propertyType : undefined,
+    address_street: f.assetClass === 'REAL_ESTATE' ? f.addressStreet || undefined : undefined,
+    address_city: f.assetClass === 'REAL_ESTATE' ? f.addressCity || undefined : undefined,
+    address_province: f.assetClass === 'REAL_ESTATE' ? f.addressProvince || undefined : undefined,
+    address_postal_code: f.assetClass === 'REAL_ESTATE' ? f.addressPostalCode || undefined : undefined,
+    address_country: f.assetClass === 'REAL_ESTATE' ? f.addressCountry || undefined : undefined,
+    policy_number: f.assetClass === 'LIFE_INSURANCE' ? f.policyNumber || undefined : undefined,
+    insurer_name: f.assetClass === 'LIFE_INSURANCE' ? f.insurerName || undefined : undefined,
+    lender_name: f.assetClass === 'LIABILITY' ? f.lenderName || undefined : undefined,
+    maturity_date: f.assetClass === 'LIABILITY' && f.maturityDate ? f.maturityDate : undefined,
+    is_corporate: f.isCorporate,
+    entity_name: f.isCorporate ? f.entityName || undefined : undefined,
+    zillow_estimate_cad: f.assetClass === 'REAL_ESTATE' && f.zillowEstimate ? parseFloat(f.zillowEstimate) : undefined,
+    linked_security_id: f.linkedId ?? undefined,
+    notes: f.notes || undefined,
+  }
+}
+
+// ─── Add form ─────────────────────────────────────────────────────────────────
 function AssetForm({ assets, onCreated }: { assets: PersonalAsset[]; onCreated: () => void }) {
-  const [assetClass, setAssetClass] = useState<PersonalAssetClass>('REAL_ESTATE')
-  const [name, setName] = useState('')
-  const [owner, setOwner] = useState('')
-  const [value, setValue] = useState('')
-  const [interestRate, setInterestRate] = useState('')
-  const [propertyType, setPropertyType] = useState(PROPERTY_TYPES[0])
-  const [propertyAddress, setPropertyAddress] = useState('')
-  const [policyNumber, setPolicyNumber] = useState('')
-  const [insurerName, setInsurerName] = useState('')
-  const [lenderName, setLenderName] = useState('')
-  const [maturityDate, setMaturityDate] = useState('')
-  const [isCorporate, setIsCorporate] = useState(false)
-  const [entityName, setEntityName] = useState('')
-  const [zillowEstimate, setZillowEstimate] = useState('')
-  const [linkedId, setLinkedId] = useState<number | null>(null)
-  const [notes, setNotes] = useState('')
+  const [f, setF] = useState<FieldState>(blankFields())
 
   const createMut = useMutation({
     mutationFn: () => createPersonalAsset({
-      asset_class: assetClass, name, owner, value: parseFloat(value || '0'),
-      interest_rate: interestRate ? parseFloat(interestRate) : undefined,
-      property_type: assetClass === 'REAL_ESTATE' ? propertyType : undefined,
-      property_address: assetClass === 'REAL_ESTATE' ? propertyAddress || undefined : undefined,
-      policy_number: assetClass === 'LIFE_INSURANCE' ? policyNumber || undefined : undefined,
-      insurer_name: assetClass === 'LIFE_INSURANCE' ? insurerName || undefined : undefined,
-      lender_name: assetClass === 'LIABILITY' ? lenderName || undefined : undefined,
-      maturity_date: assetClass === 'LIABILITY' && maturityDate ? maturityDate : undefined,
-      is_corporate: isCorporate,
-      entity_name: isCorporate ? entityName || undefined : undefined,
-      zillow_estimate_cad: assetClass === 'REAL_ESTATE' && zillowEstimate ? parseFloat(zillowEstimate) : undefined,
-      linked_security_id: linkedId ?? undefined,
-      notes: notes || undefined,
+      asset_class: f.assetClass, name: f.name, owner: f.owner, value: parseFloat(f.value || '0'),
+      ...fieldsToPayload(f),
     }),
-    onSuccess: () => {
-      onCreated()
-      setName(''); setValue(''); setInterestRate(''); setPropertyAddress('')
-      setPolicyNumber(''); setInsurerName(''); setLenderName(''); setMaturityDate('')
-      setIsCorporate(false); setEntityName(''); setZillowEstimate(''); setLinkedId(null); setNotes('')
-    },
+    onSuccess: () => { onCreated(); setF(blankFields(f.assetClass)) },
   })
 
   return (
     <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
       <h3 className="font-semibold text-gray-800">Add a personal asset or liability</h3>
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="text-xs text-gray-500">Type</label>
-          <select className="border rounded px-2 py-1.5 text-sm w-full" value={assetClass}
-            onChange={e => setAssetClass(e.target.value as PersonalAssetClass)}>
-            {(Object.keys(CLASS_LABELS) as PersonalAssetClass[]).map(c => (
-              <option key={c} value={c}>{CLASS_LABELS[c]}</option>
-            ))}
-          </select>
-        </div>
-        <div>
-          <label className="text-xs text-gray-500">Name</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={name} onChange={e => setName(e.target.value)}
-            placeholder={assetClass === 'LIABILITY' ? 'e.g. Mortgage - 123 Main St' : 'e.g. 123 Main St'} />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500">Owner</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={owner} onChange={e => setOwner(e.target.value)} placeholder="Brian" />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500">{assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'} (CAD)</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={value} onChange={e => setValue(e.target.value)} placeholder="650000" />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500">Interest Rate % (optional)</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={interestRate} onChange={e => setInterestRate(e.target.value)} placeholder="4.5" />
-        </div>
-        <div>
-          <label className="text-xs text-gray-500 flex items-center gap-1"><Link2 className="h-3 w-3" /> Link to existing asset/liability</label>
-          <LinkPicker assets={assets} value={linkedId} onChange={setLinkedId} />
-        </div>
-
-        {assetClass === 'REAL_ESTATE' && (
-          <>
-            <div>
-              <label className="text-xs text-gray-500">Property Type</label>
-              <select className="border rounded px-2 py-1.5 text-sm w-full" value={propertyType} onChange={e => setPropertyType(e.target.value)}>
-                {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
-              </select>
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Address</label>
-              <input className="border rounded px-2 py-1.5 text-sm w-full" value={propertyAddress} onChange={e => setPropertyAddress(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Zillow Estimate (CAD, optional)</label>
-              <input className="border rounded px-2 py-1.5 text-sm w-full" value={zillowEstimate} onChange={e => setZillowEstimate(e.target.value)}
-                placeholder="Paste from Zillow" />
-            </div>
-          </>
-        )}
-
-        {assetClass === 'LIFE_INSURANCE' && (
-          <>
-            <div>
-              <label className="text-xs text-gray-500">Policy Number</label>
-              <input className="border rounded px-2 py-1.5 text-sm w-full" value={policyNumber} onChange={e => setPolicyNumber(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Insurer</label>
-              <input className="border rounded px-2 py-1.5 text-sm w-full" value={insurerName} onChange={e => setInsurerName(e.target.value)} />
-            </div>
-          </>
-        )}
-
-        {assetClass === 'LIABILITY' && (
-          <>
-            <div>
-              <label className="text-xs text-gray-500">Lender</label>
-              <input className="border rounded px-2 py-1.5 text-sm w-full" value={lenderName} onChange={e => setLenderName(e.target.value)} />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500">Maturity Date</label>
-              <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={maturityDate} onChange={e => setMaturityDate(e.target.value)} />
-            </div>
-          </>
-        )}
-
-        <div className="flex items-end gap-2">
-          <label className="flex items-center gap-2 text-xs text-gray-600">
-            <input type="checkbox" checked={isCorporate} onChange={e => setIsCorporate(e.target.checked)} />
-            Held via a corporation
-          </label>
-        </div>
-        {isCorporate && (
-          <div>
-            <label className="text-xs text-gray-500">Entity Name</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={entityName} onChange={e => setEntityName(e.target.value)}
-              placeholder="e.g. Romanow Holdings Inc." />
-          </div>
-        )}
-
-        <div className="sm:col-span-3">
-          <label className="text-xs text-gray-500">Notes</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={notes} onChange={e => setNotes(e.target.value)} />
-        </div>
-      </div>
-
+      <AssetFields f={f} setF={setF} assets={assets} />
       <button
         onClick={() => createMut.mutate()}
-        disabled={!name || !owner || !value || createMut.isPending}
+        disabled={!f.name || !f.owner || !f.value || createMut.isPending}
         className="px-4 py-2 bg-blue-600 text-white text-sm rounded disabled:opacity-40"
       >
         {createMut.isPending ? 'Adding…' : 'Add'}
@@ -298,17 +429,47 @@ function AssetForm({ assets, onCreated }: { assets: PersonalAsset[]; onCreated: 
   )
 }
 
-// ─── Row: value editor + PDF + expandable ledger ──────────────────────────────
-function AssetRow({ asset }: { asset: PersonalAsset }) {
+// ─── Edit form (pre-filled, inline within a row) ──────────────────────────────
+function EditForm({ asset, assets, onDone }: { asset: PersonalAsset; assets: PersonalAsset[]; onDone: () => void }) {
+  const qc = useQueryClient()
+  const [f, setF] = useState<FieldState>(fieldsFromAsset(asset))
+
+  const saveMut = useMutation({
+    mutationFn: () => updatePersonalAsset(asset.security_id, {
+      name: f.name, value: parseFloat(f.value || '0'), as_of: today(),
+      ...fieldsToPayload(f),
+    }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['personal-assets'] })
+      qc.invalidateQueries({ queryKey: ['personal-asset-history', asset.security_id] })
+      onDone()
+    },
+  })
+
+  return (
+    <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 space-y-3 mb-3">
+      <AssetFields f={f} setF={setF} assets={assets} excludeId={asset.security_id} lockClass />
+      <div className="flex items-center gap-2">
+        <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
+          className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded disabled:opacity-40">
+          {saveMut.isPending ? 'Saving…' : 'Save changes'}
+        </button>
+        <button onClick={onDone} className="px-3 py-1.5 text-sm text-gray-500">Cancel</button>
+      </div>
+      <p className="text-[11px] text-gray-400">
+        Saving here also records today's value as a new value-history point. To back-date a
+        value change, use Value History below instead.
+      </p>
+    </div>
+  )
+}
+
+// ─── Row: edit form + PDF + expandable ledger/history ─────────────────────────
+function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAsset[] }) {
   const qc = useQueryClient()
   const [expanded, setExpanded] = useState(false)
-  const [editingValue, setEditingValue] = useState(false)
-  const [newValue, setNewValue] = useState('')
+  const [editing, setEditing] = useState(false)
 
-  const updateMut = useMutation({
-    mutationFn: () => updatePersonalAsset(asset.security_id, { value: parseFloat(newValue || '0') }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['personal-assets'] }); setEditingValue(false) },
-  })
   const uploadMut = useMutation({
     mutationFn: (file: File) => uploadPersonalAssetFile(asset.security_id, file),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['personal-assets'] }),
@@ -318,14 +479,15 @@ function AssetRow({ asset }: { asset: PersonalAsset }) {
     onSuccess: () => qc.invalidateQueries({ queryKey: ['personal-assets'] }),
   })
 
+  const addressLine = [asset.address_street, asset.address_city, asset.address_province, asset.address_postal_code]
+    .filter(Boolean).join(', ')
+
   return (
     <div className="border-b border-gray-100 last:border-0">
       <div className="flex items-center gap-3 py-3">
-        {asset.asset_class === 'REAL_ESTATE' ? (
-          <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600">
-            {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
-          </button>
-        ) : <span className="w-4" />}
+        <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600">
+          {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
+        </button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
@@ -343,30 +505,23 @@ function AssetRow({ asset }: { asset: PersonalAsset }) {
             )}
           </div>
           <div className="text-xs text-gray-400 mt-0.5">
-            {asset.owner} · {asset.property_address || asset.insurer_name || asset.lender_name || ''}
+            {asset.owner} · {addressLine || asset.insurer_name || asset.lender_name || ''}
             {asset.zillow_estimate_cad && <> · Zillow est. {fmtCAD(asset.zillow_estimate_cad)}</>}
+            {asset.acquired_date && <> · Acquired {asset.acquired_date}</>}
           </div>
         </div>
 
         <div className="text-right">
-          {editingValue ? (
-            <div className="flex items-center gap-1">
-              <input autoFocus className="border rounded px-2 py-1 text-sm w-28" value={newValue}
-                onChange={e => setNewValue(e.target.value)} placeholder={asset.current_value_cad ?? ''} />
-              <button onClick={() => updateMut.mutate()} className="text-xs text-blue-600 font-medium">Save</button>
-              <button onClick={() => setEditingValue(false)} className="text-xs text-gray-400">Cancel</button>
-            </div>
-          ) : (
-            <button onClick={() => { setEditingValue(true); setNewValue('') }} className="text-right hover:underline">
-              <div className={`font-semibold ${asset.asset_class === 'LIABILITY' ? 'text-red-500' : 'text-gray-800'}`}>
-                {asset.asset_class === 'LIABILITY' ? '-' : ''}{fmtCAD(asset.current_value_cad ? Math.abs(parseFloat(asset.current_value_cad)).toString() : null)}
-              </div>
-              <div className="text-[10px] text-gray-400">{asset.value_updated_at?.slice(0, 10)}</div>
-            </button>
-          )}
+          <div className={`font-semibold ${asset.asset_class === 'LIABILITY' ? 'text-red-500' : 'text-gray-800'}`}>
+            {asset.asset_class === 'LIABILITY' ? '-' : ''}{fmtCAD(asset.current_value_cad ? Math.abs(parseFloat(asset.current_value_cad)).toString() : null)}
+          </div>
+          <div className="text-[10px] text-gray-400">{asset.value_updated_at?.slice(0, 10)}</div>
         </div>
 
         <div className="flex items-center gap-1">
+          <button onClick={() => { setEditing(e => !e); setExpanded(true) }} className="p-1.5 text-gray-400 hover:text-blue-600 rounded" title="Edit">
+            <Pencil className="h-3.5 w-3.5" />
+          </button>
           {asset.original_filename ? (
             <>
               <button onClick={() => openPersonalAssetFile(asset.security_id)} title={asset.original_filename}
@@ -383,8 +538,12 @@ function AssetRow({ asset }: { asset: PersonalAsset }) {
           )}
         </div>
       </div>
-      {expanded && asset.asset_class === 'REAL_ESTATE' && (
-        <div className="pb-3"><IncomeLedger securityId={asset.security_id} /></div>
+      {expanded && (
+        <div className="pb-3 space-y-3">
+          {editing && <EditForm asset={asset} assets={assets} onDone={() => setEditing(false)} />}
+          {asset.asset_class === 'REAL_ESTATE' && <IncomeLedger securityId={asset.security_id} />}
+          <ValueHistory asset={asset} />
+        </div>
       )}
     </div>
   )
@@ -426,7 +585,7 @@ export default function PersonalAssetsTab() {
 
       <div className="bg-white border border-gray-200 rounded-xl px-5">
         {assets.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No personal assets or liabilities yet.</p>}
-        {assets.map(a => <AssetRow key={a.security_id} asset={a} />)}
+        {assets.map(a => <AssetRow key={a.security_id} asset={a} assets={assets} />)}
       </div>
     </div>
   )

@@ -345,7 +345,12 @@ class PersonalAssetDetails(Base):
 
     # ── Real estate ───────────────────────────────────────────────────────────
     property_type:    Mapped[Optional[str]] = mapped_column(String(30), nullable=True)  # Primary Residence/Rental Property/Land
-    property_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    property_address: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)  # deprecated — superseded by address_* below, kept for schema stability
+    address_street:       Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
+    address_city:         Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    address_province:     Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    address_postal_code:  Mapped[Optional[str]] = mapped_column(String(20), nullable=True)
+    address_country:      Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     purchase_date:    Mapped[Optional[date]] = mapped_column(Date, nullable=True)
     purchase_price:   Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
 

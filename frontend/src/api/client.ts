@@ -1616,10 +1616,15 @@ export interface PersonalAsset {
   asset_class: PersonalAssetClass
   interest_rate: string | null
   owner: string | null
+  acquired_date: string | null
   current_value_cad: string | null
   value_updated_at: string | null
   property_type: string | null
-  property_address: string | null
+  address_street: string | null
+  address_city: string | null
+  address_province: string | null
+  address_postal_code: string | null
+  address_country: string | null
   purchase_date: string | null
   purchase_price: string | null
   policy_number: string | null
@@ -1650,7 +1655,11 @@ export interface PersonalAssetCreate {
   acquired_date?: string
   interest_rate?: number
   property_type?: string
-  property_address?: string
+  address_street?: string
+  address_city?: string
+  address_province?: string
+  address_postal_code?: string
+  address_country?: string
   purchase_date?: string
   purchase_price?: number
   policy_number?: string
@@ -1668,7 +1677,9 @@ export interface PersonalAssetCreate {
   notes?: string
 }
 
-export type PersonalAssetUpdate = Partial<Omit<PersonalAssetCreate, 'asset_class' | 'owner' | 'name'>>
+export type PersonalAssetUpdate = Partial<Omit<PersonalAssetCreate, 'asset_class' | 'owner'>> & {
+  as_of?: string   // dates a `value` update — see backend _set_value
+}
 
 export interface PersonalAssetIncomeEntry {
   id: number

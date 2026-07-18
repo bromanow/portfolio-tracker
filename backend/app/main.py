@@ -165,6 +165,11 @@ def _run_migrations(eng):
         ("securities",        "in_screener_universe",     "BOOLEAN DEFAULT FALSE"),
         ("securities",        "interest_rate",            "NUMERIC(10, 6)"),
         ("clients",           "is_demo",                  "BOOLEAN DEFAULT FALSE"),
+        ("personal_asset_details", "address_street",       "VARCHAR(255)"),
+        ("personal_asset_details", "address_city",          "VARCHAR(100)"),
+        ("personal_asset_details", "address_province",      "VARCHAR(100)"),
+        ("personal_asset_details", "address_postal_code",   "VARCHAR(20)"),
+        ("personal_asset_details", "address_country",       "VARCHAR(100)"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

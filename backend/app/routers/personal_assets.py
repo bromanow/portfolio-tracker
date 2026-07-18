@@ -75,7 +75,11 @@ class PersonalAssetCreate(BaseModel):
     acquired_date: Optional[date] = None
     interest_rate: Optional[Decimal] = None
     property_type: Optional[str] = None
-    property_address: Optional[str] = None
+    address_street: Optional[str] = None
+    address_city: Optional[str] = None
+    address_province: Optional[str] = None
+    address_postal_code: Optional[str] = None
+    address_country: Optional[str] = None
     purchase_date: Optional[date] = None
     purchase_price: Optional[Decimal] = None
     policy_number: Optional[str] = None
@@ -95,9 +99,16 @@ class PersonalAssetCreate(BaseModel):
 
 class PersonalAssetUpdate(BaseModel):
     value: Optional[Decimal] = None
+    as_of: Optional[date] = None   # dates the value update — see _set_value / update_personal_asset
+    acquired_date: Optional[date] = None   # updates the OPENING_BALANCE transaction's date, not a details field
+    name: Optional[str] = None
     interest_rate: Optional[Decimal] = None
     property_type: Optional[str] = None
-    property_address: Optional[str] = None
+    address_street: Optional[str] = None
+    address_city: Optional[str] = None
+    address_province: Optional[str] = None
+    address_postal_code: Optional[str] = None
+    address_country: Optional[str] = None
     purchase_date: Optional[date] = None
     purchase_price: Optional[Decimal] = None
     policy_number: Optional[str] = None
@@ -115,19 +126,24 @@ class PersonalAssetUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-def _set_value(db: Session, security: Security, signed_value: Decimal) -> None:
-    """Set MarketPrice (+ historical_prices row for today) for this security — CAD only,
-    mirrors prices.py's set_manual_price for the single-security case."""
+def _set_value(db: Session, security: Security, signed_value: Decimal, as_of: Optional[date] = None) -> None:
+    """Set the CURRENT value (MarketPrice) for this security, dated `as_of` (default today),
+    plus a matching historical_prices row for that same date — CAD only, mirrors
+    prices.py's set_manual_price for the single-security case.
+
+    Only call this for the LIVE current value (as_of today or later than any existing
+    history) — a value dated in the past should go through the plain historical-price
+    endpoints (app/routers/prices.py) instead, which don't touch the current MarketPrice."""
     from app.models.prices import MarketPrice, HistoricalPrice
 
-    today = date.today()
+    as_of = as_of or date.today()
     now = datetime.utcnow()
     mp = db.query(MarketPrice).filter(MarketPrice.security_id == security.id).first()
     if mp:
         mp.price = signed_value
         mp.currency = "CAD"
         mp.price_cad = signed_value
-        mp.price_date = today
+        mp.price_date = as_of
         mp.fetched_at = now
         mp.source = "manual"
         mp.day_change = None
@@ -135,11 +151,11 @@ def _set_value(db: Session, security: Security, signed_value: Decimal) -> None:
     else:
         db.add(MarketPrice(
             security_id=security.id, price=signed_value, currency="CAD",
-            price_cad=signed_value, price_date=today, fetched_at=now, source="manual",
+            price_cad=signed_value, price_date=as_of, fetched_at=now, source="manual",
         ))
 
     hist = db.query(HistoricalPrice).filter(
-        HistoricalPrice.security_id == security.id, HistoricalPrice.price_date == today,
+        HistoricalPrice.security_id == security.id, HistoricalPrice.price_date == as_of,
     ).first()
     if hist:
         hist.close_price = signed_value
@@ -148,7 +164,7 @@ def _set_value(db: Session, security: Security, signed_value: Decimal) -> None:
         hist.source = "manual"
     else:
         db.add(HistoricalPrice(
-            security_id=security.id, price_date=today, close_price=signed_value,
+            security_id=security.id, price_date=as_of, close_price=signed_value,
             close_price_cad=signed_value, currency="CAD", source="manual",
         ))
 
@@ -156,7 +172,10 @@ def _set_value(db: Session, security: Security, signed_value: Decimal) -> None:
 def _details_to_dict(row: Optional[PersonalAssetDetails], linked_name: Optional[str] = None) -> dict:
     if row is None:
         return {
-            "property_type": None, "property_address": None, "purchase_date": None,
+            "property_type": None,
+            "address_street": None, "address_city": None, "address_province": None,
+            "address_postal_code": None, "address_country": None,
+            "purchase_date": None,
             "purchase_price": None, "policy_number": None, "insurer_name": None,
             "beneficiary": None, "death_benefit_cad": None, "lender_name": None,
             "original_principal_cad": None, "maturity_date": None,
@@ -167,7 +186,11 @@ def _details_to_dict(row: Optional[PersonalAssetDetails], linked_name: Optional[
         }
     return {
         "property_type": row.property_type,
-        "property_address": row.property_address,
+        "address_street": row.address_street,
+        "address_city": row.address_city,
+        "address_province": row.address_province,
+        "address_postal_code": row.address_postal_code,
+        "address_country": row.address_country,
         "purchase_date": row.purchase_date.isoformat() if row.purchase_date else None,
         "purchase_price": str(row.purchase_price) if row.purchase_price is not None else None,
         "policy_number": row.policy_number,
@@ -216,24 +239,25 @@ def list_personal_assets(db: Session = Depends(get_db)):
     mp_map = {mp.security_id: mp for mp in db.query(MarketPrice).filter(MarketPrice.security_id.in_(sec_ids)).all()}
     details_map = {d.security_id: d for d in db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id.in_(sec_ids)).all()}
 
-    # account/owner lookup for display
+    # account/owner + acquisition-date lookup for display (one OPENING_BALANCE txn per asset)
     txns = db.query(Transaction).filter(
         Transaction.security_id.in_(sec_ids), Transaction.transaction_type == "OPENING_BALANCE",
     ).all()
-    acct_by_sec = {t.security_id: t.account for t in txns if t.account}
+    opening_by_sec = {t.security_id: t for t in txns}
 
     out = []
     for sec in secs:
         mp = mp_map.get(sec.id)
         details = details_map.get(sec.id)
-        acct = acct_by_sec.get(sec.id)
+        opening = opening_by_sec.get(sec.id)
         out.append({
             "security_id": sec.id,
             "ticker": sec.ticker,
             "name": sec.name,
             "asset_class": sec.asset_class,
             "interest_rate": str(sec.interest_rate) if sec.interest_rate is not None else None,
-            "owner": acct.owner if acct else None,
+            "owner": opening.account.owner if opening and opening.account else None,
+            "acquired_date": opening.transaction_date.isoformat() if opening and opening.transaction_date else None,
             "current_value_cad": str(mp.price_cad) if mp and mp.price_cad is not None else None,
             "value_updated_at": mp.fetched_at.isoformat() if mp and mp.fetched_at else None,
             **_details_to_dict(details, _find_linked_name(db, sec.id)),
@@ -277,7 +301,10 @@ def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_d
 
     details = PersonalAssetDetails(
         security_id=security.id,
-        property_type=data.property_type, property_address=data.property_address,
+        property_type=data.property_type,
+        address_street=data.address_street, address_city=data.address_city,
+        address_province=data.address_province, address_postal_code=data.address_postal_code,
+        address_country=data.address_country,
         purchase_date=data.purchase_date, purchase_price=data.purchase_price,
         policy_number=data.policy_number, insurer_name=data.insurer_name,
         beneficiary=data.beneficiary, death_benefit_cad=data.death_benefit_cad,
@@ -301,17 +328,32 @@ def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Sessi
 
     if data.value is not None:
         signed_value = data.value if security.asset_class != "LIABILITY" else -abs(data.value)
-        _set_value(db, security, signed_value)
+        _set_value(db, security, signed_value, as_of=data.as_of)
 
     if data.interest_rate is not None:
         security.interest_rate = data.interest_rate
+
+    if data.name is not None:
+        security.name = data.name
+
+    if data.acquired_date is not None:
+        opening = db.query(Transaction).filter(
+            Transaction.security_id == security_id,
+            Transaction.transaction_type == "OPENING_BALANCE",
+        ).first()
+        if opening:
+            opening.transaction_date = data.acquired_date
+            opening.settlement_date = data.acquired_date
 
     details = db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id == security_id).first()
     if details is None:
         details = PersonalAssetDetails(security_id=security_id)
         db.add(details)
 
-    updates = data.model_dump(exclude_unset=True, exclude={"value", "interest_rate"})
+    updates = data.model_dump(
+        exclude_unset=True,
+        exclude={"value", "as_of", "acquired_date", "name", "interest_rate"},
+    )
     for field, val in updates.items():
         setattr(details, field, val)
 

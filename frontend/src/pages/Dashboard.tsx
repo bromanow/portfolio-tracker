@@ -3,10 +3,10 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import {
-  getCashBalances, getImports, getAccounts, getPositions,
+  getCashBalances, getImports, getAccounts, getPositions, getPersonalAssets,
   getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews, getTopStories, getPortfolioNews,
 } from '../api/client'
-import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics } from '../api/client'
+import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics, PersonalAsset, PersonalAssetClass } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import NewsList from '../components/NewsList'
@@ -59,6 +59,41 @@ function fmtUSD(val: number) {
   return new Intl.NumberFormat('en-US', {
     style: 'currency', currency: 'USD', minimumFractionDigits: 0, maximumFractionDigits: 0,
   }).format(val)
+}
+
+// ─── Asset Group Summary (Crypto / Real Estate / Insurance / Other) ───────────
+// A simpler sibling to BrokerageSummary — a flat list of items (no account nesting).
+// A linked liability renders as an indented, red, negative row beneath its asset.
+interface AssetGroupItem { security_id: number; name: string; value: number; isLiability: boolean }
+
+function AssetGroupSummary({ items, total }: { title: string; items: AssetGroupItem[]; total: number }) {
+  const [expanded, setExpanded] = useState(true)
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="flex items-center gap-1.5 font-semibold text-gray-900">
+          {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+          {items.length} item{items.length !== 1 ? 's' : ''}
+        </span>
+        <span className={`font-bold ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>{fmtCAD(total)}</span>
+      </button>
+      {expanded && (
+        <div className="border-t border-gray-100 divide-y divide-gray-50">
+          {items.map(item => (
+            <div key={item.security_id} className={`px-4 py-2 flex items-center justify-between text-sm ${item.isLiability ? 'pl-8 bg-gray-50/50' : ''}`}>
+              <span className="text-gray-700 truncate">{item.name}</span>
+              <span className={`font-mono font-medium ${item.isLiability ? 'text-red-500' : 'text-gray-900'}`}>
+                {item.isLiability ? '-' : ''}{fmtCAD(Math.abs(item.value))}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
 
 function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRate: number | null }) {
@@ -395,6 +430,7 @@ export default function Dashboard() {
   const { data: positions    = [] } = useQuery({ queryKey: ['positions', toDate],       queryFn: () => getPositions({ as_of: toDate }) })
   const { data: cashBalances = [] } = useQuery({ queryKey: ['cash-balances', toDate],   queryFn: () => getCashBalances({ as_of: toDate }) })
   const { data: imports      = [] } = useQuery({ queryKey: ['imports'],                queryFn: getImports })
+  const { data: personalAssets = [] } = useQuery({ queryKey: ['personal-assets'],       queryFn: getPersonalAssets })
 
   const accounts = rawAccounts as Account[]
 
@@ -421,6 +457,72 @@ export default function Dashboard() {
     () => filteredPositions.filter(p => PERSONAL_ASSET_CLASSES.has(p.asset_class)),
     [filteredPositions],
   )
+
+  // Crypto is a normal investment position (held at a real exchange like Coinsquare), but
+  // the Overview page shows it as its own group rather than nested under its brokerage —
+  // pull it out of the brokerage/account table's input, not out of "Total"/net worth math.
+  const traditionalInvestmentPositions = useMemo(
+    () => investmentPositions.filter(p => p.asset_class !== 'CRYPTO'),
+    [investmentPositions],
+  )
+  const cryptoPositions = useMemo(
+    () => investmentPositions.filter(p => p.asset_class === 'CRYPTO'),
+    [investmentPositions],
+  )
+
+  // ── Other Assets/Liabilities groups (Real Estate / Insurance / Other) ─────
+  // A linked liability nets into its linked asset's group; an unlinked liability falls
+  // into Other. Uses the /personal-assets list (not `positions`) since it already carries
+  // linked_security_id/linked_name/current_value_cad in one place.
+  interface AssetGroup { title: string; items: AssetGroupItem[]; total: number }
+
+  const otherAssetsGroups = useMemo(() => {
+    const byId = new Map(personalAssets.map(a => [a.security_id, a]))
+    const claimedLiabilityIds = new Set<number>()
+    const valueOf = (a: PersonalAsset) => a.current_value_cad ? parseFloat(a.current_value_cad) : 0
+
+    // A linked liability may point AT this asset (liability.linked_security_id === asset.id)
+    // or the asset may point AT the liability (asset.linked_security_id === liability.id) —
+    // the create/edit form only ever sets the link on one side, so both directions must be
+    // checked (mirrors the backend's _find_linked_name, which does the same both-ways check).
+    const buildGroup = (title: string, assetClass: PersonalAssetClass): AssetGroup => {
+      const items: AssetGroupItem[] = []
+      for (const a of personalAssets) {
+        if (a.asset_class !== assetClass) continue
+        items.push({ security_id: a.security_id, name: a.name || a.ticker, value: valueOf(a), isLiability: false })
+
+        let linked: PersonalAsset | undefined
+        if (a.linked_security_id) {
+          linked = byId.get(a.linked_security_id)
+        }
+        if (!linked || linked.asset_class !== 'LIABILITY') {
+          linked = personalAssets.find(other => other.asset_class === 'LIABILITY' && other.linked_security_id === a.security_id)
+        }
+        if (linked && linked.asset_class === 'LIABILITY') {
+          claimedLiabilityIds.add(linked.security_id)
+          items.push({ security_id: linked.security_id, name: linked.name || linked.ticker, value: valueOf(linked), isLiability: true })
+        }
+      }
+      return { title, items, total: items.reduce((s, i) => s + i.value, 0) }
+    }
+
+    const realEstate  = buildGroup('Real Estate', 'REAL_ESTATE')
+    const insurance    = buildGroup('Insurance', 'LIFE_INSURANCE')
+    const otherBase    = buildGroup('Other', 'OTHER_ASSET')
+    const unclaimedLiabilities = personalAssets.filter(
+      a => a.asset_class === 'LIABILITY' && !claimedLiabilityIds.has(a.security_id),
+    )
+    const other: AssetGroup = {
+      title: 'Other',
+      items: [
+        ...otherBase.items,
+        ...unclaimedLiabilities.map(a => ({ security_id: a.security_id, name: a.name || a.ticker, value: valueOf(a), isLiability: true })),
+      ],
+      total: otherBase.total + unclaimedLiabilities.reduce((s, a) => s + valueOf(a), 0),
+    }
+
+    return { realEstate, insurance, other }
+  }, [personalAssets])
 
   const filteredCash = useMemo(() => {
     if (accountsLoading) return []
@@ -499,7 +601,11 @@ export default function Dashboard() {
     return { totalPersonalAssets: assets, totalLiabilities: liabilities }
   }, [personalAssetPositions])
   const netWorth = totalValue + totalPersonalAssets + totalLiabilities
-  const hasPersonalAssets = personalAssetPositions.length > 0
+
+  const cryptoTotal = useMemo(
+    () => cryptoPositions.reduce((s, p) => s + parseFloat(p.market_value_cad || p.total_acb_cad || '0'), 0),
+    [cryptoPositions],
+  )
 
   const allAcctIds = useMemo(() => {
     const ids = new Set<number>()
@@ -525,7 +631,7 @@ export default function Dashboard() {
       return be.accounts.get(id)!
     }
 
-    for (const p of filteredPositions) {
+    for (const p of traditionalInvestmentPositions) {
       const acct = accountMap.get(p.account_id); if (!acct) continue
       const row = ensureAccount(p.account_id, p.account_name, p.account_type, acct.base_currency, acct.brokerage_name)
       const bv = parseFloat(p.total_acb_cad || '0')
@@ -598,7 +704,7 @@ export default function Dashboard() {
         hasFallback:      acctRows.some(a => a.hasFallback),
       }
     }).sort((a, b) => b.total - a.total)
-  }, [filteredPositions, filteredCash, accounts])
+  }, [traditionalInvestmentPositions, filteredCash, accounts])
 
   // General Market news follows the same country toggle as the ticker bar above, so
   // switching Canada/US changes both.
@@ -685,8 +791,8 @@ export default function Dashboard() {
         {/* ── Mobile: Total Value hero + compact 2-col grid ── */}
         <div className="md:hidden">
           <div className="text-center pb-3 mb-3 border-b border-blue-200">
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Total Value</div>
-            <div className="text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
+            <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
+            <div className="text-3xl font-bold text-blue-900">{fmtCAD(netWorth)}</div>
             <div className="text-[11px] text-blue-400 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -753,8 +859,8 @@ export default function Dashboard() {
             <div className={`text-xl md:text-2xl font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
           </div>
           <div className="md:border-l md:border-blue-200 md:pl-10">
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Total Value</div>
-            <div className="text-2xl md:text-3xl font-bold text-blue-900">{fmtCAD(totalValue)}</div>
+            <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
+            <div className="text-2xl md:text-3xl font-bold text-blue-900">{fmtCAD(netWorth)}</div>
           </div>
           {hasPrices && (
             <div>
@@ -822,37 +928,48 @@ export default function Dashboard() {
         )}
       </div>
 
-      {hasPersonalAssets && (
-        <div className="bg-white border border-gray-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
-          <div className="text-xs text-gray-400 uppercase tracking-wide mb-3">Net Worth</div>
-          <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Investment Portfolio</div>
-              <div className="text-xl font-bold text-gray-800">{fmtCAD(totalValue)}</div>
-            </div>
-            <div>
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Personal Assets</div>
-              <div className="text-xl font-bold text-gray-800">{fmtCAD(totalPersonalAssets)}</div>
-            </div>
-            {totalLiabilities !== 0 && (
-              <div>
-                <div className="text-xs text-gray-500 uppercase tracking-wide">Liabilities</div>
-                <div className="text-xl font-bold text-red-500">{fmtCAD(totalLiabilities)}</div>
-              </div>
-            )}
-            <div className="md:border-l md:border-gray-200 md:pl-8">
-              <div className="text-xs text-gray-500 uppercase tracking-wide">Net Worth</div>
-              <div className="text-2xl font-bold text-gray-900">{fmtCAD(netWorth)}</div>
-            </div>
-          </div>
+      {/* ── Brokerage / Account ── */}
+      <div>
+        <h2 className="font-semibold text-gray-800 mb-3">Brokerage / Account</h2>
+        <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
+      </div>
+
+      {/* ── Crypto ── */}
+      {cryptoPositions.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-3">Crypto</h2>
+          <AssetGroupSummary
+            title="Crypto"
+            total={cryptoTotal}
+            items={cryptoPositions.map(p => ({
+              security_id: p.security_id,
+              name: p.security_name || p.ticker,
+              value: parseFloat(p.market_value_cad || p.total_acb_cad || '0'),
+              isLiability: false,
+            }))}
+          />
         </div>
       )}
 
-      {/* ── Brokerage breakdown ── */}
-      <div>
-        <h2 className="font-semibold text-gray-800 mb-3">By Brokerage</h2>
-        <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
-      </div>
+      {/* ── Other Assets/Liabilities: Real Estate / Insurance / Other ── */}
+      {otherAssetsGroups.realEstate.items.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-3">Real Estate</h2>
+          <AssetGroupSummary title="Real Estate" total={otherAssetsGroups.realEstate.total} items={otherAssetsGroups.realEstate.items} />
+        </div>
+      )}
+      {otherAssetsGroups.insurance.items.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-3">Insurance</h2>
+          <AssetGroupSummary title="Insurance" total={otherAssetsGroups.insurance.total} items={otherAssetsGroups.insurance.items} />
+        </div>
+      )}
+      {otherAssetsGroups.other.items.length > 0 && (
+        <div>
+          <h2 className="font-semibold text-gray-800 mb-3">Other Assets/Liabilities</h2>
+          <AssetGroupSummary title="Other" total={otherAssetsGroups.other.total} items={otherAssetsGroups.other.items} />
+        </div>
+      )}
 
       {/* ── News ── */}
       <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">

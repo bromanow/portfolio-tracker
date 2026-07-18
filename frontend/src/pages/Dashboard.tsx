@@ -69,19 +69,16 @@ function fmtUSD(val: number) {
 // A linked liability renders as an indented, red, negative row beneath its asset.
 interface AssetGroupItem { security_id: number; name: string; value: number; isLiability: boolean }
 
-function AssetGroupSummary({ items, total }: { title: string; items: AssetGroupItem[]; total: number }) {
+function AssetGroupSummary({ title, items, total }: { title: string; items: AssetGroupItem[]; total: number }) {
   const [expanded, setExpanded] = useState(true)
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center gap-1.5 text-left hover:bg-gray-50 transition-colors font-semibold text-gray-900"
       >
-        <span className="flex items-center gap-1.5 font-semibold text-gray-900">
-          {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
-          {items.length} item{items.length !== 1 ? 's' : ''}
-        </span>
-        <span className={`font-bold ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>{fmtCAD(total)}</span>
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+        {title}
       </button>
       {expanded && (
         <div className="border-t border-gray-100 divide-y divide-gray-50">
@@ -95,6 +92,10 @@ function AssetGroupSummary({ items, total }: { title: string; items: AssetGroupI
           ))}
         </div>
       )}
+      <div className="px-4 py-2.5 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
+        <span className="text-gray-700">Total</span>
+        <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
+      </div>
     </div>
   )
 }
@@ -111,13 +112,10 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+        className="w-full px-4 py-3 flex items-center gap-1.5 text-left hover:bg-gray-50 transition-colors font-semibold text-gray-900"
       >
-        <span className="flex items-center gap-1.5 font-semibold text-gray-900">
-          {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
-          Real Estate
-        </span>
-        <span className={`font-bold ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>{fmtCAD(total)}</span>
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+        Real Estate
       </button>
       {expanded && (
         <div className="border-t border-gray-100 overflow-x-auto">
@@ -153,6 +151,10 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
           </table>
         </div>
       )}
+      <div className="px-4 py-2.5 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
+        <span className="text-gray-700">Total</span>
+        <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
+      </div>
     </div>
   )
 }
@@ -260,7 +262,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
         </colgroup>
         <thead>
           <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
-            <th className="px-4 py-2.5 text-left">Brokerage / Account</th>
+            <th className="px-4 py-2.5 text-left">Brokerages</th>
             <th className="px-3 py-2.5 text-right"></th>
             <th className="px-3 py-2.5 text-right">Book Value</th>
             <th className="px-3 py-2.5 text-right">Securities</th>
@@ -968,47 +970,32 @@ export default function Dashboard() {
         )}
       </div>
 
-      {/* ── Brokerage / Account ── */}
-      <div>
-        <h2 className="font-semibold text-gray-800 mb-3">Brokerage / Account</h2>
-        <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
-      </div>
+      {/* ── Brokerages ── */}
+      <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
 
       {/* ── Crypto ── */}
       {cryptoPositions.length > 0 && (
-        <div>
-          <h2 className="font-semibold text-gray-800 mb-3">Crypto</h2>
-          <AssetGroupSummary
-            title="Crypto"
-            total={cryptoTotal}
-            items={cryptoPositions.map(p => ({
-              security_id: p.security_id,
-              name: p.security_name || p.ticker,
-              value: parseFloat(p.market_value_cad || p.total_acb_cad || '0'),
-              isLiability: false,
-            }))}
-          />
-        </div>
+        <AssetGroupSummary
+          title="Crypto"
+          total={cryptoTotal}
+          items={cryptoPositions.map(p => ({
+            security_id: p.security_id,
+            name: p.security_name || p.ticker,
+            value: parseFloat(p.market_value_cad || p.total_acb_cad || '0'),
+            isLiability: false,
+          }))}
+        />
       )}
 
       {/* ── Other Assets/Liabilities: Real Estate / Insurance / Other ── */}
       {realEstateRows.length > 0 && (
-        <div>
-          <h2 className="font-semibold text-gray-800 mb-3">Real Estate</h2>
-          <RealEstateTable rows={realEstateRows} total={otherAssetsGroups.realEstate.total} />
-        </div>
+        <RealEstateTable rows={realEstateRows} total={otherAssetsGroups.realEstate.total} />
       )}
       {otherAssetsGroups.insurance.items.length > 0 && (
-        <div>
-          <h2 className="font-semibold text-gray-800 mb-3">Insurance</h2>
-          <AssetGroupSummary title="Insurance" total={otherAssetsGroups.insurance.total} items={otherAssetsGroups.insurance.items} />
-        </div>
+        <AssetGroupSummary title="Insurance" total={otherAssetsGroups.insurance.total} items={otherAssetsGroups.insurance.items} />
       )}
       {otherAssetsGroups.other.items.length > 0 && (
-        <div>
-          <h2 className="font-semibold text-gray-800 mb-3">Other Assets/Liabilities</h2>
-          <AssetGroupSummary title="Other" total={otherAssetsGroups.other.total} items={otherAssetsGroups.other.items} />
-        </div>
+        <AssetGroupSummary title="Other Assets/Liabilities" total={otherAssetsGroups.other.total} items={otherAssetsGroups.other.items} />
       )}
 
       {/* ── News ── */}

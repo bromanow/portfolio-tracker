@@ -1614,9 +1614,11 @@ export interface PersonalAsset {
   ticker: string
   name: string | null
   asset_class: PersonalAssetClass
+  currency: string
   interest_rate: string | null
   owner: string | null
   acquired_date: string | null
+  current_value: string | null
   current_value_cad: string | null
   value_updated_at: string | null
   property_type: string | null
@@ -1652,6 +1654,7 @@ export interface PersonalAssetCreate {
   name: string
   owner: string
   value: number
+  currency?: string
   acquired_date?: string
   interest_rate?: number
   property_type?: string
@@ -1697,6 +1700,9 @@ export const createPersonalAsset = (data: PersonalAssetCreate) =>
 
 export const updatePersonalAsset = (securityId: number, data: PersonalAssetUpdate) =>
   api.put(`/personal-assets/${securityId}`, data).then(r => r.data)
+
+export const deletePersonalAsset = (securityId: number) =>
+  api.delete(`/personal-assets/${securityId}`).then(r => r.data)
 
 export const uploadPersonalAssetFile = (securityId: number, file: File) => {
   const fd = new FormData()

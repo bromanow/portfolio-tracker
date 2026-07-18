@@ -31,7 +31,7 @@ const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly
   { heading: 'Data', tabs: [
     { id: 'accounts',         label: 'Accounts' },
     { id: 'opening-balances', label: 'Opening Balances' },
-    { id: 'personal-assets',  label: 'Personal Assets & Liabilities' },
+    { id: 'personal-assets',  label: 'Other Assets and Liabilities' },
     { id: 'securities',       label: 'Securities',       adminOnly: true },
     { id: 'prices',           label: 'Prices',           adminOnly: true },
     { id: 'option-types',     label: 'Fix Option Types', adminOnly: true },

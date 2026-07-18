@@ -72,6 +72,7 @@ class PersonalAssetCreate(BaseModel):
     name: str
     owner: str
     value: Decimal   # positive for assets, positive amount owed for LIABILITY (sign flipped internally)
+    currency: str = "CAD"   # native currency of `value`/`purchase_price` — converted to CAD for storage
     acquired_date: Optional[date] = None
     interest_rate: Optional[Decimal] = None
     property_type: Optional[str] = None
@@ -102,6 +103,7 @@ class PersonalAssetUpdate(BaseModel):
     as_of: Optional[date] = None   # dates the value update — see _set_value / update_personal_asset
     acquired_date: Optional[date] = None   # updates the OPENING_BALANCE transaction's date, not a details field
     name: Optional[str] = None
+    currency: Optional[str] = None
     interest_rate: Optional[Decimal] = None
     property_type: Optional[str] = None
     address_street: Optional[str] = None
@@ -126,10 +128,24 @@ class PersonalAssetUpdate(BaseModel):
     notes: Optional[str] = None
 
 
-def _set_value(db: Session, security: Security, signed_value: Decimal, as_of: Optional[date] = None) -> None:
+def _convert_to_cad(db: Session, amount: Decimal, currency: str, as_of: date) -> Decimal:
+    """Convert `amount` (in `currency`) to CAD using the BoC rate as of `as_of` —
+    same lookup app/routers/prices.py uses for manually-entered USD prices."""
+    if currency == "CAD":
+        return amount
+    from app.services import fx_service
+    rate = fx_service.get_rate(db, as_of, currency, "CAD")
+    return (amount * rate) if rate is not None else amount
+
+
+def _set_value(
+    db: Session, security: Security, signed_value: Decimal,
+    as_of: Optional[date] = None, currency: str = "CAD",
+) -> None:
     """Set the CURRENT value (MarketPrice) for this security, dated `as_of` (default today),
-    plus a matching historical_prices row for that same date — CAD only, mirrors
-    prices.py's set_manual_price for the single-security case.
+    plus a matching historical_prices row for that same date — mirrors prices.py's
+    set_manual_price for the single-security case. `signed_value` is in `currency`;
+    price_cad is converted via the BoC rate when currency != CAD.
 
     Only call this for the LIVE current value (as_of today or later than any existing
     history) — a value dated in the past should go through the plain historical-price
@@ -138,11 +154,13 @@ def _set_value(db: Session, security: Security, signed_value: Decimal, as_of: Op
 
     as_of = as_of or date.today()
     now = datetime.utcnow()
+    price_cad = _convert_to_cad(db, signed_value, currency, as_of)
+
     mp = db.query(MarketPrice).filter(MarketPrice.security_id == security.id).first()
     if mp:
         mp.price = signed_value
-        mp.currency = "CAD"
-        mp.price_cad = signed_value
+        mp.currency = currency
+        mp.price_cad = price_cad
         mp.price_date = as_of
         mp.fetched_at = now
         mp.source = "manual"
@@ -150,8 +168,8 @@ def _set_value(db: Session, security: Security, signed_value: Decimal, as_of: Op
         mp.day_change_pct = None
     else:
         db.add(MarketPrice(
-            security_id=security.id, price=signed_value, currency="CAD",
-            price_cad=signed_value, price_date=as_of, fetched_at=now, source="manual",
+            security_id=security.id, price=signed_value, currency=currency,
+            price_cad=price_cad, price_date=as_of, fetched_at=now, source="manual",
         ))
 
     hist = db.query(HistoricalPrice).filter(
@@ -159,13 +177,13 @@ def _set_value(db: Session, security: Security, signed_value: Decimal, as_of: Op
     ).first()
     if hist:
         hist.close_price = signed_value
-        hist.close_price_cad = signed_value
-        hist.currency = "CAD"
+        hist.close_price_cad = price_cad
+        hist.currency = currency
         hist.source = "manual"
     else:
         db.add(HistoricalPrice(
             security_id=security.id, price_date=as_of, close_price=signed_value,
-            close_price_cad=signed_value, currency="CAD", source="manual",
+            close_price_cad=price_cad, currency=currency, source="manual",
         ))
 
 
@@ -255,9 +273,11 @@ def list_personal_assets(db: Session = Depends(get_db)):
             "ticker": sec.ticker,
             "name": sec.name,
             "asset_class": sec.asset_class,
+            "currency": sec.currency or "CAD",
             "interest_rate": str(sec.interest_rate) if sec.interest_rate is not None else None,
             "owner": opening.account.owner if opening and opening.account else None,
             "acquired_date": opening.transaction_date.isoformat() if opening and opening.transaction_date else None,
+            "current_value": str(mp.price) if mp and mp.price is not None else None,
             "current_value_cad": str(mp.price_cad) if mp and mp.price_cad is not None else None,
             "value_updated_at": mp.fetched_at.isoformat() if mp and mp.fetched_at else None,
             **_details_to_dict(details, _find_linked_name(db, sec.id)),
@@ -276,36 +296,43 @@ def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_d
     security = db.query(Security).filter(Security.ticker == ticker).first()
     if security:
         raise HTTPException(status_code=400, detail=f"A personal asset named '{data.name}' already exists.")
+    currency = data.currency or "CAD"
     security = Security(
         ticker=ticker, name=data.name, asset_class=data.asset_class,
-        currency="CAD", interest_rate=data.interest_rate,
+        currency=currency, interest_rate=data.interest_rate,
     )
     db.add(security)
     db.flush()
 
     signed_value = data.value if data.asset_class != "LIABILITY" else -abs(data.value)
     acquired = data.acquired_date or date.today()
+    cad_signed_value = _convert_to_cad(db, signed_value, currency, acquired)
 
     db.add(Transaction(
         account_id=acct.id, security_id=security.id,
         transaction_date=acquired, settlement_date=acquired,
         transaction_type="OPENING_BALANCE", quantity=Decimal("1"), price=signed_value,
-        commission=Decimal("0"), transaction_currency="CAD",
+        commission=Decimal("0"), transaction_currency=currency,
         transaction_amount=signed_value, account_currency_amount=signed_value,
-        cad_amount=signed_value, fx_rate_to_account=Decimal("1"), fx_rate_to_cad=Decimal("1"),
+        cad_amount=cad_signed_value, fx_rate_to_account=Decimal("1"),
+        fx_rate_to_cad=(cad_signed_value / signed_value) if signed_value != 0 else Decimal("1"),
         notes="Personal asset entered manually", tags=["personal_asset"],
         is_manual_override=True, is_verified=True,
     ))
 
-    _set_value(db, security, signed_value)
+    _set_value(db, security, signed_value, currency=currency)
 
+    purchase_price_cad = (
+        _convert_to_cad(db, data.purchase_price, currency, data.purchase_date or acquired)
+        if data.purchase_price is not None else None
+    )
     details = PersonalAssetDetails(
         security_id=security.id,
         property_type=data.property_type,
         address_street=data.address_street, address_city=data.address_city,
         address_province=data.address_province, address_postal_code=data.address_postal_code,
         address_country=data.address_country,
-        purchase_date=data.purchase_date, purchase_price=data.purchase_price,
+        purchase_date=data.purchase_date, purchase_price=purchase_price_cad,
         policy_number=data.policy_number, insurer_name=data.insurer_name,
         beneficiary=data.beneficiary, death_benefit_cad=data.death_benefit_cad,
         lender_name=data.lender_name, original_principal_cad=data.original_principal_cad,
@@ -326,9 +353,12 @@ def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Sessi
     if not security or security.asset_class not in ASSET_CLASSES:
         raise HTTPException(status_code=404, detail="Personal asset not found")
 
+    if data.currency is not None:
+        security.currency = data.currency
+
     if data.value is not None:
         signed_value = data.value if security.asset_class != "LIABILITY" else -abs(data.value)
-        _set_value(db, security, signed_value, as_of=data.as_of)
+        _set_value(db, security, signed_value, as_of=data.as_of, currency=security.currency or "CAD")
 
     if data.interest_rate is not None:
         security.interest_rate = data.interest_rate
@@ -352,13 +382,45 @@ def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Sessi
 
     updates = data.model_dump(
         exclude_unset=True,
-        exclude={"value", "as_of", "acquired_date", "name", "interest_rate"},
+        exclude={"value", "as_of", "acquired_date", "name", "interest_rate", "currency"},
     )
+    if "purchase_price" in updates and updates["purchase_price"] is not None:
+        as_of = data.purchase_date or data.acquired_date or date.today()
+        updates["purchase_price"] = _convert_to_cad(db, updates["purchase_price"], security.currency or "CAD", as_of)
     for field, val in updates.items():
         setattr(details, field, val)
 
     db.commit()
     return {"security_id": security_id}
+
+
+@router.delete("/{security_id}")
+def delete_personal_asset(security_id: int, db: Session = Depends(get_db)):
+    from app.models.prices import MarketPrice, HistoricalPrice
+
+    security = db.get(Security, security_id)
+    if not security or security.asset_class not in ASSET_CLASSES:
+        raise HTTPException(status_code=404, detail="Personal asset not found")
+
+    # Un-link any other asset/liability that pointed at this one, so the pair doesn't
+    # dangle after this security is gone.
+    db.query(PersonalAssetDetails).filter(
+        PersonalAssetDetails.linked_security_id == security_id,
+    ).update({"linked_security_id": None})
+
+    details = db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id == security_id).first()
+    if details and details.stored_filename:
+        personal_asset_document_store.remove(details.stored_filename)
+    if details:
+        db.delete(details)
+
+    db.query(PersonalAssetIncomeEntry).filter(PersonalAssetIncomeEntry.security_id == security_id).delete()
+    db.query(MarketPrice).filter(MarketPrice.security_id == security_id).delete()
+    db.query(HistoricalPrice).filter(HistoricalPrice.security_id == security_id).delete()
+    db.query(Transaction).filter(Transaction.security_id == security_id).delete()
+    db.delete(security)
+    db.commit()
+    return {"message": "Deleted"}
 
 
 # ── PDF attachment ─────────────────────────────────────────────────────────────

@@ -1,13 +1,13 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
-  getPersonalAssets, createPersonalAsset, updatePersonalAsset,
+  getPersonalAssets, createPersonalAsset, updatePersonalAsset, deletePersonalAsset,
   uploadPersonalAssetFile, openPersonalAssetFile, deletePersonalAssetFile,
   getPersonalAssetIncomeEntries, createPersonalAssetIncomeEntry, deletePersonalAssetIncomeEntry,
   getSecurityPriceHistory, addHistoricalPrice,
 } from '../../api/client'
 import type { PersonalAsset, PersonalAssetClass, PersonalAssetCreate } from '../../api/client'
-import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock } from 'lucide-react'
+import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock, Plus, X } from 'lucide-react'
 
 const CLASS_LABELS: Record<PersonalAssetClass, string> = {
   REAL_ESTATE: 'Real Estate',
@@ -19,10 +19,18 @@ const CLASS_LABELS: Record<PersonalAssetClass, string> = {
 const PROPERTY_TYPES = ['Primary Residence', 'Rental Property', 'Land']
 const today = () => new Date().toISOString().slice(0, 10)
 
+const CURRENCIES = ['CAD', 'USD']
+
 function fmtCAD(v: string | null): string {
   if (v == null) return '—'
   const n = parseFloat(v)
   return n.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })
+}
+
+function fmtNative(v: string | null, currency: string): string {
+  if (v == null) return '—'
+  const n = parseFloat(v)
+  return n.toLocaleString('en-US', { style: 'currency', currency, maximumFractionDigits: 0 })
 }
 
 // ─── Searchable picker for linking to an existing asset/liability ────────────
@@ -166,7 +174,7 @@ function ValueHistory({ asset }: { asset: PersonalAsset }) {
         // today-or-newest -> also updates the live current value
         ? updatePersonalAsset(asset.security_id, { value: magnitude, as_of: entryDate })
         // backdated -> historical point only, current value untouched
-        : addHistoricalPrice(asset.security_id, { price_date: entryDate, price: signed, currency: 'CAD' })
+        : addHistoricalPrice(asset.security_id, { price_date: entryDate, price: signed, currency: asset.currency })
     },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['personal-asset-history', asset.security_id] })
@@ -183,7 +191,7 @@ function ValueHistory({ asset }: { asset: PersonalAsset }) {
       <div className="flex flex-wrap gap-2 items-end text-xs">
         <input type="date" className="border rounded px-2 py-1" value={entryDate}
           onChange={e => setEntryDate(e.target.value)} />
-        <input className="border rounded px-2 py-1 w-32" placeholder={isLiability ? 'Amount owed' : 'Value'}
+        <input className="border rounded px-2 py-1 w-32" placeholder={`${isLiability ? 'Amount owed' : 'Value'} (${asset.currency})`}
           value={amount} onChange={e => setAmount(e.target.value)} />
         <button onClick={() => addMut.mutate()} disabled={!amount || addMut.isPending}
           className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-40">Add value point</button>
@@ -207,6 +215,7 @@ interface FieldState {
   name: string
   owner: string
   value: string
+  currency: string
   bookValue: string
   acquiredDate: string
   interestRate: string
@@ -229,7 +238,7 @@ interface FieldState {
 
 function blankFields(assetClass: PersonalAssetClass = 'REAL_ESTATE'): FieldState {
   return {
-    assetClass, name: '', owner: '', value: '', bookValue: '', acquiredDate: today(), interestRate: '',
+    assetClass, name: '', owner: '', value: '', currency: 'CAD', bookValue: '', acquiredDate: today(), interestRate: '',
     propertyType: PROPERTY_TYPES[0], addressStreet: '', addressCity: '', addressProvince: '',
     addressPostalCode: '', addressCountry: '', policyNumber: '', insurerName: '', lenderName: '',
     maturityDate: '', isCorporate: false, entityName: '', zillowEstimate: '', linkedId: null, notes: '',
@@ -239,7 +248,8 @@ function blankFields(assetClass: PersonalAssetClass = 'REAL_ESTATE'): FieldState
 function fieldsFromAsset(a: PersonalAsset): FieldState {
   return {
     assetClass: a.asset_class, name: a.name || '', owner: a.owner || '',
-    value: a.current_value_cad ? Math.abs(parseFloat(a.current_value_cad)).toString() : '',
+    value: a.current_value ? Math.abs(parseFloat(a.current_value)).toString() : '',
+    currency: a.currency || 'CAD',
     bookValue: a.purchase_price ? Math.abs(parseFloat(a.purchase_price)).toString() : '',
     acquiredDate: a.acquired_date || today(),
     interestRate: a.interest_rate || '',
@@ -280,12 +290,18 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
         <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)} placeholder="Brian" />
       </div>
       <div>
-        <label className="text-xs text-gray-500">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'} (CAD)</label>
+        <label className="text-xs text-gray-500">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'}</label>
         <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.value} onChange={e => set('value', e.target.value)} placeholder="650000" />
+      </div>
+      <div>
+        <label className="text-xs text-gray-500">Currency</label>
+        <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.currency} onChange={e => set('currency', e.target.value)}>
+          {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
       </div>
       {(f.assetClass === 'REAL_ESTATE' || f.assetClass === 'OTHER_ASSET') && (
         <div>
-          <label className="text-xs text-gray-500">Initial Book Value (CAD, optional)</label>
+          <label className="text-xs text-gray-500">Initial Book Value ({f.currency}, optional)</label>
           <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.bookValue}
             onChange={e => set('bookValue', e.target.value)} placeholder="e.g. original purchase price" />
         </div>
@@ -420,7 +436,7 @@ function AssetForm({ assets, onCreated }: { assets: PersonalAsset[]; onCreated: 
   const createMut = useMutation({
     mutationFn: () => createPersonalAsset({
       asset_class: f.assetClass, name: f.name, owner: f.owner, value: parseFloat(f.value || '0'),
-      ...fieldsToPayload(f),
+      currency: f.currency, ...fieldsToPayload(f),
     }),
     onSuccess: () => { onCreated(); setF(blankFields(f.assetClass)) },
   })
@@ -449,7 +465,7 @@ function EditForm({ asset, assets, onDone }: { asset: PersonalAsset; assets: Per
   const saveMut = useMutation({
     mutationFn: () => updatePersonalAsset(asset.security_id, {
       name: f.name, value: parseFloat(f.value || '0'), as_of: today(),
-      ...fieldsToPayload(f),
+      currency: f.currency, ...fieldsToPayload(f),
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ['personal-assets'] })
@@ -490,6 +506,10 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
     mutationFn: () => deletePersonalAssetFile(asset.security_id),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['personal-assets'] }),
   })
+  const deleteMut = useMutation({
+    mutationFn: () => deletePersonalAsset(asset.security_id),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ['personal-assets'] }),
+  })
 
   const addressLine = [asset.address_street, asset.address_city, asset.address_province, asset.address_postal_code]
     .filter(Boolean).join(', ')
@@ -525,8 +545,13 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
 
         <div className="text-right">
           <div className={`font-semibold ${asset.asset_class === 'LIABILITY' ? 'text-red-500' : 'text-gray-800'}`}>
-            {asset.asset_class === 'LIABILITY' ? '-' : ''}{fmtCAD(asset.current_value_cad ? Math.abs(parseFloat(asset.current_value_cad)).toString() : null)}
+            {asset.asset_class === 'LIABILITY' ? '-' : ''}{fmtNative(asset.current_value ? Math.abs(parseFloat(asset.current_value)).toString() : null, asset.currency)}
           </div>
+          {asset.currency !== 'CAD' && (
+            <div className="text-[10px] text-gray-400">
+              = {fmtCAD(asset.current_value_cad ? Math.abs(parseFloat(asset.current_value_cad)).toString() : null)}
+            </div>
+          )}
           <div className="text-[10px] text-gray-400">{asset.value_updated_at?.slice(0, 10)}</div>
         </div>
 
@@ -548,6 +573,18 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
                 onChange={e => { const f = e.target.files?.[0]; if (f) uploadMut.mutate(f) }} />
             </label>
           )}
+          <button
+            onClick={() => {
+              if (window.confirm(`Delete "${asset.name}"? This removes its value history and any linked document — this can't be undone.`)) {
+                deleteMut.mutate()
+              }
+            }}
+            disabled={deleteMut.isPending}
+            className="p-1.5 text-gray-300 hover:text-red-500 rounded disabled:opacity-40"
+            title="Delete"
+          >
+            <X className="h-3.5 w-3.5" />
+          </button>
         </div>
       </div>
       {expanded && (
@@ -561,11 +598,14 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
   )
 }
 
+const GROUP_ORDER: PersonalAssetClass[] = ['REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY']
+
 export default function PersonalAssetsTab() {
   const { data: assets = [], refetch } = useQuery({
     queryKey: ['personal-assets'],
     queryFn: getPersonalAssets,
   })
+  const [showAdd, setShowAdd] = useState(false)
 
   const totalAssets = assets.filter(a => a.asset_class !== 'LIABILITY')
     .reduce((s, a) => s + (a.current_value_cad ? parseFloat(a.current_value_cad) : 0), 0)
@@ -574,12 +614,21 @@ export default function PersonalAssetsTab() {
 
   return (
     <div className="space-y-5">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900">Personal Assets & Liabilities</h2>
-        <p className="text-sm text-gray-500">
-          Real estate, life insurance, and other assets — plus what's owed against them —
-          feed the Dashboard's Net Worth figure alongside your investment accounts.
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-lg font-semibold text-gray-900">Other Assets and Liabilities</h2>
+          <p className="text-sm text-gray-500">
+            Real estate, life insurance, and other assets — plus what's owed against them —
+            feed the Dashboard's Net Worth figure alongside your investment accounts.
+          </p>
+        </div>
+        <button
+          onClick={() => setShowAdd(s => !s)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex-shrink-0"
+        >
+          {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
+          {showAdd ? 'Cancel' : 'Add'}
+        </button>
       </div>
 
       <div className="flex gap-4 text-sm">
@@ -593,12 +642,28 @@ export default function PersonalAssetsTab() {
         </div>
       </div>
 
-      <AssetForm assets={assets} onCreated={refetch} />
+      {showAdd && (
+        <AssetForm assets={assets} onCreated={() => { refetch(); setShowAdd(false) }} />
+      )}
 
-      <div className="bg-white border border-gray-200 rounded-xl px-5">
-        {assets.length === 0 && <p className="text-sm text-gray-400 py-6 text-center">No personal assets or liabilities yet.</p>}
-        {assets.map(a => <AssetRow key={a.security_id} asset={a} assets={assets} />)}
-      </div>
+      {assets.length === 0 && (
+        <div className="bg-white border border-gray-200 rounded-xl px-5">
+          <p className="text-sm text-gray-400 py-6 text-center">No personal assets or liabilities yet.</p>
+        </div>
+      )}
+
+      {GROUP_ORDER.map(cls => {
+        const group = assets.filter(a => a.asset_class === cls)
+        if (group.length === 0) return null
+        return (
+          <div key={cls}>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{CLASS_LABELS[cls]}</h3>
+            <div className="bg-white border border-gray-200 rounded-xl px-5">
+              {group.map(a => <AssetRow key={a.security_id} asset={a} assets={assets} />)}
+            </div>
+          </div>
+        )
+      })}
     </div>
   )
 }

@@ -4,11 +4,12 @@ import { useNavigate } from 'react-router-dom'
 import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } from 'lucide-react'
 import {
   getCashBalances, getImports, getAccounts, getPositions, getPersonalAssets,
-  getFxRateLookup, getMarketIndicators, getSummaryMetrics, getMarketNews, getTopStories, getPortfolioNews,
+  getFxRateLookup, getMarketIndicators, getReturnsDetail, getMarketNews, getTopStories, getPortfolioNews,
 } from '../api/client'
-import type { Position, CashBalance, Account, MarketIndicator, SummaryMetrics, PersonalAsset, PersonalAssetClass } from '../api/client'
+import type { Position, CashBalance, Account, MarketIndicator, PersonalAsset, PersonalAssetClass } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
+import type { TimeRange } from '../context/FilterContext'
 import NewsList from '../components/NewsList'
 import { getPref, usePreference } from '../hooks/usePreference'
 
@@ -31,6 +32,8 @@ function pnlClass(n: number) {
 function fmtPct(n: number) {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
+
+const TIME_RANGE_LABEL: Record<TimeRange, string> = { YTD: 'YTD', '1Y': '1Y', '3Y': '3Y', '5Y': '5Y', ALL: 'All', CUSTOM: 'Custom' }
 
 // ─── Brokerage Summary ────────────────────────────────────────────────────────
 
@@ -90,6 +93,64 @@ function AssetGroupSummary({ items, total }: { title: string; items: AssetGroupI
               </span>
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Real Estate table (book value / total value / gain, with liability subtotal) ─
+interface RealEstateRow {
+  key: string; kind: 'asset' | 'liability' | 'subtotal'
+  name: string; bookValue: number | null; totalValue: number; gain: number | null
+}
+
+function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number }) {
+  const [expanded, setExpanded] = useState(true)
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+      <button
+        onClick={() => setExpanded(e => !e)}
+        className="w-full px-4 py-3 flex items-center justify-between gap-3 text-left hover:bg-gray-50 transition-colors"
+      >
+        <span className="flex items-center gap-1.5 font-semibold text-gray-900">
+          {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+          Real Estate
+        </span>
+        <span className={`font-bold ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>{fmtCAD(total)}</span>
+      </button>
+      {expanded && (
+        <div className="border-t border-gray-100 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
+                <th className="px-4 py-2 text-left">Name</th>
+                <th className="px-3 py-2 text-right">Book Value</th>
+                <th className="px-3 py-2 text-right">Total Value</th>
+                <th className="px-4 py-2 text-right">Gain</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {rows.map(r => (
+                <tr key={r.key} className={r.kind === 'subtotal' ? 'bg-gray-50/70' : r.kind === 'liability' ? 'bg-gray-50/40' : ''}>
+                  <td className={`px-4 py-2 text-gray-700 truncate ${r.kind !== 'asset' ? 'pl-8' : ''} ${r.kind === 'subtotal' ? 'font-semibold text-gray-600' : ''}`}>
+                    {r.name}
+                  </td>
+                  <td className="px-3 py-2 text-right font-mono text-gray-500">
+                    {r.bookValue != null ? fmtCAD(r.bookValue) : '—'}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-mono ${r.kind === 'subtotal' ? 'font-semibold' : ''} ${
+                    r.kind === 'liability' ? 'text-red-500' : r.totalValue < 0 ? 'text-red-500' : 'text-gray-900'
+                  }`}>
+                    {r.kind === 'liability' ? '-' + fmtCAD(Math.abs(r.totalValue)) : fmtCAD(r.totalValue)}
+                  </td>
+                  <td className={`px-4 py-2 text-right font-mono ${r.gain != null ? pnlClass(r.gain) : 'text-gray-300'}`}>
+                    {r.gain != null ? (r.gain >= 0 ? '+' : '') + fmtCAD(r.gain) : '—'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
     </div>
@@ -420,7 +481,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
 
 export default function Dashboard() {
   // Time range from global context (set via header)
-  const { toDate } = useFilterContext()
+  const { toDate, fromDate, timeRange } = useFilterContext()
   // Subscribed only so this component (and its children) re-render when the header's
   // eye-icon toggle flips — fmtCAD/fmtUSD read the pref directly via getPref().
   usePreference('hideValues')
@@ -524,6 +585,36 @@ export default function Dashboard() {
     return { realEstate, insurance, other }
   }, [personalAssets])
 
+  // Real Estate gets its own book-value/total-value/gain table (rather than the generic
+  // item list used by Crypto/Insurance/Other) — same asset+liability pairing as buildGroup
+  // above, but carrying purchase_price through for the Gain column and inserting a
+  // Subtotal row under a linked pair.
+  const realEstateRows = useMemo(() => {
+    const byId = new Map(personalAssets.map(a => [a.security_id, a]))
+    const rows: RealEstateRow[] = []
+    for (const a of personalAssets) {
+      if (a.asset_class !== 'REAL_ESTATE') continue
+      const totalValue = a.current_value_cad ? parseFloat(a.current_value_cad) : 0
+      const bookValue  = a.purchase_price ? parseFloat(a.purchase_price) : null
+      rows.push({
+        key: `a${a.security_id}`, kind: 'asset', name: a.name || a.ticker,
+        bookValue, totalValue, gain: bookValue != null ? totalValue - bookValue : null,
+      })
+
+      let linked: PersonalAsset | undefined
+      if (a.linked_security_id) linked = byId.get(a.linked_security_id)
+      if (!linked || linked.asset_class !== 'LIABILITY') {
+        linked = personalAssets.find(o => o.asset_class === 'LIABILITY' && o.linked_security_id === a.security_id)
+      }
+      if (linked && linked.asset_class === 'LIABILITY') {
+        const liabTotal = linked.current_value_cad ? parseFloat(linked.current_value_cad) : 0   // already negative
+        rows.push({ key: `l${linked.security_id}`, kind: 'liability', name: linked.name || linked.ticker, bookValue: null, totalValue: liabTotal, gain: null })
+        rows.push({ key: `s${a.security_id}`, kind: 'subtotal', name: 'Subtotal', bookValue: null, totalValue: totalValue + liabTotal, gain: null })
+      }
+    }
+    return rows
+  }, [personalAssets])
+
   const filteredCash = useMemo(() => {
     if (accountsLoading) return []
     return effectiveAccountIds.size > 0
@@ -555,9 +646,12 @@ export default function Dashboard() {
       ? [...effectiveAccountIds].join(',')
       : undefined
 
-  const { data: summaryMetrics } = useQuery({
-    queryKey: ['summary-metrics', metricsAccountIds, toDate],
-    queryFn: () => getSummaryMetrics({ account_ids: metricsAccountIds ?? undefined, as_of: toDate }),
+  // Return for the header's selected time range — aggregates the same Modified Dietz
+  // numerator/denominator the Performance page uses, just parameterized by fromDate/toDate
+  // instead of hardcoded YTD/1Y.
+  const { data: returnsDetail = [] } = useQuery({
+    queryKey: ['returns-detail', metricsAccountIds, fromDate, toDate],
+    queryFn: () => getReturnsDetail({ from_date: fromDate, to_date: toDate, account_ids: metricsAccountIds ?? undefined }),
     enabled: metricsAccountIds !== null,   // wait until accounts have loaded
     staleTime: 5 * 60 * 1000,
   })
@@ -567,28 +661,24 @@ export default function Dashboard() {
   // ── Summary totals (with no-price fallback) ───────────────────────────────
   // Investment-only (excludes personal assets/liabilities) — "Total Value" keeps meaning
   // exactly what it always has; personal assets/liabilities get their own card below.
-  const { totalSecurities, totalPnl, fallbackCount } = useMemo(() => {
-    let securities = 0, pnl = 0, fallback = 0
+  const { totalSecurities, fallbackCount } = useMemo(() => {
+    let securities = 0, fallback = 0
     for (const p of investmentPositions) {
-      const bv = parseFloat(p.total_acb_cad || '0')
-      if (p.market_value_cad) { const mv = parseFloat(p.market_value_cad); securities += mv; pnl += mv - bv }
-      else { securities += bv; fallback++ }
+      if (p.market_value_cad) { securities += parseFloat(p.market_value_cad) }
+      else { securities += parseFloat(p.total_acb_cad || '0'); fallback++ }
     }
-    return { totalSecurities: securities, totalPnl: pnl, fallbackCount: fallback }
+    return { totalSecurities: securities, fallbackCount: fallback }
   }, [investmentPositions])
 
-  const totalBookValue = investmentPositions.reduce((s, p) => s + parseFloat(p.total_acb_cad || '0'), 0)
-  const totalCash      = filteredCash.reduce((s, c) => s + parseFloat(c.balance_cad || '0'), 0)
-  const totalValue     = totalSecurities + totalCash
-  const hasPrices      = investmentPositions.some(p => p.market_value_cad)
+  const totalCash  = filteredCash.reduce((s, c) => s + parseFloat(c.balance_cad || '0'), 0)
+  const totalValue = totalSecurities + totalCash
 
-  const { totalDayGain, hasDayGain } = useMemo(() => {
-    let total = 0, hasAny = false
-    for (const p of investmentPositions) {
-      if (p.day_gain_cad) { total += parseFloat(p.day_gain_cad); hasAny = true }
-    }
-    return { totalDayGain: total, hasDayGain: hasAny }
-  }, [investmentPositions])
+  const { returnGain, returnPct, hasReturn } = useMemo(() => {
+    if (!returnsDetail.length) return { returnGain: 0, returnPct: null as number | null, hasReturn: false }
+    const gain  = returnsDetail.reduce((s, r) => s + r.total_gain, 0)
+    const denom = returnsDetail.reduce((s, r) => s + r.md_denominator, 0)
+    return { returnGain: gain, returnPct: denom > 0 ? (gain / denom) * 100 : null, hasReturn: true }
+  }, [returnsDetail])
 
   // ── Net worth breakout (personal assets/liabilities) ──────────────────────
   const { totalPersonalAssets, totalLiabilities } = useMemo(() => {
@@ -788,7 +878,7 @@ export default function Dashboard() {
 
       {/* ── Summary bar ── */}
       <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
-        {/* ── Mobile: Total Value hero + compact 2-col grid ── */}
+        {/* ── Mobile: Net Worth hero + 2-col grid ── */}
         <div className="md:hidden">
           <div className="text-center pb-3 mb-3 border-b border-blue-200">
             <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
@@ -796,10 +886,6 @@ export default function Dashboard() {
             <div className="text-[11px] text-blue-400 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
-            <div>
-              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Book Value</div>
-              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>
-            </div>
             <div>
               <div className="text-[11px] text-blue-500 uppercase tracking-wide">
                 Securities{fallbackCount > 0 && <span className="ml-1 text-amber-500">*</span>}
@@ -810,31 +896,23 @@ export default function Dashboard() {
               <div className="text-[11px] text-blue-500 uppercase tracking-wide">Cash</div>
               <div className={`text-lg font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
             </div>
-            {hasPrices && (
-              <div>
-                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Unrealized P&L</div>
-                <div className={`text-lg font-bold ${pnlClass(totalPnl)}`}>{(totalPnl >= 0 ? '+' : '') + fmtCAD(totalPnl)}</div>
-              </div>
-            )}
-            {hasDayGain && (
-              <div>
-                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Day Gain</div>
-                <div className={`text-lg font-bold ${pnlClass(totalDayGain)}`}>{(totalDayGain >= 0 ? '+' : '') + fmtCAD(totalDayGain)}</div>
-              </div>
-            )}
-            {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).ytd_gain_cad !== undefined && (
-              <div>
-                <div className="text-[11px] text-blue-500 uppercase tracking-wide">YTD P&L</div>
-                <div className={`text-lg font-bold ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_cad)}`}>
-                  {((summaryMetrics as SummaryMetrics).ytd_gain_cad >= 0 ? '+' : '') + fmtCAD((summaryMetrics as SummaryMetrics).ytd_gain_cad)}
-                </div>
-              </div>
-            )}
-            {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).one_year_gain_cad !== undefined && (
-              <div>
-                <div className="text-[11px] text-blue-500 uppercase tracking-wide">1Y P&L</div>
-                <div className={`text-lg font-bold ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_cad)}`}>
-                  {((summaryMetrics as SummaryMetrics).one_year_gain_cad >= 0 ? '+' : '') + fmtCAD((summaryMetrics as SummaryMetrics).one_year_gain_cad)}
+            <div>
+              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Other Assets</div>
+              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalPersonalAssets)}</div>
+            </div>
+            <div>
+              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Liabilities</div>
+              <div className={`text-lg font-bold ${totalLiabilities < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalLiabilities)}</div>
+            </div>
+            {hasReturn && (
+              <div className="col-span-2">
+                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
+                <div className={`text-lg font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-gray-400'}`}>
+                  {returnPct != null && (returnPct >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />)}
+                  {returnPct != null ? fmtPct(returnPct) : '—'}
+                  <span className="text-sm font-medium text-blue-400">
+                    ({(returnGain >= 0 ? '+' : '') + fmtCAD(returnGain)})
+                  </span>
                 </div>
               </div>
             )}
@@ -843,10 +921,6 @@ export default function Dashboard() {
 
         {/* ── Desktop: flex-wrap metrics row ── */}
         <div className="hidden md:flex md:flex-wrap md:items-center md:gap-x-10 md:gap-y-3">
-          <div>
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Book Value</div>
-            <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(totalBookValue)}</div>
-          </div>
           <div>
             <div className="text-xs text-blue-500 uppercase tracking-wide">
               Securities
@@ -858,62 +932,28 @@ export default function Dashboard() {
             <div className="text-xs text-blue-500 uppercase tracking-wide">Cash</div>
             <div className={`text-xl md:text-2xl font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
           </div>
+          <div>
+            <div className="text-xs text-blue-500 uppercase tracking-wide">Other Assets</div>
+            <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(totalPersonalAssets)}</div>
+          </div>
+          <div>
+            <div className="text-xs text-blue-500 uppercase tracking-wide">Liabilities</div>
+            <div className={`text-xl md:text-2xl font-bold ${totalLiabilities < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalLiabilities)}</div>
+          </div>
           <div className="md:border-l md:border-blue-200 md:pl-10">
             <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
             <div className="text-2xl md:text-3xl font-bold text-blue-900">{fmtCAD(netWorth)}</div>
           </div>
-          {hasPrices && (
+          {hasReturn && (
             <div>
-              <div className="text-xs text-blue-500 uppercase tracking-wide">Unrealized P&L</div>
-              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass(totalPnl)}`}>
-                {totalPnl >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                {fmtCAD(totalPnl)}
+              <div className="text-xs text-blue-500 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
+              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-gray-400'}`}>
+                {returnPct != null && (returnPct >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />)}
+                {returnPct != null ? fmtPct(returnPct) : '—'}
               </div>
-            </div>
-          )}
-          {hasDayGain && (
-            <div>
-              <div className="text-xs text-blue-500 uppercase tracking-wide">Day Gain</div>
-              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass(totalDayGain)}`}>
-                {totalDayGain >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                {fmtCAD(totalDayGain)}
+              <div className="text-sm font-medium text-blue-400">
+                {(returnGain >= 0 ? '+' : '') + fmtCAD(returnGain)}
               </div>
-            </div>
-          )}
-          {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).ytd_gain_cad !== undefined && (
-            <div>
-              <div className="text-xs text-blue-500 uppercase tracking-wide">
-                {toDate && new Date(toDate).getFullYear() !== new Date().getFullYear()
-                  ? `YTD ${new Date(toDate).getFullYear()} P&L`
-                  : 'YTD P&L'}
-              </div>
-              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_cad)}`}>
-                {(summaryMetrics as SummaryMetrics).ytd_gain_cad >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                {fmtCAD((summaryMetrics as SummaryMetrics).ytd_gain_cad)}
-              </div>
-              {(summaryMetrics as SummaryMetrics).ytd_gain_pct != null && (
-                <div className={`text-sm font-medium ${pnlClass((summaryMetrics as SummaryMetrics).ytd_gain_pct!)}`}>
-                  {(summaryMetrics as SummaryMetrics).ytd_gain_pct! >= 0 ? '+' : ''}{(summaryMetrics as SummaryMetrics).ytd_gain_pct!.toFixed(2)}%
-                </div>
-              )}
-            </div>
-          )}
-          {(summaryMetrics as SummaryMetrics | undefined) && (summaryMetrics as SummaryMetrics).one_year_gain_cad !== undefined && (
-            <div>
-              <div className="text-xs text-blue-500 uppercase tracking-wide">
-                {toDate && new Date(toDate).getFullYear() !== new Date().getFullYear()
-                  ? `1Y P&L (to ${toDate})`
-                  : '1Y P&L'}
-              </div>
-              <div className={`text-xl md:text-2xl font-bold flex items-center gap-1 ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_cad)}`}>
-                {(summaryMetrics as SummaryMetrics).one_year_gain_cad >= 0 ? <TrendingUp className="h-5 w-5" /> : <TrendingDown className="h-5 w-5" />}
-                {fmtCAD((summaryMetrics as SummaryMetrics).one_year_gain_cad)}
-              </div>
-              {(summaryMetrics as SummaryMetrics).one_year_gain_pct != null && (
-                <div className={`text-sm font-medium ${pnlClass((summaryMetrics as SummaryMetrics).one_year_gain_pct!)}`}>
-                  {(summaryMetrics as SummaryMetrics).one_year_gain_pct! >= 0 ? '+' : ''}{(summaryMetrics as SummaryMetrics).one_year_gain_pct!.toFixed(2)}%
-                </div>
-              )}
             </div>
           )}
           <div className="ml-auto text-right">
@@ -952,10 +992,10 @@ export default function Dashboard() {
       )}
 
       {/* ── Other Assets/Liabilities: Real Estate / Insurance / Other ── */}
-      {otherAssetsGroups.realEstate.items.length > 0 && (
+      {realEstateRows.length > 0 && (
         <div>
           <h2 className="font-semibold text-gray-800 mb-3">Real Estate</h2>
-          <AssetGroupSummary title="Real Estate" total={otherAssetsGroups.realEstate.total} items={otherAssetsGroups.realEstate.items} />
+          <RealEstateTable rows={realEstateRows} total={otherAssetsGroups.realEstate.total} />
         </div>
       )}
       {otherAssetsGroups.insurance.items.length > 0 && (

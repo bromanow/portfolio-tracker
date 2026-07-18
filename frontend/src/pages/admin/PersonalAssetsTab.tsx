@@ -207,6 +207,7 @@ interface FieldState {
   name: string
   owner: string
   value: string
+  bookValue: string
   acquiredDate: string
   interestRate: string
   propertyType: string
@@ -228,7 +229,7 @@ interface FieldState {
 
 function blankFields(assetClass: PersonalAssetClass = 'REAL_ESTATE'): FieldState {
   return {
-    assetClass, name: '', owner: '', value: '', acquiredDate: today(), interestRate: '',
+    assetClass, name: '', owner: '', value: '', bookValue: '', acquiredDate: today(), interestRate: '',
     propertyType: PROPERTY_TYPES[0], addressStreet: '', addressCity: '', addressProvince: '',
     addressPostalCode: '', addressCountry: '', policyNumber: '', insurerName: '', lenderName: '',
     maturityDate: '', isCorporate: false, entityName: '', zillowEstimate: '', linkedId: null, notes: '',
@@ -239,6 +240,7 @@ function fieldsFromAsset(a: PersonalAsset): FieldState {
   return {
     assetClass: a.asset_class, name: a.name || '', owner: a.owner || '',
     value: a.current_value_cad ? Math.abs(parseFloat(a.current_value_cad)).toString() : '',
+    bookValue: a.purchase_price ? Math.abs(parseFloat(a.purchase_price)).toString() : '',
     acquiredDate: a.acquired_date || today(),
     interestRate: a.interest_rate || '',
     propertyType: a.property_type || PROPERTY_TYPES[0],
@@ -281,6 +283,13 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
         <label className="text-xs text-gray-500">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'} (CAD)</label>
         <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.value} onChange={e => set('value', e.target.value)} placeholder="650000" />
       </div>
+      {(f.assetClass === 'REAL_ESTATE' || f.assetClass === 'OTHER_ASSET') && (
+        <div>
+          <label className="text-xs text-gray-500">Initial Book Value (CAD, optional)</label>
+          <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.bookValue}
+            onChange={e => set('bookValue', e.target.value)} placeholder="e.g. original purchase price" />
+        </div>
+      )}
       <div>
         <label className="text-xs text-gray-500">Acquired / Setup Date</label>
         <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={f.acquiredDate}
@@ -380,9 +389,12 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
 }
 
 function fieldsToPayload(f: FieldState): Omit<PersonalAssetCreate, 'asset_class' | 'name' | 'owner' | 'value'> {
+  const hasBookValue = (f.assetClass === 'REAL_ESTATE' || f.assetClass === 'OTHER_ASSET') && !!f.bookValue
   return {
     acquired_date: f.acquiredDate || undefined,
     interest_rate: f.interestRate ? parseFloat(f.interestRate) : undefined,
+    purchase_price: hasBookValue ? parseFloat(f.bookValue) : undefined,
+    purchase_date: hasBookValue ? f.acquiredDate || undefined : undefined,
     property_type: f.assetClass === 'REAL_ESTATE' ? f.propertyType : undefined,
     address_street: f.assetClass === 'REAL_ESTATE' ? f.addressStreet || undefined : undefined,
     address_city: f.assetClass === 'REAL_ESTATE' ? f.addressCity || undefined : undefined,

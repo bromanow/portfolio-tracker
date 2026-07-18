@@ -312,7 +312,7 @@ export default function SecuritiesTab() {
           <select className="border rounded px-3 py-1.5 text-sm" value={assetClassFilter}
             onChange={e => { setAssetClassFilter(e.target.value); setPage(1) }}>
             <option value="">All</option>
-            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t} value={t}>{t}</option>)}
+            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         {(assetClassFilter === 'OPTION' || assetClassFilter === '') && (
@@ -391,7 +391,7 @@ export default function SecuritiesTab() {
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
           <select className="border rounded px-3 py-1.5 text-sm" value={form.asset_class}
             onChange={e => setForm(f => ({ ...f, asset_class: e.target.value }))}>
-            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
+            {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
           </select>
           <select className="border rounded px-3 py-1.5 text-sm" value={form.currency}
             onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
@@ -470,7 +470,7 @@ export default function SecuritiesTab() {
                             </td>
                             <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.asset_class ?? s.asset_class}
                               onChange={e => setEditData(d => ({ ...d, asset_class: e.target.value }))}>
-                              {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
+                              {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
                             </select></td>
                             <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-24"
                               list="exchange-options"

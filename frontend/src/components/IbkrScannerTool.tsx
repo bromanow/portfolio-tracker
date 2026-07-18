@@ -293,6 +293,7 @@ export default function IbkrScannerTool() {
                   <th className="px-3 py-2 text-right">Price</th>
                   <th className="px-3 py-2 text-right">Chg %</th>
                   <th className="px-3 py-2 text-right">Volume</th>
+                  <th className="px-3 py-2 text-right">Avg Vol</th>
                   <th className="px-3 py-2 text-left">Day Range</th>
                   <th className="px-3 py-2 text-left">52-Wk Range</th>
                   <th className="px-3 py-2 text-left">Industry</th>
@@ -310,6 +311,7 @@ export default function IbkrScannerTool() {
                     <td className="px-3 py-2 text-right font-medium">{fmtPrice(r.last_price)}</td>
                     <td className={`px-3 py-2 text-right font-medium ${pctClass(r.change_pct)}`}>{fmtPct(r.change_pct)}</td>
                     <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{r.volume || '—'}</td>
+                    <td className="px-3 py-2 text-right text-gray-400 whitespace-nowrap text-xs">{r.avg_volume || '—'}</td>
                     <td className="px-3 py-2"><RangeBar low={r.day_low} high={r.day_high} current={r.last_price} /></td>
                     <td className="px-3 py-2"><RangeBar low={r.week52_low} high={r.week52_high} current={r.last_price} /></td>
                     <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{r.industry || '—'}</td>

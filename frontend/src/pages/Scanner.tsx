@@ -93,7 +93,7 @@ function DeltaBadge({ delta }: { delta: number | null }) {
 
 // ─── Score badge ──────────────────────────────────────────────────────────────
 
-function ScoreBadge({ score }: { score: number | null }) {
+function ScoreBadge({ score, why }: { score: number | null; why?: string | null }) {
   if (score == null) return <span className="text-gray-300">—</span>
   const color =
     score >= 20 ? 'bg-emerald-100 text-emerald-700' :
@@ -101,7 +101,10 @@ function ScoreBadge({ score }: { score: number | null }) {
     score >= 6  ? 'bg-amber-100 text-amber-700' :
                   'bg-gray-100 text-gray-500'
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold tabular-nums ${color}`}>
+    <span
+      className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold tabular-nums ${color} ${why ? 'cursor-help' : ''}`}
+      title={why ?? undefined}
+    >
       {score.toFixed(1)}
     </span>
   )
@@ -682,7 +685,7 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
 
                 {/* Score */}
                 <td className="px-3 py-2 text-right">
-                  <ScoreBadge score={r.score} />
+                  <ScoreBadge score={r.score} why={r.why} />
                 </td>
 
                 {/* Price & contract details */}

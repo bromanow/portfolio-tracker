@@ -20,6 +20,61 @@ from app import background_jobs
 router = APIRouter(prefix="/api/screener", tags=["screener"])
 
 
+# ── Composite score ────────────────────────────────────────────────────────────
+# Percentile-ranked (not raw-value) so P/E, ROE, etc. combine on a common 0-100
+# scale regardless of their native units. Ranked across the WHOLE universe (not
+# just the current filtered/paged result set) so a security's score doesn't
+# shift depending on what filters are applied — filtering only narrows which
+# rows are shown, it never changes how they're scored.
+_SCORE_WEIGHTS: dict[str, tuple[str, bool]] = {
+    # metric: (SecurityFundamentals attr, higher_is_better)
+    "pe_ratio":          ("pe_ratio", False),
+    "debt_to_equity":    ("debt_to_equity", False),
+    "return_on_equity":  ("return_on_equity", True),
+    "revenue_growth":    ("revenue_growth", True),
+    "dividend_yield":    ("dividend_yield", True),
+}
+_SCORE_WEIGHT_VALUES = {"pe_ratio": 25, "debt_to_equity": 20, "return_on_equity": 25,
+                         "revenue_growth": 20, "dividend_yield": 10}
+
+
+def _percentile_ranks(values: list[Optional[float]]) -> list[Optional[float]]:
+    """Rank each non-None value by its percentile (0-100) among the others.
+    None values pass through as None (metric excluded for that security)."""
+    present = [(i, v) for i, v in enumerate(values) if v is not None]
+    if not present:
+        return [None] * len(values)
+    ordered = sorted(present, key=lambda iv: iv[1])
+    n = len(ordered)
+    ranks: dict[int, float] = {}
+    for rank, (i, _v) in enumerate(ordered):
+        ranks[i] = 100.0 * rank / (n - 1) if n > 1 else 100.0
+    return [ranks.get(i) for i in range(len(values))]
+
+
+def _composite_scores(fundamentals_rows: list[SecurityFundamentals]) -> dict[int, Optional[float]]:
+    """security_id -> composite_score (0-100) or None if no scorable metrics present."""
+    metric_percentiles: dict[str, list[Optional[float]]] = {}
+    for metric, (attr, higher_is_better) in _SCORE_WEIGHTS.items():
+        raw = [float(getattr(f, attr)) if getattr(f, attr) is not None else None for f in fundamentals_rows]
+        pctl = _percentile_ranks(raw)
+        if not higher_is_better:
+            pctl = [100.0 - p if p is not None else None for p in pctl]
+        metric_percentiles[metric] = pctl
+
+    scores: dict[int, Optional[float]] = {}
+    for idx, f in enumerate(fundamentals_rows):
+        weighted_sum = 0.0
+        weight_total = 0.0
+        for metric, weight in _SCORE_WEIGHT_VALUES.items():
+            p = metric_percentiles[metric][idx]
+            if p is not None:
+                weighted_sum += p * weight
+                weight_total += weight
+        scores[f.security_id] = round(weighted_sum / weight_total, 1) if weight_total > 0 else None
+    return scores
+
+
 @router.get("/status")
 def get_status(db: Session = Depends(get_db)):
     total = db.query(Security).filter(Security.in_screener_universe == True).count()  # noqa: E712
@@ -133,11 +188,20 @@ def get_results(
     min_dividend_yield_pct: Optional[float] = Query(None),
     max_dividend_yield_pct: Optional[float] = Query(None),
     min_market_cap: Optional[float] = Query(None),
-    sort_by: str = Query("market_cap"),
+    sort_by: str = Query("composite_score"),
     sort_dir: str = Query("desc"),
     db: Session = Depends(get_db),
 ):
     """Filter + sort the fundamental screener universe."""
+    # Composite score is ranked across the WHOLE universe, independent of the filters below.
+    universe_fundamentals = (
+        db.query(SecurityFundamentals)
+        .join(Security, Security.id == SecurityFundamentals.security_id)
+        .filter(Security.in_screener_universe == True)  # noqa: E712
+        .all()
+    )
+    scores_by_security = _composite_scores(universe_fundamentals)
+
     q = (
         db.query(Security, SecurityFundamentals)
         .join(SecurityFundamentals, SecurityFundamentals.security_id == Security.id)
@@ -178,10 +242,17 @@ def get_results(
         "dividend_yield": SecurityFundamentals.dividend_yield,
         "profit_margin": SecurityFundamentals.profit_margin,
     }
-    sort_col = sort_col_map.get(sort_by, SecurityFundamentals.market_cap)
-    q = q.order_by(sort_col.desc().nullslast() if sort_dir == "desc" else sort_col.asc().nullslast())
+    if sort_by == "composite_score":
+        all_rows = q.all()
+        scored = [row for row in all_rows if scores_by_security.get(row[0].id) is not None]
+        unscored = [row for row in all_rows if scores_by_security.get(row[0].id) is None]
+        scored.sort(key=lambda row: scores_by_security[row[0].id], reverse=(sort_dir == "desc"))
+        rows = (scored + unscored)[:2000]
+    else:
+        sort_col = sort_col_map.get(sort_by, SecurityFundamentals.market_cap)
+        q = q.order_by(sort_col.desc().nullslast() if sort_dir == "desc" else sort_col.asc().nullslast())
+        rows = q.limit(2000).all()
 
-    rows = q.limit(2000).all()
     return [
         {
             "security_id": sec.id,
@@ -202,6 +273,7 @@ def get_results(
             "dividend_yield": float(f.dividend_yield) if f.dividend_yield is not None else None,
             "price_to_book": float(f.price_to_book) if f.price_to_book is not None else None,
             "beta": float(f.beta) if f.beta is not None else None,
+            "composite_score": scores_by_security.get(sec.id),
             "fetched_at": f.fetched_at.isoformat() if f.fetched_at else None,
         }
         for sec, f in rows

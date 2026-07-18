@@ -1412,6 +1412,7 @@ export interface ScannerResult {
   max_return_pct: number | null
   breakeven: number | null
   score: number | null
+  why: string | null
   delta: number | null
   gamma: number | null
   theta: number | null
@@ -1520,6 +1521,7 @@ export interface ScreenerResult {
   dividend_yield: number | null
   price_to_book: number | null
   beta: number | null
+  composite_score: number | null
   fetched_at: string | null
 }
 export interface ScreenerFilters {

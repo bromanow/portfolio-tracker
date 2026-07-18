@@ -213,6 +213,74 @@ def _score(
     return score, rec
 
 
+def explain_score(
+    annual_yield: Optional[float],
+    delta: Optional[float],
+    otm_pct: Optional[float],
+    iv_pct: Optional[float],
+    hv_30_pct: Optional[float],
+    iv_hv_ratio: Optional[float],
+    dte: Optional[int],
+    open_interest: Optional[int],
+    bid_ask_spread_pct: Optional[float],
+) -> str:
+    """
+    One-line "why this score" explanation, built from the same tier thresholds
+    _score() uses internally. Recomputed from a stored result row's own fields
+    rather than persisted at scan time, so this stays in sync with _score()
+    automatically and needs no schema migration / backfill.
+    """
+    parts: list[str] = []
+
+    if annual_yield is not None:
+        parts.append(f"{annual_yield:.1f}% annualized yield")
+
+    if delta is not None:
+        if 0.20 <= delta <= 0.30:
+            parts.append(f"delta {delta:.2f} (ideal strike distance)")
+        elif (0.15 <= delta < 0.20) or (0.30 < delta <= 0.35):
+            parts.append(f"delta {delta:.2f} (good strike distance)")
+        elif delta > 0.45:
+            parts.append(f"delta {delta:.2f} (too close to the money)")
+        else:
+            parts.append(f"delta {delta:.2f} (fair strike distance)")
+    elif otm_pct is not None:
+        if otm_pct < 2:
+            parts.append(f"only {otm_pct:.1f}% OTM (too close to the money)")
+        elif otm_pct <= 12:
+            parts.append(f"{otm_pct:.1f}% OTM (ideal strike distance)")
+        else:
+            parts.append(f"{otm_pct:.1f}% OTM (fair strike distance)")
+
+    if iv_hv_ratio is not None:
+        if iv_hv_ratio >= 1.5:
+            parts.append(f"IV/HV {iv_hv_ratio:.2f} (option richly priced)")
+        elif iv_hv_ratio >= 1.10:
+            parts.append(f"IV/HV {iv_hv_ratio:.2f} (option modestly rich)")
+        elif iv_hv_ratio < 0.85:
+            parts.append(f"IV/HV {iv_hv_ratio:.2f} (option cheap)")
+
+    if dte is not None:
+        if 28 <= dte <= 40:
+            parts.append(f"{dte}d to expiry (theta sweet spot)")
+        elif not (21 <= dte <= 48):
+            parts.append(f"{dte}d to expiry (off the sweet spot)")
+
+    if open_interest is not None:
+        if open_interest >= 2000:
+            parts.append("deep liquidity")
+        elif open_interest < 100:
+            parts.append("thin liquidity")
+
+    if bid_ask_spread_pct is not None:
+        if bid_ask_spread_pct < 5:
+            parts.append("tight spread")
+        elif bid_ask_spread_pct > 25:
+            parts.append("wide spread")
+
+    return ", ".join(parts) if parts else "Insufficient data for a detailed breakdown."
+
+
 # ── Per-ticker scanning (yfinance path) ───────────────────────────────────────
 
 def _scan_ticker(

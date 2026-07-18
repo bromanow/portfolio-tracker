@@ -153,6 +153,7 @@ def get_scan_results(
 ):
     """Return the latest scan results, with optional filters."""
     from app.models.scanner import ScannerResult
+    from app.services.covered_call_service import explain_score
 
     latest = db.execute(text(
         "SELECT scan_run_id FROM scanner_results ORDER BY scanned_at DESC LIMIT 1"
@@ -210,6 +211,17 @@ def get_scan_results(
             "max_return_pct":      _f(r.max_return_pct),
             "breakeven":           _f(r.breakeven),
             "score":               _f(r.score),
+            "why":                 explain_score(
+                annual_yield=_f(r.annual_yield_pct),
+                delta=_f(r.delta),
+                otm_pct=_f(r.otm_pct),
+                iv_pct=_f(r.iv_pct),
+                hv_30_pct=_f(r.hv_30_pct),
+                iv_hv_ratio=_f(r.iv_hv_ratio),
+                dte=r.dte,
+                open_interest=r.open_interest,
+                bid_ask_spread_pct=_f(r.bid_ask_spread_pct),
+            ),
             "delta":               _f(r.delta),
             "gamma":               _f(r.gamma),
             "theta":               _f(r.theta),

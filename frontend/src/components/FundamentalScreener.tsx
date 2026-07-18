@@ -120,7 +120,7 @@ function NumField({ label, value, onChange, placeholder }: {
 export default function FundamentalScreener() {
   const qc = useQueryClient()
   const [filters, setFilters] = useState<Filters>(EMPTY_FILTERS)
-  const [sortCol, setSortCol] = useState<SortCol>('market_cap')
+  const [sortCol, setSortCol] = useState<SortCol>('composite_score')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [jobId, setJobId] = useState<string | null>(null)
 
@@ -301,6 +301,7 @@ export default function FundamentalScreener() {
                 <table className="w-full text-sm min-w-[900px]">
                   <thead>
                     <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
+                      <SortTh label="Score" col="composite_score" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                       <SortTh label="Ticker" col="ticker" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                       <th className="px-3 py-2.5 text-left">Name</th>
                       <th className="px-3 py-2.5 text-left">Sector</th>
@@ -315,6 +316,20 @@ export default function FundamentalScreener() {
                   <tbody className="divide-y divide-gray-50">
                     {results.map(r => (
                       <tr key={r.security_id} className="hover:bg-gray-50">
+                        <td className="px-3 py-2 text-right">
+                          {r.composite_score != null ? (
+                            <span
+                              className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold tabular-nums ${
+                                r.composite_score >= 70 ? 'bg-emerald-100 text-emerald-700' :
+                                r.composite_score >= 40 ? 'bg-blue-100 text-blue-700' :
+                                                           'bg-gray-100 text-gray-500'
+                              }`}
+                              title="Percentile-ranked composite of valuation (P/E, debt/equity), quality (ROE), growth (revenue growth), and dividend yield — 100 is best-in-universe on these metrics, 0 is worst. Missing metrics are excluded and remaining weights renormalized."
+                            >
+                              {r.composite_score.toFixed(0)}
+                            </span>
+                          ) : <span className="text-gray-300">—</span>}
+                        </td>
                         <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">
                           <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-gray-800" />
                         </td>
@@ -329,7 +344,7 @@ export default function FundamentalScreener() {
                       </tr>
                     ))}
                     {results.length === 0 && (
-                      <tr><td colSpan={9} className="px-4 py-10 text-center text-gray-400">No stocks match these filters.</td></tr>
+                      <tr><td colSpan={10} className="px-4 py-10 text-center text-gray-400">No stocks match these filters.</td></tr>
                     )}
                   </tbody>
                 </table>

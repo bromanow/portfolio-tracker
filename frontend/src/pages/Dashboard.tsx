@@ -108,6 +108,13 @@ interface RealEstateRow {
 
 function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number }) {
   const [expanded, setExpanded] = useState(true)
+  const assetRows = rows.filter(r => r.kind === 'asset')
+  const bookValueTotal = assetRows.some(r => r.bookValue != null)
+    ? assetRows.reduce((s, r) => s + (r.bookValue ?? 0), 0)
+    : null
+  const gainTotal = assetRows.some(r => r.gain != null)
+    ? assetRows.reduce((s, r) => s + (r.gain ?? 0), 0)
+    : null
   return (
     <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
       <button
@@ -148,13 +155,29 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
                 </tr>
               ))}
             </tbody>
+            <tfoot>
+              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
+                <td className="px-4 py-2.5 text-gray-700">Total</td>
+                <td className="px-3 py-2.5 text-right font-mono text-gray-700">
+                  {bookValueTotal != null ? fmtCAD(bookValueTotal) : '—'}
+                </td>
+                <td className={`px-3 py-2.5 text-right font-mono ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                  {fmtCAD(total)}
+                </td>
+                <td className={`px-4 py-2.5 text-right font-mono ${gainTotal != null ? pnlClass(gainTotal) : 'text-gray-300'}`}>
+                  {gainTotal != null ? (gainTotal >= 0 ? '+' : '') + fmtCAD(gainTotal) : '—'}
+                </td>
+              </tr>
+            </tfoot>
           </table>
         </div>
       )}
-      <div className="px-4 py-2.5 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
-        <span className="text-gray-700">Total</span>
-        <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
-      </div>
+      {!expanded && (
+        <div className="px-4 py-2.5 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
+          <span className="text-gray-700">Total</span>
+          <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
+        </div>
+      )}
     </div>
   )
 }

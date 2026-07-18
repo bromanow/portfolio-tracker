@@ -4,10 +4,10 @@ import {
   getPersonalAssets, createPersonalAsset, updatePersonalAsset, deletePersonalAsset,
   uploadPersonalAssetFile, openPersonalAssetFile, deletePersonalAssetFile,
   getPersonalAssetIncomeEntries, createPersonalAssetIncomeEntry, deletePersonalAssetIncomeEntry,
-  getSecurityPriceHistory, addHistoricalPrice,
+  getSecurityPriceHistory, addHistoricalPrice, parseInsuranceStatement,
 } from '../../api/client'
-import type { PersonalAsset, PersonalAssetClass, PersonalAssetCreate } from '../../api/client'
-import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock, Plus, X } from 'lucide-react'
+import type { PersonalAsset, PersonalAssetClass, PersonalAssetCreate, InsuranceStatementParsed } from '../../api/client'
+import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock, Plus, X, ScanLine } from 'lucide-react'
 
 const CLASS_LABELS: Record<PersonalAssetClass, string> = {
   REAL_ESTATE: 'Real Estate',
@@ -209,6 +209,59 @@ function ValueHistory({ asset }: { asset: PersonalAsset }) {
   )
 }
 
+// ─── Statement upload + Gemini extraction (LIFE_INSURANCE rows only) ─────────
+function StatementUpload({ securityId }: { securityId: number }) {
+  const qc = useQueryClient()
+  const [result, setResult] = useState<InsuranceStatementParsed | null>(null)
+
+  const parseMut = useMutation({
+    mutationFn: (file: File) => parseInsuranceStatement(securityId, file),
+    onSuccess: (data) => {
+      setResult(data.parsed)
+      qc.invalidateQueries({ queryKey: ['personal-assets'] })
+      qc.invalidateQueries({ queryKey: ['personal-asset-history', securityId] })
+    },
+  })
+
+  return (
+    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+        <ScanLine className="h-3.5 w-3.5" /> Upload Statement
+      </div>
+      <p className="text-xs text-gray-500">
+        Upload the insurer's statement PDF — fields (contract type, sum insured, death benefit,
+        cash surrender value, insured, beneficiary) are extracted automatically and applied to
+        this asset, with the statement stored as its attached document.
+      </p>
+      <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded cursor-pointer disabled:opacity-40 w-fit">
+        <Upload className="h-3.5 w-3.5" />
+        {parseMut.isPending ? 'Extracting…' : 'Choose PDF'}
+        <input type="file" accept="application/pdf" className="hidden" disabled={parseMut.isPending}
+          onChange={e => { const f = e.target.files?.[0]; if (f) parseMut.mutate(f) }} />
+      </label>
+      {parseMut.isError && (
+        <p className="text-xs text-red-500">
+          {(parseMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
+            || 'Could not parse this statement.'}
+        </p>
+      )}
+      {result && (
+        <div className="text-xs text-gray-600 bg-white border border-gray-200 rounded p-3 space-y-1">
+          <div className="font-medium text-gray-800">Extracted from statement dated {result.statement_date}:</div>
+          {result.contract_type && <div>Contract Type: {result.contract_type}</div>}
+          {result.policy_number && <div>Policy Number: {result.policy_number}</div>}
+          {result.policy_issue_date && <div>Policy Issue Date: {result.policy_issue_date}</div>}
+          {result.insured_name && <div>Insured: {result.insured_name}</div>}
+          {result.beneficiary && <div>Beneficiary: {result.beneficiary}</div>}
+          {result.sum_insured && <div>Sum Insured: {fmtCAD(result.sum_insured)}</div>}
+          {result.death_benefit && <div>Death Benefit: {fmtCAD(result.death_benefit)}</div>}
+          {result.cash_surrender_value && <div>Cash Surrender Value: {fmtCAD(result.cash_surrender_value)}</div>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Shared field set for both Add and Edit forms ────────────────────────────
 interface FieldState {
   assetClass: PersonalAssetClass
@@ -227,6 +280,9 @@ interface FieldState {
   addressCountry: string
   policyNumber: string
   insurerName: string
+  contractType: string
+  sumInsured: string
+  insuredName: string
   lenderName: string
   maturityDate: string
   isCorporate: boolean
@@ -240,7 +296,8 @@ function blankFields(assetClass: PersonalAssetClass = 'REAL_ESTATE'): FieldState
   return {
     assetClass, name: '', owner: '', value: '', currency: 'CAD', bookValue: '', acquiredDate: today(), interestRate: '',
     propertyType: PROPERTY_TYPES[0], addressStreet: '', addressCity: '', addressProvince: '',
-    addressPostalCode: '', addressCountry: '', policyNumber: '', insurerName: '', lenderName: '',
+    addressPostalCode: '', addressCountry: '', policyNumber: '', insurerName: '',
+    contractType: '', sumInsured: '', insuredName: '', lenderName: '',
     maturityDate: '', isCorporate: false, entityName: '', zillowEstimate: '', linkedId: null, notes: '',
   }
 }
@@ -258,6 +315,9 @@ function fieldsFromAsset(a: PersonalAsset): FieldState {
     addressProvince: a.address_province || '', addressPostalCode: a.address_postal_code || '',
     addressCountry: a.address_country || '',
     policyNumber: a.policy_number || '', insurerName: a.insurer_name || '',
+    contractType: a.contract_type || '',
+    sumInsured: a.sum_insured_cad ? Math.abs(parseFloat(a.sum_insured_cad)).toString() : '',
+    insuredName: a.insured_name || '',
     lenderName: a.lender_name || '', maturityDate: a.maturity_date || '',
     isCorporate: a.is_corporate, entityName: a.entity_name || '',
     zillowEstimate: a.zillow_estimate_cad || '', linkedId: a.linked_security_id, notes: a.notes || '',
@@ -366,6 +426,19 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
             <label className="text-xs text-gray-500">Insurer</label>
             <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.insurerName} onChange={e => set('insurerName', e.target.value)} />
           </div>
+          <div>
+            <label className="text-xs text-gray-500">Type of Contract</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.contractType} onChange={e => set('contractType', e.target.value)}
+              placeholder="e.g. Perspecta - Single Life" />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Insured</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.insuredName} onChange={e => set('insuredName', e.target.value)} />
+          </div>
+          <div>
+            <label className="text-xs text-gray-500">Sum Insured (CAD, optional)</label>
+            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.sumInsured} onChange={e => set('sumInsured', e.target.value)} />
+          </div>
         </>
       )}
 
@@ -419,6 +492,9 @@ function fieldsToPayload(f: FieldState): Omit<PersonalAssetCreate, 'asset_class'
     address_country: f.assetClass === 'REAL_ESTATE' ? f.addressCountry || undefined : undefined,
     policy_number: f.assetClass === 'LIFE_INSURANCE' ? f.policyNumber || undefined : undefined,
     insurer_name: f.assetClass === 'LIFE_INSURANCE' ? f.insurerName || undefined : undefined,
+    contract_type: f.assetClass === 'LIFE_INSURANCE' ? f.contractType || undefined : undefined,
+    sum_insured_cad: f.assetClass === 'LIFE_INSURANCE' && f.sumInsured ? parseFloat(f.sumInsured) : undefined,
+    insured_name: f.assetClass === 'LIFE_INSURANCE' ? f.insuredName || undefined : undefined,
     lender_name: f.assetClass === 'LIABILITY' ? f.lenderName || undefined : undefined,
     maturity_date: f.assetClass === 'LIABILITY' && f.maturityDate ? f.maturityDate : undefined,
     is_corporate: f.isCorporate,
@@ -591,6 +667,18 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
         <div className="pb-3 space-y-3">
           {editing && <EditForm asset={asset} assets={assets} onDone={() => setEditing(false)} />}
           {asset.asset_class === 'REAL_ESTATE' && <IncomeLedger securityId={asset.security_id} />}
+          {asset.asset_class === 'LIFE_INSURANCE' && (
+            (asset.contract_type || asset.insured_name || asset.sum_insured_cad || asset.death_benefit_cad) && (
+              <div className="bg-gray-50 rounded-lg p-4 text-xs grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {asset.contract_type && <div><div className="text-gray-400">Contract Type</div><div className="font-medium text-gray-800">{asset.contract_type}</div></div>}
+                {asset.insured_name && <div><div className="text-gray-400">Insured</div><div className="font-medium text-gray-800">{asset.insured_name}</div></div>}
+                {asset.beneficiary && <div><div className="text-gray-400">Beneficiary</div><div className="font-medium text-gray-800">{asset.beneficiary}</div></div>}
+                {asset.sum_insured_cad && <div><div className="text-gray-400">Sum Insured</div><div className="font-medium text-gray-800">{fmtCAD(asset.sum_insured_cad)}</div></div>}
+                {asset.death_benefit_cad && <div><div className="text-gray-400">Death Benefit</div><div className="font-medium text-gray-800">{fmtCAD(asset.death_benefit_cad)}</div></div>}
+              </div>
+            )
+          )}
+          {asset.asset_class === 'LIFE_INSURANCE' && <StatementUpload securityId={asset.security_id} />}
           <ValueHistory asset={asset} />
         </div>
       )}

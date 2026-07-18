@@ -87,6 +87,9 @@ class PersonalAssetCreate(BaseModel):
     insurer_name: Optional[str] = None
     beneficiary: Optional[str] = None
     death_benefit_cad: Optional[Decimal] = None
+    contract_type: Optional[str] = None
+    sum_insured_cad: Optional[Decimal] = None
+    insured_name: Optional[str] = None
     lender_name: Optional[str] = None
     original_principal_cad: Optional[Decimal] = None
     maturity_date: Optional[date] = None
@@ -117,6 +120,9 @@ class PersonalAssetUpdate(BaseModel):
     insurer_name: Optional[str] = None
     beneficiary: Optional[str] = None
     death_benefit_cad: Optional[Decimal] = None
+    contract_type: Optional[str] = None
+    sum_insured_cad: Optional[Decimal] = None
+    insured_name: Optional[str] = None
     lender_name: Optional[str] = None
     original_principal_cad: Optional[Decimal] = None
     maturity_date: Optional[date] = None
@@ -195,7 +201,9 @@ def _details_to_dict(row: Optional[PersonalAssetDetails], linked_name: Optional[
             "address_postal_code": None, "address_country": None,
             "purchase_date": None,
             "purchase_price": None, "policy_number": None, "insurer_name": None,
-            "beneficiary": None, "death_benefit_cad": None, "lender_name": None,
+            "beneficiary": None, "death_benefit_cad": None,
+            "contract_type": None, "sum_insured_cad": None, "insured_name": None,
+            "lender_name": None,
             "original_principal_cad": None, "maturity_date": None,
             "linked_security_id": None, "linked_name": None,
             "is_corporate": False, "entity_name": None,
@@ -215,6 +223,9 @@ def _details_to_dict(row: Optional[PersonalAssetDetails], linked_name: Optional[
         "insurer_name": row.insurer_name,
         "beneficiary": row.beneficiary,
         "death_benefit_cad": str(row.death_benefit_cad) if row.death_benefit_cad is not None else None,
+        "contract_type": row.contract_type,
+        "sum_insured_cad": str(row.sum_insured_cad) if row.sum_insured_cad is not None else None,
+        "insured_name": row.insured_name,
         "lender_name": row.lender_name,
         "original_principal_cad": str(row.original_principal_cad) if row.original_principal_cad is not None else None,
         "maturity_date": row.maturity_date.isoformat() if row.maturity_date else None,
@@ -335,6 +346,8 @@ def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_d
         purchase_date=data.purchase_date, purchase_price=purchase_price_cad,
         policy_number=data.policy_number, insurer_name=data.insurer_name,
         beneficiary=data.beneficiary, death_benefit_cad=data.death_benefit_cad,
+        contract_type=data.contract_type, sum_insured_cad=data.sum_insured_cad,
+        insured_name=data.insured_name,
         lender_name=data.lender_name, original_principal_cad=data.original_principal_cad,
         maturity_date=data.maturity_date, linked_security_id=data.linked_security_id,
         is_corporate=data.is_corporate, entity_name=data.entity_name,
@@ -450,6 +463,123 @@ async def upload_personal_asset_file(security_id: int, file: UploadFile = File(.
     row.uploaded_at = datetime.utcnow()
     db.commit()
     return {"original_filename": row.original_filename, "byte_size": row.byte_size}
+
+
+@router.post("/{security_id}/parse-statement")
+async def parse_insurance_statement_upload(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+    """Upload a life insurance statement PDF, extract its fields with Gemini, and apply
+    them to this asset: policy details, and the cash surrender value as a dated value-history
+    point (same current-vs-backdated routing as the manual Value History UI)."""
+    from app.services import gemini_statement, gemini_insurance_statement
+    from app.models.prices import HistoricalPrice
+
+    security = db.get(Security, security_id)
+    if not security or security.asset_class != "LIFE_INSURANCE":
+        raise HTTPException(status_code=404, detail="Life insurance asset not found")
+    if not (file.filename or "").lower().endswith(".pdf"):
+        raise HTTPException(status_code=400, detail="Please upload a PDF.")
+    if not gemini_statement.is_configured():
+        raise HTTPException(
+            status_code=422,
+            detail="GEMINI_API_KEY is not set on the backend — statement scraping needs it "
+                   "to read arbitrary insurer layouts.",
+        )
+
+    data = await file.read()
+    try:
+        parsed = gemini_insurance_statement.parse_insurance_statement(data)
+    except Exception as e:
+        msg = str(e)
+        if "429" in msg or "RESOURCE_EXHAUSTED" in msg or "quota" in msg.lower():
+            raise HTTPException(429, "Gemini rate limit hit — wait a bit and retry.")
+        raise HTTPException(422, f"Could not parse statement: {e}")
+
+    # Store the PDF (replaces any prior attachment), mirroring upload_personal_asset_file.
+    details = db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id == security_id).first()
+    if details is None:
+        details = PersonalAssetDetails(security_id=security_id)
+        db.add(details)
+    elif details.stored_filename:
+        personal_asset_document_store.remove(details.stored_filename)
+    stored = personal_asset_document_store.stored_name(file.filename or "statement.pdf")
+    personal_asset_document_store.save(stored, data)
+    details.stored_filename = stored
+    details.original_filename = file.filename
+    details.content_type = file.content_type or "application/pdf"
+    details.byte_size = len(data)
+    details.uploaded_at = datetime.utcnow()
+
+    # Policy detail fields — only overwrite where Gemini actually found a value.
+    if parsed["insurer_name"]:
+        details.insurer_name = parsed["insurer_name"]
+    if parsed["contract_type"]:
+        details.contract_type = parsed["contract_type"]
+    if parsed["policy_number"]:
+        details.policy_number = parsed["policy_number"]
+    if parsed["insured_name"]:
+        details.insured_name = parsed["insured_name"]
+    if parsed["beneficiary"]:
+        details.beneficiary = parsed["beneficiary"]
+    if parsed["sum_insured"] is not None:
+        details.sum_insured_cad = parsed["sum_insured"]
+    if parsed["death_benefit"] is not None:
+        details.death_benefit_cad = parsed["death_benefit"]
+
+    if parsed["policy_issue_date"]:
+        opening = db.query(Transaction).filter(
+            Transaction.security_id == security_id,
+            Transaction.transaction_type == "OPENING_BALANCE",
+        ).first()
+        if opening:
+            opening.transaction_date = parsed["policy_issue_date"]
+            opening.settlement_date = parsed["policy_issue_date"]
+
+    # Cash surrender value → dated value-history point, same current-vs-backdated routing
+    # as the manual Value History UI (ValueHistory in PersonalAssetsTab.tsx).
+    if parsed["cash_surrender_value"] is not None:
+        statement_date = parsed["statement_date"]
+        latest_hist = (
+            db.query(HistoricalPrice)
+            .filter(HistoricalPrice.security_id == security_id)
+            .order_by(HistoricalPrice.price_date.desc())
+            .first()
+        )
+        is_current_or_future = latest_hist is None or statement_date >= latest_hist.price_date
+        if is_current_or_future:
+            _set_value(db, security, parsed["cash_surrender_value"], as_of=statement_date, currency=parsed["currency"])
+        else:
+            price_cad = _convert_to_cad(db, parsed["cash_surrender_value"], parsed["currency"], statement_date)
+            hist = db.query(HistoricalPrice).filter(
+                HistoricalPrice.security_id == security_id, HistoricalPrice.price_date == statement_date,
+            ).first()
+            if hist:
+                hist.close_price = parsed["cash_surrender_value"]
+                hist.close_price_cad = price_cad
+                hist.currency = parsed["currency"]
+                hist.source = "manual"
+            else:
+                db.add(HistoricalPrice(
+                    security_id=security_id, price_date=statement_date,
+                    close_price=parsed["cash_surrender_value"], close_price_cad=price_cad,
+                    currency=parsed["currency"], source="manual",
+                ))
+
+    db.commit()
+    return {
+        "security_id": security_id,
+        "parsed": {
+            "insurer_name": parsed["insurer_name"],
+            "contract_type": parsed["contract_type"],
+            "policy_number": parsed["policy_number"],
+            "policy_issue_date": parsed["policy_issue_date"].isoformat() if parsed["policy_issue_date"] else None,
+            "statement_date": parsed["statement_date"].isoformat(),
+            "insured_name": parsed["insured_name"],
+            "beneficiary": parsed["beneficiary"],
+            "sum_insured": str(parsed["sum_insured"]) if parsed["sum_insured"] is not None else None,
+            "death_benefit": str(parsed["death_benefit"]) if parsed["death_benefit"] is not None else None,
+            "cash_surrender_value": str(parsed["cash_surrender_value"]) if parsed["cash_surrender_value"] is not None else None,
+        },
+    }
 
 
 @router.get("/{security_id}/file")

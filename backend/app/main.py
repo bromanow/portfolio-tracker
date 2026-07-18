@@ -170,6 +170,9 @@ def _run_migrations(eng):
         ("personal_asset_details", "address_province",      "VARCHAR(100)"),
         ("personal_asset_details", "address_postal_code",   "VARCHAR(20)"),
         ("personal_asset_details", "address_country",       "VARCHAR(100)"),
+        ("personal_asset_details", "contract_type",         "VARCHAR(120)"),
+        ("personal_asset_details", "sum_insured_cad",       "NUMERIC(14, 2)"),
+        ("personal_asset_details", "insured_name",          "VARCHAR(120)"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

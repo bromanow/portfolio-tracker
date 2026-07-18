@@ -359,6 +359,9 @@ class PersonalAssetDetails(Base):
     insurer_name:     Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     beneficiary:      Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     death_benefit_cad: Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    contract_type:    Mapped[Optional[str]] = mapped_column(String(120), nullable=True)  # e.g. "PERSPECTA - SINGLE LIFE"
+    sum_insured_cad:  Mapped[Optional[Decimal]] = mapped_column(Numeric(14, 2), nullable=True)
+    insured_name:     Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
 
     # ── Liability ─────────────────────────────────────────────────────────────
     # Security.interest_rate (already exists) covers the rate; these cover the rest.

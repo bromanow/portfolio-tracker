@@ -1633,6 +1633,9 @@ export interface PersonalAsset {
   insurer_name: string | null
   beneficiary: string | null
   death_benefit_cad: string | null
+  contract_type: string | null
+  sum_insured_cad: string | null
+  insured_name: string | null
   lender_name: string | null
   original_principal_cad: string | null
   maturity_date: string | null
@@ -1669,6 +1672,9 @@ export interface PersonalAssetCreate {
   insurer_name?: string
   beneficiary?: string
   death_benefit_cad?: number
+  contract_type?: string
+  sum_insured_cad?: number
+  insured_name?: string
   lender_name?: string
   original_principal_cad?: number
   maturity_date?: string
@@ -1710,6 +1716,28 @@ export const uploadPersonalAssetFile = (securityId: number, file: File) => {
   return api.post(`/personal-assets/${securityId}/file`, fd, {
     headers: { 'Content-Type': 'multipart/form-data' },
   }).then(r => r.data)
+}
+
+export interface InsuranceStatementParsed {
+  insurer_name: string | null
+  contract_type: string | null
+  policy_number: string | null
+  policy_issue_date: string | null
+  statement_date: string
+  insured_name: string | null
+  beneficiary: string | null
+  sum_insured: string | null
+  death_benefit: string | null
+  cash_surrender_value: string | null
+}
+
+export const parseInsuranceStatement = (securityId: number, file: File) => {
+  const fd = new FormData()
+  fd.append('file', file)
+  return api.post<{ security_id: number; parsed: InsuranceStatementParsed }>(
+    `/personal-assets/${securityId}/parse-statement`, fd,
+    { headers: { 'Content-Type': 'multipart/form-data' } },
+  ).then(r => r.data)
 }
 
 export const openPersonalAssetFile = async (securityId: number) => {

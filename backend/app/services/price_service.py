@@ -554,6 +554,15 @@ def _yahoo_candidates(security: Security, cached_fetch_ticker: Optional[str] = N
     exchange = (security.exchange or "").upper().strip()
     native_ccy = (security.currency or "").upper().strip()
 
+    # CCC is Yahoo's own exchange code for crypto pairs (BTC-CAD, ETH-USD, ...) — the
+    # ticker is already in Yahoo's exact symbol format, so never suffix-guess it. Without
+    # this, the CAD-hint branch below prepends ".TO" as candidates[0], and the bulk price
+    # refresh only ever tries candidates[0] (no fallback) — so a crypto security silently
+    # picks up whatever unrelated (possibly delisted) "<ticker>.TO" instrument Yahoo
+    # resolves that to, e.g. BTC-CAD.TO, instead of the real BTC-CAD quote.
+    if exchange == "CCC":
+        return [raw]
+
     # When exchange is explicitly set, derive deterministically — ignore any cached ticker
     # (the cached ticker may have been fetched before the exchange was corrected)
     suffix = EXCHANGE_SUFFIX.get(exchange)

@@ -1374,6 +1374,44 @@ def _modified_dietz_return(
     return result[0] if result is not None else None
 
 
+def _modified_dietz_from_flows(
+    start_value: float, end_value: float,
+    flows: list[tuple[date, float]],
+    period_start: date, period_end: date,
+) -> Optional[float]:
+    """
+    Modified Dietz return — gain net of external cash flows, over the
+    time-weighted average capital:
+
+      R = (End − Start − ΣFᵢ) / (Start + Σ wᵢ·Fᵢ) × 100
+          where wᵢ = (period_end − dateᵢ) / (period_end − period_start)
+
+    External flows (deposits, withdrawals, inter-account transfers) are
+    capital movements, not gains/losses, so they are removed from the
+    numerator and weighted by their time-in-account in the denominator.
+    Income (interest/dividends) is already reflected in the account value
+    (cash balance), so it is captured by (End − Start) — no separate term,
+    which avoids the double-counting the previous formula suffered from.
+
+    Used by get_performance_returns(). Distinct from _modified_dietz() above,
+    which takes a date_map of (mv, income, invested) snapshots rather than an
+    explicit flow list — the two evolved for different callers and are each
+    tested independently rather than unified (see backend/tests/test_returns.py).
+    """
+    if start_value is None:
+        return None
+    net_flow = sum(a for _, a in flows)
+    total_days = (period_end - period_start).days
+    if total_days > 0:
+        weighted = sum(a * ((period_end - d).days / total_days) for d, a in flows)
+    else:
+        weighted = 0.0
+    denom = start_value + weighted
+    if abs(denom) < 1e-6:
+        return None
+    return (end_value - start_value - net_flow) / denom * 100.0
+
+
 # ─── Snapshot-based performance endpoints ────────────────────────────────────
 
 def _spawn_portfolio_job(name: str, fn):
@@ -1856,38 +1894,6 @@ def get_performance_returns(
                 break
         return date_map[best_date] if best_date is not None else None
 
-    def _modified_dietz(
-        start_value: float, end_value: float,
-        flows: list[tuple[date, float]],
-        period_start: date, period_end: date,
-    ) -> Optional[float]:
-        """
-        Modified Dietz return — gain net of external cash flows, over the
-        time-weighted average capital:
-
-          R = (End − Start − ΣFᵢ) / (Start + Σ wᵢ·Fᵢ) × 100
-              where wᵢ = (period_end − dateᵢ) / (period_end − period_start)
-
-        External flows (deposits, withdrawals, inter-account transfers) are
-        capital movements, not gains/losses, so they are removed from the
-        numerator and weighted by their time-in-account in the denominator.
-        Income (interest/dividends) is already reflected in the account value
-        (cash balance), so it is captured by (End − Start) — no separate term,
-        which avoids the double-counting the previous formula suffered from.
-        """
-        if start_value is None:
-            return None
-        net_flow = sum(a for _, a in flows)
-        total_days = (period_end - period_start).days
-        if total_days > 0:
-            weighted = sum(a * ((period_end - d).days / total_days) for d, a in flows)
-        else:
-            weighted = 0.0
-        denom = start_value + weighted
-        if abs(denom) < 1e-6:
-            return None
-        return (end_value - start_value - net_flow) / denom * 100.0
-
     def _effective_inception(date_map: dict[date, tuple[D, D, D]], current_mv: D) -> tuple[date, tuple[D, D, D]]:
         """
         Find the first date where the account had at least 50% of its current
@@ -1964,11 +1970,11 @@ def get_performance_returns(
                 continue
             s_val    = date_map[start_snap_date][0]
             flows_in = [(d, a) for (d, a) in group_flows if start_snap_date < d <= end_date]
-            row_result["returns"][label] = _modified_dietz(
+            row_result["returns"][label] = _modified_dietz_from_flows(
                 float(s_val), float(end_mv), flows_in, start_snap_date, end_date
             )
         eff_flows = [(d, a) for (d, a) in group_flows if eff_date < d <= end_date]
-        row_result["returns"]["inception"] = _modified_dietz(
+        row_result["returns"]["inception"] = _modified_dietz_from_flows(
             float(eff_snap[0]), float(end_mv), eff_flows, eff_date, end_date
         )
         results.append(row_result)

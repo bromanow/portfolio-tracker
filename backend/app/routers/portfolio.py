@@ -1186,6 +1186,17 @@ def get_portfolio_risk(
     top_sector = max(by_sector.items(), key=lambda x: x[1])
     top_sector_pct = float(top_sector[1] / sec_total * 100) if top_sector else 0
 
+    # ── Per-position weights (for the concentration nudge — which security to trim) ─
+    position_list = [
+        {
+            "ticker": t,
+            "security_id": ticker_sec_id.get(t),
+            "value_cad": float(v),
+            "weight_pct": round(float(v / total_val * 100), 2),
+        }
+        for t, v in top
+    ]
+
     return {
         "available": True,
         "total_value_cad": float(total_val),
@@ -1203,6 +1214,7 @@ def get_portfolio_risk(
         "top_sector_pct": round(top_sector_pct, 1),
         "currency_exposure": currency_exposure,
         "position_count": len(by_ticker),
+        "positions": position_list,
     }
 
 

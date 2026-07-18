@@ -719,6 +719,7 @@ export interface PortfolioRisk {
   top_sector_pct?: number
   currency_exposure?: Array<{ currency: string; pct: number; total_cad: number }>
   position_count?: number
+  positions?: Array<{ ticker: string; security_id: number | null; value_cad: number; weight_pct: number }>
 }
 export const getPortfolioRisk = (params?: { account_ids?: string }) =>
   api.get<PortfolioRisk>('/portfolio/risk', { params }).then(r => r.data)

@@ -90,6 +90,30 @@ function CurrencyBar({ exposure }: { exposure: Array<{ currency: string; pct: nu
   )
 }
 
+// ─── Concentration nudge ──────────────────────────────────────────────────────
+// Appears once HHI crosses into "Highly Concentrated" (>=25, same threshold as
+// HhiGauge above). Names the single largest position if trimming it alone
+// would clear a 20% target weight; otherwise names the top 2-3 positions
+// whose combined weight is driving the concentration.
+function concentrationNudge(
+  hhi: number | null | undefined,
+  positions: Array<{ ticker: string; weight_pct: number }> | undefined,
+): string | null {
+  if (hhi == null || hhi < 25 || !positions || positions.length === 0) return null
+  const [top1] = positions
+  if (top1.weight_pct > 20) {
+    return `Trim ${top1.ticker} (currently ${top1.weight_pct.toFixed(1)}% of portfolio) to get under 20%.`
+  }
+  let cumPct = 0
+  const names: string[] = []
+  for (const p of positions) {
+    cumPct += p.weight_pct
+    names.push(p.ticker)
+    if (cumPct > 20 || names.length >= 3) break
+  }
+  return `Consider diversifying — your top ${names.length} positions (${names.join(', ')}) make up ${cumPct.toFixed(1)}% of the portfolio.`
+}
+
 // ─── Volatility indicator ─────────────────────────────────────────────────────
 
 function volColor(pct: number | null | undefined): string {
@@ -232,6 +256,15 @@ export default function RiskScoringPanel({ accountIds }: Props) {
                       <div className="font-semibold text-gray-800">{data.position_count}</div>
                     </div>
                   </div>
+                  {(() => {
+                    const nudge = concentrationNudge(data.hhi, data.positions)
+                    return nudge ? (
+                      <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-3 py-2 text-xs text-red-700">
+                        <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
+                        {nudge}
+                      </div>
+                    ) : null
+                  })()}
                 </div>
 
                 {/* Currency exposure */}

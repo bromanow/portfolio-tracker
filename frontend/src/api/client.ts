@@ -9,22 +9,14 @@ const API_BASE = import.meta.env.VITE_API_BASE_URL
 const api = axios.create({
   baseURL: API_BASE,
   headers: { 'Content-Type': 'application/json' },
+  withCredentials: true,   // send the httpOnly session cookie on every request
 })
 
-// ── Auth interceptors ────────────────────────────────────────────────────────
-// Attach JWT to every request
-api.interceptors.request.use(config => {
-  const token = localStorage.getItem('pt_auth_token')
-  if (token) config.headers.Authorization = `Bearer ${token}`
-  return config
-})
-
-// On 401 → clear token and redirect to login
+// On 401 (session cookie missing/expired/invalid) → redirect to login
 api.interceptors.response.use(
   r => r,
   error => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('pt_auth_token')
       window.location.href = '/login'
     }
     return Promise.reject(error)

@@ -1,24 +1,21 @@
 from typing import Optional
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+from fastapi import Cookie, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 
 from app.database import get_db
 from app.models.auth import User
-from app.services.auth_service import decode_token
-
-_bearer = HTTPBearer(auto_error=False)
+from app.services.auth_service import decode_token, SESSION_COOKIE_NAME
 
 
 def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(_bearer),
+    pt_session: Optional[str] = Cookie(None, alias=SESSION_COOKIE_NAME),
     db: Session = Depends(get_db),
 ) -> User:
-    if not credentials:
+    if not pt_session:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
 
-    payload = decode_token(credentials.credentials)
+    payload = decode_token(pt_session)
     if not payload:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
 

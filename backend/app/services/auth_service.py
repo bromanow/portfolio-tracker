@@ -9,6 +9,10 @@ SECRET_KEY = os.environ["SECRET_KEY"]
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_HOURS = int(os.environ.get("TOKEN_EXPIRE_HOURS", "8"))
 
+SESSION_COOKIE_NAME = "pt_session"
+# Secure requires HTTPS — disable only for local http:// dev via backend/.env.
+COOKIE_SECURE = os.environ.get("COOKIE_SECURE", "true").lower() != "false"
+
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 

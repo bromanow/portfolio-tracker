@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useCallback, useEffect } from 'rea
 import { useQuery } from '@tanstack/react-query'
 import { getClients } from '../api/client'
 import type { Client } from '../api/client'
+import { useAuth } from './AuthContext'
 
 interface ClientContextValue {
   clients: Client[]
@@ -20,7 +21,8 @@ const ClientContext = createContext<ClientContextValue>({
 const STORAGE_KEY = 'pt_selected_client'
 
 export function ClientProvider({ children }: { children: React.ReactNode }) {
-  const isAuthenticated = !!localStorage.getItem('pt_auth_token')
+  const { user } = useAuth()
+  const isAuthenticated = !!user
 
   const { data: clients = [], isLoading } = useQuery({
     queryKey: ['clients'],

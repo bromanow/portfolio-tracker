@@ -34,17 +34,23 @@ export default function Holdings() {
   const readyAccountIds: string | null | undefined =
     (accountsLoading && hasFilter) ? null : histAccountIds
 
-  const filteredCash = useMemo(() =>
-    hasFilter
+  // Filter unconditionally by the non-demo account set (not just when the user has
+  // applied a manual filter) — getCashBalances/getPositions return every account the
+  // backend authorizes for this user, demo accounts included, so without this, demo
+  // cash/positions leak into the page whenever no filter is active (the default state).
+  const filteredCash = useMemo(() => {
+    if (accountsLoading) return []
+    return effectiveAccountIds.size > 0
       ? (cashBalances as CashBalance[]).filter(c => effectiveAccountIds.has(c.account_id))
       : (cashBalances as CashBalance[])
-  , [cashBalances, effectiveAccountIds, hasFilter])
+  }, [cashBalances, effectiveAccountIds, accountsLoading])
 
-  const filteredPositions = useMemo(() =>
-    hasFilter
+  const filteredPositions = useMemo(() => {
+    if (accountsLoading) return []
+    return effectiveAccountIds.size > 0
       ? (positions as Position[]).filter(p => effectiveAccountIds.has(p.account_id))
       : (positions as Position[])
-  , [positions, effectiveAccountIds, hasFilter])
+  }, [positions, effectiveAccountIds, accountsLoading])
 
   return (
     <div className="space-y-4">

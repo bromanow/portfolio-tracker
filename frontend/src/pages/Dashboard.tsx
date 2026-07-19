@@ -27,7 +27,7 @@ function fmtCAD(val: string | number | null | undefined) {
 }
 
 function pnlClass(n: number) {
-  return n > 0 ? 'text-emerald-600' : n < 0 ? 'text-red-500' : 'text-gray-500'
+  return n > 0 ? 'text-emerald-600 dark:text-emerald-400' : n < 0 ? 'text-red-500 dark:text-red-400' : 'text-muted-foreground'
 }
 
 function fmtPct(n: number) {
@@ -73,29 +73,29 @@ interface AssetGroupItem { security_id: number; name: string; value: number; isL
 function AssetGroupSummary({ title, items, total }: { title: string; items: AssetGroupItem[]; total: number }) {
   const [expanded, setExpanded] = useState(true)
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-4 py-1.5 flex items-center gap-1.5 text-left hover:bg-gray-50 transition-colors font-semibold text-gray-900"
+        className="w-full px-4 py-1.5 flex items-center gap-1.5 text-left hover:bg-accent/60 transition-colors font-semibold text-foreground"
       >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
         {title}
       </button>
       {expanded && (
-        <div className="border-t border-gray-100 divide-y divide-gray-50">
+        <div className="border-t border-border divide-y divide-border/60">
           {items.map(item => (
-            <div key={item.security_id} className={`px-4 py-1.5 flex items-center justify-between text-sm ${item.isLiability ? 'pl-8 bg-gray-50/50' : ''}`}>
-              <span className="text-gray-700 truncate">{item.name}</span>
-              <span className={`font-mono font-medium ${item.isLiability ? 'text-red-500' : 'text-gray-900'}`}>
+            <div key={item.security_id} className={`px-4 py-1.5 flex items-center justify-between text-sm ${item.isLiability ? 'pl-8 bg-muted/50' : ''}`}>
+              <span className="text-foreground truncate">{item.name}</span>
+              <span className={`font-mono font-medium ${item.isLiability ? 'text-red-500 dark:text-red-400' : 'text-foreground'}`}>
                 {item.isLiability ? '-' : ''}{fmtCAD(Math.abs(item.value))}
               </span>
             </div>
           ))}
         </div>
       )}
-      <div className="px-4 py-2 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
-        <span className="text-gray-700">Total</span>
-        <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
+      <div className="px-4 py-2 flex items-center justify-between text-sm font-semibold border-t-2 border-border bg-muted/50">
+        <span className="text-foreground">Total</span>
+        <span className={total < 0 ? 'text-red-500 dark:text-red-400' : 'text-foreground'}>{fmtCAD(total)}</span>
       </div>
     </div>
   )
@@ -117,55 +117,55 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
     ? assetRows.reduce((s, r) => s + (r.gain ?? 0), 0)
     : null
   return (
-    <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="bg-card border border-border rounded-xl overflow-hidden shadow-sm">
       <button
         onClick={() => setExpanded(e => !e)}
-        className="w-full px-4 py-1.5 flex items-center gap-1.5 text-left hover:bg-gray-50 transition-colors font-semibold text-gray-900"
+        className="w-full px-4 py-1.5 flex items-center gap-1.5 text-left hover:bg-accent/60 transition-colors font-semibold text-foreground"
       >
-        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-gray-400" /> : <ChevronRight className="h-3.5 w-3.5 text-gray-400" />}
+        {expanded ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />}
         Real Estate
       </button>
       {expanded && (
-        <div className="border-t border-gray-100 overflow-x-auto">
+        <div className="border-t border-border overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
-              <tr className="text-xs text-gray-400 uppercase tracking-wide bg-gray-50">
+              <tr className="text-xs text-muted-foreground uppercase tracking-wide bg-muted/50">
                 <th className="px-4 py-1.5 text-left">Name</th>
                 <th className="px-3 py-1.5 text-right">Book Value</th>
                 <th className="px-3 py-1.5 text-right">Total Value</th>
                 <th className="px-4 py-1.5 text-right">Gain</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/60">
               {rows.map(r => (
-                <tr key={r.key} className={r.kind === 'subtotal' ? 'bg-gray-50/70' : r.kind === 'liability' ? 'bg-gray-50/40' : ''}>
-                  <td className={`px-4 py-1.5 text-gray-700 truncate ${r.kind !== 'asset' ? 'pl-8' : ''} ${r.kind === 'subtotal' ? 'font-semibold text-gray-600' : ''}`}>
+                <tr key={r.key} className={r.kind === 'subtotal' ? 'bg-muted/70' : r.kind === 'liability' ? 'bg-muted/40' : ''}>
+                  <td className={`px-4 py-1.5 text-foreground truncate ${r.kind !== 'asset' ? 'pl-8' : ''} ${r.kind === 'subtotal' ? 'font-semibold text-muted-foreground' : ''}`}>
                     {r.name}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono text-gray-500">
+                  <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">
                     {r.bookValue != null ? fmtCAD(r.bookValue) : '—'}
                   </td>
                   <td className={`px-3 py-1.5 text-right font-mono ${r.kind === 'subtotal' ? 'font-semibold' : ''} ${
-                    r.kind === 'liability' ? 'text-red-500' : r.totalValue < 0 ? 'text-red-500' : 'text-gray-900'
+                    r.kind === 'liability' ? 'text-red-500 dark:text-red-400' : r.totalValue < 0 ? 'text-red-500 dark:text-red-400' : 'text-foreground'
                   }`}>
                     {r.kind === 'liability' ? '-' + fmtCAD(Math.abs(r.totalValue)) : fmtCAD(r.totalValue)}
                   </td>
-                  <td className={`px-4 py-1.5 text-right font-mono ${r.gain != null ? pnlClass(r.gain) : 'text-gray-300'}`}>
+                  <td className={`px-4 py-1.5 text-right font-mono ${r.gain != null ? pnlClass(r.gain) : 'text-muted-foreground/50'}`}>
                     {r.gain != null ? (r.gain >= 0 ? '+' : '') + fmtCAD(r.gain) : '—'}
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-              <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold text-sm">
-                <td className="px-4 py-2 text-gray-700">Total</td>
-                <td className="px-3 py-2 text-right font-mono text-gray-700">
+              <tr className="border-t-2 border-border bg-muted/50 font-semibold text-sm">
+                <td className="px-4 py-2 text-foreground">Total</td>
+                <td className="px-3 py-2 text-right font-mono text-foreground">
                   {bookValueTotal != null ? fmtCAD(bookValueTotal) : '—'}
                 </td>
-                <td className={`px-3 py-2 text-right font-mono ${total < 0 ? 'text-red-500' : 'text-gray-900'}`}>
+                <td className={`px-3 py-2 text-right font-mono ${total < 0 ? 'text-red-500 dark:text-red-400' : 'text-foreground'}`}>
                   {fmtCAD(total)}
                 </td>
-                <td className={`px-4 py-2 text-right font-mono ${gainTotal != null ? pnlClass(gainTotal) : 'text-gray-300'}`}>
+                <td className={`px-4 py-2 text-right font-mono ${gainTotal != null ? pnlClass(gainTotal) : 'text-muted-foreground/50'}`}>
                   {gainTotal != null ? (gainTotal >= 0 ? '+' : '') + fmtCAD(gainTotal) : '—'}
                 </td>
               </tr>
@@ -174,9 +174,9 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
         </div>
       )}
       {!expanded && (
-        <div className="px-4 py-2 flex items-center justify-between text-sm font-semibold border-t-2 border-gray-200 bg-gray-50">
-          <span className="text-gray-700">Total</span>
-          <span className={total < 0 ? 'text-red-500' : 'text-gray-900'}>{fmtCAD(total)}</span>
+        <div className="px-4 py-2 flex items-center justify-between text-sm font-semibold border-t-2 border-border bg-muted/50">
+          <span className="text-foreground">Total</span>
+          <span className={total < 0 ? 'text-red-500 dark:text-red-400' : 'text-foreground'}>{fmtCAD(total)}</span>
         </div>
       )}
     </div>
@@ -206,7 +206,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
   }
 
   if (data.length === 0)
-    return <p className="text-gray-400 text-sm py-4">No positions found.</p>
+    return <p className="text-muted-foreground text-sm py-4">No positions found.</p>
 
   return (
     <>
@@ -215,52 +215,52 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
       {data.map(brok => {
         const isOpen = expanded.has(brok.name)
         return (
-          <div key={brok.name} className="bg-white border border-gray-200 rounded-xl shadow-sm overflow-hidden">
+          <div key={brok.name} className="bg-card border border-border rounded-xl shadow-sm overflow-hidden">
             <button
               onClick={() => toggleBrok(brok.name)}
-              className="w-full px-4 py-1.5 flex items-center justify-between gap-3 text-left active:bg-gray-50"
+              className="w-full px-4 py-1.5 flex items-center justify-between gap-3 text-left active:bg-accent/60"
             >
               <div className="min-w-0">
-                <div className="font-semibold text-gray-900 flex items-center gap-1.5">
+                <div className="font-semibold text-foreground flex items-center gap-1.5">
                   {isOpen
-                    ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                    : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
+                    ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                    : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
                   {brok.name}
                   <span
                     onClick={e => { e.stopPropagation(); goToBrokerageHoldings(brok.name) }}
-                    className="text-gray-300 hover:text-blue-600"
+                    className="text-muted-foreground/50 hover:text-primary"
                     title="View in Holdings"
                   >
                     <ExternalLink className="h-3 w-3" />
                   </span>
                 </div>
-                <div className="text-xs text-gray-400 mt-0.5 truncate">
+                <div className="text-xs text-muted-foreground mt-0.5 truncate">
                   {brok.accounts.length} acct{brok.accounts.length !== 1 ? 's' : ''} · Cash {fmtCAD(brok.totalCash)}
                 </div>
               </div>
               <div className="text-right flex-shrink-0">
-                <div className="font-bold text-blue-700">{fmtCAD(brok.total)}</div>
-                <div className={`text-xs font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-gray-400'}`}>
+                <div className="font-bold text-primary">{fmtCAD(brok.total)}</div>
+                <div className={`text-xs font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-muted-foreground'}`}>
                   {brok.hasPrices ? (brok.pnl >= 0 ? '+' : '') + fmtCAD(brok.pnl) + ' P&L' : '—'}
                 </div>
               </div>
             </button>
             {isOpen && (
-              <div className="border-t border-gray-100 divide-y divide-gray-50 bg-gray-50/30">
+              <div className="border-t border-border divide-y divide-border/60 bg-muted/30">
                 {brok.accounts.map(acct => (
                   <div key={acct.account_id} className="px-4 py-1.5 flex items-center justify-between gap-2 text-sm">
                     <span className="flex items-center gap-1.5 min-w-0">
-                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium whitespace-nowrap">{acct.account_type}</span>
-                      <span className="text-gray-700 truncate">{acct.account_name}</span>
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium whitespace-nowrap">{acct.account_type}</span>
+                      <span className="text-foreground truncate">{acct.account_name}</span>
                       <span
                         onClick={() => goToAccountHoldings(acct.account_id)}
-                        className="text-gray-300 hover:text-blue-600 flex-shrink-0"
+                        className="text-muted-foreground/50 hover:text-primary flex-shrink-0"
                         title="View in Holdings"
                       >
                         <ExternalLink className="h-3 w-3" />
                       </span>
                     </span>
-                    <span className="font-mono font-medium text-gray-900 flex-shrink-0">{fmtCAD(acct.total)}</span>
+                    <span className="font-mono font-medium text-foreground flex-shrink-0">{fmtCAD(acct.total)}</span>
                   </div>
                 ))}
               </div>
@@ -271,7 +271,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
     </div>
 
     {/* ── Desktop: full table ── */}
-    <div className="hidden md:block bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+    <div className="hidden md:block bg-card border border-border rounded-xl overflow-hidden shadow-sm">
       <table className="w-full text-sm">
         <colgroup>
           <col />
@@ -285,7 +285,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
           <col className="w-28" />
         </colgroup>
         <thead>
-          <tr className="border-b border-gray-200 bg-gray-50 text-xs text-gray-400 uppercase tracking-wide">
+          <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
             <th className="px-4 py-2 text-left">Brokerages</th>
             <th className="px-3 py-2 text-right"></th>
             <th className="px-3 py-2 text-right">Book Value</th>
@@ -306,42 +306,42 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                 <tr
                   key={brok.name}
                   onClick={() => toggleBrok(brok.name)}
-                  className={`cursor-pointer hover:bg-blue-50 transition-colors ${bi > 0 ? 'border-t border-gray-200' : ''} bg-gray-50/70`}
+                  className={`cursor-pointer hover:bg-primary/5 transition-colors ${bi > 0 ? 'border-t border-border' : ''} bg-muted/70`}
                 >
-                  <td className="px-4 py-1.5 font-semibold text-gray-900">
+                  <td className="px-4 py-1.5 font-semibold text-foreground">
                     <span className="inline-flex items-center gap-2">
                       {isOpen
-                        ? <ChevronDown className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />
-                        : <ChevronRight className="h-3.5 w-3.5 text-gray-400 flex-shrink-0" />}
+                        ? <ChevronDown className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />
+                        : <ChevronRight className="h-3.5 w-3.5 text-muted-foreground flex-shrink-0" />}
                       {brok.name}
                       <span
                         onClick={e => { e.stopPropagation(); goToBrokerageHoldings(brok.name) }}
-                        className="text-gray-300 hover:text-blue-600"
+                        className="text-muted-foreground/50 hover:text-primary"
                         title="View in Holdings"
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                       </span>
                     </span>
                   </td>
-                  <td className="px-3 py-1.5 text-right text-xs text-gray-400">
+                  <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">
                     {brok.accounts.length} acct{brok.accounts.length !== 1 ? 's' : ''}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono text-gray-600 text-sm">{fmtCAD(brok.totalBook)}</td>
-                  <td className="px-3 py-1.5 text-right font-mono text-gray-800 text-sm font-medium">
+                  <td className="px-3 py-1.5 text-right font-mono text-muted-foreground text-sm">{fmtCAD(brok.totalBook)}</td>
+                  <td className="px-3 py-1.5 text-right font-mono text-foreground text-sm font-medium">
                     {fmtCAD(brok.totalSecurities)}
-                    {brok.hasFallback && <span className="text-amber-500 ml-0.5" title="Some positions valued at cost">*</span>}
+                    {brok.hasFallback && <span className="text-amber-500 dark:text-amber-400 ml-0.5" title="Some positions valued at cost">*</span>}
                   </td>
-                  <td className={`px-3 py-1.5 text-right font-mono text-sm ${brok.totalCash < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+                  <td className={`px-3 py-1.5 text-right font-mono text-sm ${brok.totalCash < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
                     {fmtCAD(brok.totalCash)}
                   </td>
-                  <td className="px-3 py-1.5 text-right font-mono font-bold text-blue-700 text-sm">{fmtCAD(brok.total)}</td>
-                  <td className={`px-3 py-1.5 text-right font-mono text-sm font-medium ${brok.hasDayGain ? pnlClass(brok.dayGain) : 'text-gray-300'}`}>
+                  <td className="px-3 py-1.5 text-right font-mono font-bold text-primary text-sm">{fmtCAD(brok.total)}</td>
+                  <td className={`px-3 py-1.5 text-right font-mono text-sm font-medium ${brok.hasDayGain ? pnlClass(brok.dayGain) : 'text-muted-foreground/50'}`}>
                     {brok.hasDayGain ? (brok.dayGain >= 0 ? '+' : '') + fmtCAD(brok.dayGain) : '—'}
                   </td>
-                  <td className={`px-3 py-1.5 text-right font-mono text-sm font-medium ${brok.hasDayGain && brok.totalSecurities > 0 ? pnlClass(brok.dayGain) : 'text-gray-300'}`}>
+                  <td className={`px-3 py-1.5 text-right font-mono text-sm font-medium ${brok.hasDayGain && brok.totalSecurities > 0 ? pnlClass(brok.dayGain) : 'text-muted-foreground/50'}`}>
                     {brok.hasDayGain && brok.totalSecurities > 0 ? fmtPct(brok.dayGain / brok.totalSecurities * 100) : '—'}
                   </td>
-                  <td className={`px-4 py-1.5 text-right font-mono text-sm font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-gray-400'}`}>
+                  <td className={`px-4 py-1.5 text-right font-mono text-sm font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-muted-foreground'}`}>
                     {brok.hasPrices ? (brok.pnl >= 0 ? '+' : '') + fmtCAD(brok.pnl) : '—'}
                   </td>
                 </tr>
@@ -358,23 +358,23 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                       <tr
                         key={acct.account_id}
                         onClick={isPaired ? () => toggleGrp(grpKey) : undefined}
-                        className={`border-t border-gray-100 bg-white ${isPaired ? 'cursor-pointer hover:bg-blue-50/40' : 'hover:bg-gray-50'}`}
+                        className={`border-t border-border bg-card ${isPaired ? 'cursor-pointer hover:bg-primary/5' : 'hover:bg-accent/60'}`}
                       >
-                        <td className="px-4 py-2 pl-10 text-gray-700">
+                        <td className="px-4 py-2 pl-10 text-foreground">
                           <span className="inline-flex items-center gap-2">
                             {isPaired && (grpOpen
-                              ? <ChevronDown className="h-3 w-3 text-gray-400 flex-shrink-0" />
-                              : <ChevronRight className="h-3 w-3 text-gray-400 flex-shrink-0" />)}
-                            <span className="text-xs px-1.5 py-0.5 rounded bg-blue-50 text-blue-700 font-medium whitespace-nowrap">
+                              ? <ChevronDown className="h-3 w-3 text-muted-foreground flex-shrink-0" />
+                              : <ChevronRight className="h-3 w-3 text-muted-foreground flex-shrink-0" />)}
+                            <span className="text-xs px-1.5 py-0.5 rounded bg-primary/10 text-primary font-medium whitespace-nowrap">
                               {acct.account_type}
                             </span>
                             {acct.account_name}
                             {isPaired && (
-                              <span className="text-xs px-1.5 py-0.5 rounded bg-violet-50 text-violet-600 font-medium">CAD+USD</span>
+                              <span className="text-xs px-1.5 py-0.5 rounded bg-violet-500/10 text-violet-600 dark:text-violet-400 font-medium">CAD+USD</span>
                             )}
                             <span
                               onClick={e => { e.stopPropagation(); goToAccountHoldings(acct.account_id) }}
-                              className="text-gray-300 hover:text-blue-600"
+                              className="text-muted-foreground/50 hover:text-primary"
                               title="View in Holdings"
                             >
                               <ExternalLink className="h-3 w-3" />
@@ -382,22 +382,22 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                           </span>
                         </td>
                         <td></td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-400 text-xs">{fmtCAD(acct.book_value)}</td>
-                        <td className="px-3 py-2 text-right font-mono text-gray-700 text-xs">
+                        <td className="px-3 py-2 text-right font-mono text-muted-foreground text-xs">{fmtCAD(acct.book_value)}</td>
+                        <td className="px-3 py-2 text-right font-mono text-foreground text-xs">
                           {acct.securities > 0 ? fmtCAD(acct.securities) : '—'}
-                          {acct.hasFallback && <span className="text-amber-500 ml-0.5" title="Valued at cost">*</span>}
+                          {acct.hasFallback && <span className="text-amber-500 dark:text-amber-400 ml-0.5" title="Valued at cost">*</span>}
                         </td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs ${acct.cash < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                        <td className={`px-3 py-2 text-right font-mono text-xs ${acct.cash < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
                           {fmtCAD(acct.cash)}
                         </td>
-                        <td className="px-3 py-2 text-right font-mono font-semibold text-blue-700 text-xs">{fmtCAD(acct.total)}</td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${acct.hasDayGain ? pnlClass(acct.dayGain) : 'text-gray-300'}`}>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-primary text-xs">{fmtCAD(acct.total)}</td>
+                        <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${acct.hasDayGain ? pnlClass(acct.dayGain) : 'text-muted-foreground/50'}`}>
                           {acct.hasDayGain ? (acct.dayGain >= 0 ? '+' : '') + fmtCAD(acct.dayGain) : '—'}
                         </td>
-                        <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${acct.hasDayGain && acct.securities > 0 ? pnlClass(acct.dayGain) : 'text-gray-300'}`}>
+                        <td className={`px-3 py-2 text-right font-mono text-xs font-medium ${acct.hasDayGain && acct.securities > 0 ? pnlClass(acct.dayGain) : 'text-muted-foreground/50'}`}>
                           {acct.hasDayGain && acct.securities > 0 ? fmtPct(acct.dayGain / acct.securities * 100) : '—'}
                         </td>
-                        <td className={`px-4 py-2 text-right font-mono text-xs font-medium ${acct.hasPrices ? pnlClass(acct.pnl) : 'text-gray-400'}`}>
+                        <td className={`px-4 py-2 text-right font-mono text-xs font-medium ${acct.hasPrices ? pnlClass(acct.pnl) : 'text-muted-foreground'}`}>
                           {acct.hasPrices ? (acct.pnl >= 0 ? '+' : '') + fmtCAD(acct.pnl) : '—'}
                         </td>
                       </tr>
@@ -407,42 +407,42 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                         const isUSD = sub.base_currency === 'USD'
                         const rate  = usdCadRate ?? 1
                         return (
-                          <tr key={sub.account_id} className="border-t border-gray-50 bg-white hover:bg-gray-50">
-                            <td className="px-4 py-1.5 pl-16 text-gray-600 text-xs">
+                          <tr key={sub.account_id} className="border-t border-border/60 bg-card hover:bg-accent/60">
+                            <td className="px-4 py-1.5 pl-16 text-muted-foreground text-xs">
                               <span className="inline-flex items-center gap-2">
-                                <span className={`px-1.5 py-0.5 rounded font-medium ${isUSD ? 'bg-green-50 text-green-700' : 'bg-gray-100 text-gray-600'}`}>
+                                <span className={`px-1.5 py-0.5 rounded font-medium ${isUSD ? 'bg-green-500/10 text-green-600 dark:text-green-400' : 'bg-accent text-muted-foreground'}`}>
                                   {sub.base_currency}
                                 </span>
                                 {sub.account_name}
                               </span>
                             </td>
                             <td></td>
-                            <td className="px-3 py-1.5 text-right font-mono text-gray-400 text-xs">
+                            <td className="px-3 py-1.5 text-right font-mono text-muted-foreground text-xs">
                               {isUSD ? fmtUSD(sub.book_value / rate) : fmtCAD(sub.book_value)}
                             </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs text-gray-700">
+                            <td className="px-3 py-1.5 text-right font-mono text-xs text-foreground">
                               {sub.securities > 0
-                                ? isUSD ? <>{fmtUSD(sub.securities / rate)}<span className="text-gray-400 ml-1">= {fmtCAD(sub.securities)}</span></> : fmtCAD(sub.securities)
+                                ? isUSD ? <>{fmtUSD(sub.securities / rate)}<span className="text-muted-foreground ml-1">= {fmtCAD(sub.securities)}</span></> : fmtCAD(sub.securities)
                                 : '—'}
-                              {sub.hasFallback && <span className="text-amber-500 ml-0.5">*</span>}
+                              {sub.hasFallback && <span className="text-amber-500 dark:text-amber-400 ml-0.5">*</span>}
                             </td>
-                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.cash < 0 ? 'text-red-600' : 'text-gray-600'}`}>
+                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.cash < 0 ? 'text-red-600 dark:text-red-400' : 'text-muted-foreground'}`}>
                               {isUSD
-                                ? <>{fmtUSD(sub.cash / rate)}<span className="text-gray-400 ml-1">= {fmtCAD(sub.cash)}</span></>
+                                ? <>{fmtUSD(sub.cash / rate)}<span className="text-muted-foreground ml-1">= {fmtCAD(sub.cash)}</span></>
                                 : fmtCAD(sub.cash)}
                             </td>
-                            <td className="px-3 py-1.5 text-right font-mono text-xs font-semibold text-blue-700">
+                            <td className="px-3 py-1.5 text-right font-mono text-xs font-semibold text-primary">
                               {isUSD
-                                ? <>{fmtUSD(sub.total / rate)}<span className="text-gray-400 ml-1">= {fmtCAD(sub.total)}</span></>
+                                ? <>{fmtUSD(sub.total / rate)}<span className="text-muted-foreground ml-1">= {fmtCAD(sub.total)}</span></>
                                 : fmtCAD(sub.total)}
                             </td>
-                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.hasDayGain ? pnlClass(sub.dayGain) : 'text-gray-300'}`}>
+                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.hasDayGain ? pnlClass(sub.dayGain) : 'text-muted-foreground/50'}`}>
                               {sub.hasDayGain ? (sub.dayGain >= 0 ? '+' : '') + fmtCAD(sub.dayGain) : '—'}
                             </td>
-                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.hasDayGain && sub.securities > 0 ? pnlClass(sub.dayGain) : 'text-gray-300'}`}>
+                            <td className={`px-3 py-1.5 text-right font-mono text-xs ${sub.hasDayGain && sub.securities > 0 ? pnlClass(sub.dayGain) : 'text-muted-foreground/50'}`}>
                               {sub.hasDayGain && sub.securities > 0 ? fmtPct(sub.dayGain / sub.securities * 100) : '—'}
                             </td>
-                            <td className={`px-4 py-1.5 text-right font-mono text-xs ${sub.hasPrices ? pnlClass(sub.pnl) : 'text-gray-400'}`}>
+                            <td className={`px-4 py-1.5 text-right font-mono text-xs ${sub.hasPrices ? pnlClass(sub.pnl) : 'text-muted-foreground'}`}>
                               {sub.hasPrices ? (sub.pnl >= 0 ? '+' : '') + fmtCAD(sub.pnl) : '—'}
                             </td>
                           </tr>
@@ -456,25 +456,25 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
           })}
         </tbody>
         <tfoot>
-          <tr className="border-t-2 border-gray-300 bg-gray-50 font-semibold text-sm">
-            <td className="px-4 py-1.5 text-gray-700">Total</td>
+          <tr className="border-t-2 border-border bg-muted/50 font-semibold text-sm">
+            <td className="px-4 py-1.5 text-foreground">Total</td>
             <td></td>
-            <td className="px-3 py-1.5 text-right font-mono text-gray-600">{fmtCAD(data.reduce((s, b) => s + b.totalBook, 0))}</td>
-            <td className="px-3 py-1.5 text-right font-mono text-gray-800">{fmtCAD(data.reduce((s, b) => s + b.totalSecurities, 0))}</td>
-            <td className={`px-3 py-1.5 text-right font-mono ${data.reduce((s, b) => s + b.totalCash, 0) < 0 ? 'text-red-600' : 'text-gray-700'}`}>
+            <td className="px-3 py-1.5 text-right font-mono text-muted-foreground">{fmtCAD(data.reduce((s, b) => s + b.totalBook, 0))}</td>
+            <td className="px-3 py-1.5 text-right font-mono text-foreground">{fmtCAD(data.reduce((s, b) => s + b.totalSecurities, 0))}</td>
+            <td className={`px-3 py-1.5 text-right font-mono ${data.reduce((s, b) => s + b.totalCash, 0) < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>
               {fmtCAD(data.reduce((s, b) => s + b.totalCash, 0))}
             </td>
-            <td className="px-3 py-1.5 text-right font-mono text-blue-700">{fmtCAD(data.reduce((s, b) => s + b.total, 0))}</td>
+            <td className="px-3 py-1.5 text-right font-mono text-primary">{fmtCAD(data.reduce((s, b) => s + b.total, 0))}</td>
             {(() => {
               const totalDG = data.reduce((s, b) => s + b.dayGain, 0)
               const hasDG   = data.some(b => b.hasDayGain)
               const totSec  = data.reduce((s, b) => s + b.totalSecurities, 0)
               return (
                 <>
-                  <td className={`px-3 py-1.5 text-right font-mono ${hasDG ? pnlClass(totalDG) : 'text-gray-300'}`}>
+                  <td className={`px-3 py-1.5 text-right font-mono ${hasDG ? pnlClass(totalDG) : 'text-muted-foreground/50'}`}>
                     {hasDG ? (totalDG >= 0 ? '+' : '') + fmtCAD(totalDG) : '—'}
                   </td>
-                  <td className={`px-3 py-1.5 text-right font-mono ${hasDG && totSec > 0 ? pnlClass(totalDG) : 'text-gray-300'}`}>
+                  <td className={`px-3 py-1.5 text-right font-mono ${hasDG && totSec > 0 ? pnlClass(totalDG) : 'text-muted-foreground/50'}`}>
                     {hasDG && totSec > 0 ? fmtPct(totalDG / totSec * 100) : '—'}
                   </td>
                 </>
@@ -489,12 +489,12 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
         </tfoot>
       </table>
       {data.some(b => b.hasFallback) && (
-        <p className="px-4 py-1.5 text-xs text-amber-600 bg-amber-50 border-t border-amber-100">
+        <p className="px-4 py-1.5 text-xs text-amber-600 dark:text-amber-400 bg-amber-500/10 border-t border-amber-500/20">
           * Valued at cost — no market price available for these positions
         </p>
       )}
       {usdCadRate && (
-        <p className="px-4 py-1.5 text-xs text-gray-400 bg-gray-50 border-t border-gray-100">
+        <p className="px-4 py-1.5 text-xs text-muted-foreground bg-muted/50 border-t border-border">
           USD amounts shown at {usdCadRate.toFixed(4)} USD/CAD (rate as of selected date)
         </p>
       )}
@@ -852,7 +852,7 @@ export default function Dashboard() {
                 key={c}
                 onClick={() => setIndicatorCountry(c)}
                 className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap transition-colors ${
-                  indicatorCountry === c ? 'bg-gray-600 text-white' : 'text-gray-400 hover:text-gray-200'
+                  indicatorCountry === c ? 'bg-gray-600 text-white' : 'text-muted-foreground hover:text-gray-200'
                 }`}
               >
                 {c === 'CA' ? 'Canada' : 'US Markets'}
@@ -876,66 +876,66 @@ export default function Dashboard() {
               : '—'
             return (
               <div key={ind.symbol} className="flex items-center gap-2 px-3 py-1 border-r border-gray-700 last:border-0">
-                <span className="text-xs text-gray-400 font-medium whitespace-nowrap">{ind.label}</span>
+                <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{ind.label}</span>
                 <span className="text-xs font-semibold text-white whitespace-nowrap">{priceStr}</span>
-                <span className={`text-xs font-medium whitespace-nowrap ${isUp ? 'text-emerald-400' : isDown ? 'text-red-400' : 'text-gray-500'}`}>
+                <span className={`text-xs font-medium whitespace-nowrap ${isUp ? 'text-emerald-400' : isDown ? 'text-red-400' : 'text-muted-foreground'}`}>
                   {pctStr}
                 </span>
               </div>
             )
           })}
           {(indicators as MarketIndicator[]).length === 0 && (
-            <span className="text-xs text-gray-500 px-3 py-1">Loading market data…</span>
+            <span className="text-xs text-muted-foreground px-3 py-1">Loading market data…</span>
           )}
         </div>
       </div>
 
       {pendingImports.length > 0 && (
-        <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 flex items-center gap-3">
-          <span className="text-yellow-700 font-medium">
+        <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-lg p-4 flex items-center gap-3">
+          <span className="text-yellow-700 dark:text-yellow-400 font-medium">
             {pendingImports.length} import batch{pendingImports.length > 1 ? 'es' : ''} pending review
           </span>
-          <a href="/import" className="text-sm text-yellow-700 underline">Review now</a>
+          <a href="/import" className="text-sm text-yellow-700 dark:text-yellow-400 underline">Review now</a>
         </div>
       )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
       <div className="lg:col-span-2 space-y-6">
       {/* ── Summary bar ── */}
-      <div className="bg-blue-50 border border-blue-200 rounded-xl px-4 py-4 md:px-6 shadow-sm">
+      <div className="bg-primary/10 border border-primary/20 rounded-xl px-4 py-4 md:px-6 shadow-sm">
         {/* ── Mobile: Net Worth hero + 2-col grid ── */}
         <div className="md:hidden">
-          <div className="text-center pb-3 mb-3 border-b border-blue-200">
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
-            <div className="text-3xl font-bold text-blue-900">{fmtCAD(netWorth)}</div>
-            <div className="text-[11px] text-blue-400 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
+          <div className="text-center pb-3 mb-3 border-b border-primary/20">
+            <div className="text-xs text-primary/70 uppercase tracking-wide">Net Worth</div>
+            <div className="text-3xl font-bold text-foreground">{fmtCAD(netWorth)}</div>
+            <div className="text-[11px] text-primary/60 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
             <div>
-              <div className="text-[11px] text-blue-500 uppercase tracking-wide">
-                Securities{fallbackCount > 0 && <span className="ml-1 text-amber-500">*</span>}
+              <div className="text-[11px] text-primary/70 uppercase tracking-wide">
+                Securities{fallbackCount > 0 && <span className="ml-1 text-amber-500 dark:text-amber-400">*</span>}
               </div>
-              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalSecurities)}</div>
+              <div className="text-lg font-bold text-foreground">{fmtCAD(totalSecurities)}</div>
             </div>
             <div>
-              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Cash</div>
-              <div className={`text-lg font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
+              <div className="text-[11px] text-primary/70 uppercase tracking-wide">Cash</div>
+              <div className={`text-lg font-bold ${totalCash < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{fmtCAD(totalCash)}</div>
             </div>
             <div>
-              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Other Assets</div>
-              <div className="text-lg font-bold text-blue-900">{fmtCAD(totalPersonalAssets)}</div>
+              <div className="text-[11px] text-primary/70 uppercase tracking-wide">Other Assets</div>
+              <div className="text-lg font-bold text-foreground">{fmtCAD(totalPersonalAssets)}</div>
             </div>
             <div>
-              <div className="text-[11px] text-blue-500 uppercase tracking-wide">Liabilities</div>
-              <div className={`text-lg font-bold ${totalLiabilities < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalLiabilities)}</div>
+              <div className="text-[11px] text-primary/70 uppercase tracking-wide">Liabilities</div>
+              <div className={`text-lg font-bold ${totalLiabilities < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{fmtCAD(totalLiabilities)}</div>
             </div>
             {hasReturn && (
               <div className="col-span-2">
-                <div className="text-[11px] text-blue-500 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
-                <div className={`text-lg font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-gray-400'}`}>
+                <div className="text-[11px] text-primary/70 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
+                <div className={`text-lg font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-muted-foreground'}`}>
                   {returnPct != null && (returnPct >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />)}
                   {returnPct != null ? fmtPct(returnPct) : '—'}
-                  <span className="text-sm font-medium text-blue-400">
+                  <span className="text-sm font-medium text-primary/60">
                     ({(returnGain >= 0 ? '+' : '') + fmtCAD(returnGain)})
                   </span>
                 </div>
@@ -947,47 +947,47 @@ export default function Dashboard() {
         {/* ── Desktop: flex-wrap metrics row ── */}
         <div className="hidden md:flex md:flex-wrap md:items-center md:gap-x-6 md:gap-y-3">
           <div>
-            <div className="text-xs text-blue-500 uppercase tracking-wide">
+            <div className="text-xs text-primary/70 uppercase tracking-wide">
               Securities
-              {fallbackCount > 0 && <span className="ml-1 text-amber-500" title={`${fallbackCount} position(s) valued at cost`}>*</span>}
+              {fallbackCount > 0 && <span className="ml-1 text-amber-500 dark:text-amber-400" title={`${fallbackCount} position(s) valued at cost`}>*</span>}
             </div>
-            <div className="text-lg md:text-xl font-bold text-blue-900">{fmtCAD(totalSecurities)}</div>
+            <div className="text-lg md:text-xl font-bold text-foreground">{fmtCAD(totalSecurities)}</div>
           </div>
           <div>
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Cash</div>
-            <div className={`text-lg md:text-xl font-bold ${totalCash < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalCash)}</div>
+            <div className="text-xs text-primary/70 uppercase tracking-wide">Cash</div>
+            <div className={`text-lg md:text-xl font-bold ${totalCash < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{fmtCAD(totalCash)}</div>
           </div>
           <div>
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Other Assets</div>
-            <div className="text-lg md:text-xl font-bold text-blue-900">{fmtCAD(totalPersonalAssets)}</div>
+            <div className="text-xs text-primary/70 uppercase tracking-wide">Other Assets</div>
+            <div className="text-lg md:text-xl font-bold text-foreground">{fmtCAD(totalPersonalAssets)}</div>
           </div>
           <div>
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Liabilities</div>
-            <div className={`text-lg md:text-xl font-bold ${totalLiabilities < 0 ? 'text-red-600' : 'text-blue-900'}`}>{fmtCAD(totalLiabilities)}</div>
+            <div className="text-xs text-primary/70 uppercase tracking-wide">Liabilities</div>
+            <div className={`text-lg md:text-xl font-bold ${totalLiabilities < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{fmtCAD(totalLiabilities)}</div>
           </div>
-          <div className="md:border-l md:border-blue-200 md:pl-6">
-            <div className="text-xs text-blue-500 uppercase tracking-wide">Net Worth</div>
-            <div className="text-xl md:text-2xl font-bold text-blue-900">{fmtCAD(netWorth)}</div>
+          <div className="md:border-l md:border-primary/20 md:pl-6">
+            <div className="text-xs text-primary/70 uppercase tracking-wide">Net Worth</div>
+            <div className="text-xl md:text-2xl font-bold text-foreground">{fmtCAD(netWorth)}</div>
           </div>
           {hasReturn && (
             <div>
-              <div className="text-xs text-blue-500 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
-              <div className={`text-lg md:text-xl font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-gray-400'}`}>
+              <div className="text-xs text-primary/70 uppercase tracking-wide">Return ({TIME_RANGE_LABEL[timeRange]})</div>
+              <div className={`text-lg md:text-xl font-bold flex items-center gap-1 ${returnPct != null ? pnlClass(returnPct) : 'text-muted-foreground'}`}>
                 {returnPct != null && (returnPct >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />)}
                 {returnPct != null ? fmtPct(returnPct) : '—'}
               </div>
-              <div className="text-xs font-medium text-blue-400">
+              <div className="text-xs font-medium text-primary/60">
                 {(returnGain >= 0 ? '+' : '') + fmtCAD(returnGain)}
               </div>
             </div>
           )}
           <div className="ml-auto text-right">
-            <div className="text-xs text-blue-400">{investmentPositions.length} positions</div>
-            <div className="text-xs text-blue-400">{allAcctIds.length} accounts</div>
+            <div className="text-xs text-primary/60">{investmentPositions.length} positions</div>
+            <div className="text-xs text-primary/60">{allAcctIds.length} accounts</div>
           </div>
         </div>
         {fallbackCount > 0 && (
-          <p className="mt-2 text-xs text-amber-600">
+          <p className="mt-2 text-xs text-amber-600 dark:text-amber-400">
             * {fallbackCount} position{fallbackCount !== 1 ? 's' : ''} valued at cost — no market price available
           </p>
         )}
@@ -1023,10 +1023,10 @@ export default function Dashboard() {
       </div>
 
       {/* ── News ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-6">
+      <div className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-6">
         <div>
-          <h2 className="font-semibold text-gray-800 mb-4">
-            General Market <span className="text-gray-400 font-normal text-sm">· {indicatorCountry === 'CA' ? 'Canada' : 'US Markets'}</span>
+          <h2 className="font-semibold text-foreground mb-4">
+            General Market <span className="text-muted-foreground font-normal text-sm">· {indicatorCountry === 'CA' ? 'Canada' : 'US Markets'}</span>
           </h2>
           <NewsList
             items={marketNewsQ.data?.items}
@@ -1037,9 +1037,9 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="pt-6 border-t border-gray-100">
-          <h2 className="font-semibold text-gray-800 mb-1">Top Stories</h2>
-          <p className="text-xs text-gray-400 mb-3">Covered by multiple outlets at once — the biggest stories moving markets right now.</p>
+        <div className="pt-6 border-t border-border">
+          <h2 className="font-semibold text-foreground mb-1">Top Stories</h2>
+          <p className="text-xs text-muted-foreground mb-3">Covered by multiple outlets at once — the biggest stories moving markets right now.</p>
           <NewsList
             items={topStoriesQ.data?.items}
             isLoading={topStoriesQ.isLoading}
@@ -1049,9 +1049,9 @@ export default function Dashboard() {
           />
         </div>
 
-        <div className="pt-6 border-t border-gray-100">
-          <h2 className="font-semibold text-gray-800 mb-1">Your Portfolio</h2>
-          <p className="text-xs text-gray-400 mb-3">News for today's biggest movers among your holdings.</p>
+        <div className="pt-6 border-t border-border">
+          <h2 className="font-semibold text-foreground mb-1">Your Portfolio</h2>
+          <p className="text-xs text-muted-foreground mb-3">News for today's biggest movers among your holdings.</p>
           <NewsList
             items={portfolioNewsQ.data?.items}
             isLoading={portfolioNewsQ.isLoading}

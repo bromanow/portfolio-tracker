@@ -26,6 +26,31 @@
     --radius: 0.5rem;
   }
 
+  /* Navy-tinted dark theme (not pure black) — card surface a shade lighter than the
+     page background so panels visibly separate from it, matching the light theme's
+     white-card-on-gray-page relationship. */
+  .dark {
+    --background: 222 47% 7%;
+    --foreground: 210 40% 96%;
+    --card: 222 40% 10%;
+    --card-foreground: 210 40% 96%;
+    --popover: 222 40% 10%;
+    --popover-foreground: 210 40% 96%;
+    --primary: 217 85% 63%;
+    --primary-foreground: 222 47% 9%;
+    --secondary: 217 26% 16%;
+    --secondary-foreground: 210 40% 96%;
+    --muted: 217 24% 15%;
+    --muted-foreground: 215 15% 63%;
+    --accent: 217 26% 18%;
+    --accent-foreground: 210 40% 96%;
+    --destructive: 0 63% 42%;
+    --destructive-foreground: 210 40% 96%;
+    --border: 217 24% 19%;
+    --input: 217 24% 19%;
+    --ring: 217 85% 63%;
+  }
+
   * {
     @apply border-border;
   }

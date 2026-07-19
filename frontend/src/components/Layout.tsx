@@ -26,7 +26,7 @@ export default function Layout() {
 
   return (
     <SecurityCardProvider>
-    <div className="flex h-screen bg-gray-50">
+    <div className="flex h-screen bg-background">
       {/* Desktop sidebar — hidden on mobile */}
       <div className="hidden md:flex">
         <Sidebar />

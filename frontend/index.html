@@ -17,6 +17,16 @@
 
     <!-- Favicon -->
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+
+    <!-- Apply the saved theme before first paint so there's no flash of the wrong
+         theme on load — ThemeContext re-derives and owns this class after mount. -->
+    <script>
+      (function () {
+        var saved = localStorage.getItem('pref-theme');
+        var dark = saved === 'dark' || (saved !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+        if (dark) document.documentElement.classList.add('dark');
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

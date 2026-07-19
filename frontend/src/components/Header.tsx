@@ -20,7 +20,7 @@ const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
 const TIME_RANGE_PATHS = new Set(['/dashboard', '/holdings'])
 
 function usePriceAge(liveLastUpdated: string | null) {
-  if (!liveLastUpdated) return { label: 'Never', colorClass: 'text-red-500', isStale: true }
+  if (!liveLastUpdated) return { label: 'Never', colorClass: 'text-red-500 dark:text-red-400', isStale: true }
   const updatedAt = new Date(liveLastUpdated + 'Z')
   const diffMs = Date.now() - updatedAt.getTime()
   const diffMin = Math.floor(diffMs / 60_000)
@@ -32,7 +32,7 @@ function usePriceAge(liveLastUpdated: string | null) {
   else if (diffHr < 24)   label = `${diffHr}h ago`
   else                    label = `${diffDays}d ago`
   const isStale = diffHr >= 4
-  const colorClass = diffMin < 60 ? 'text-emerald-600' : diffHr < 4 ? 'text-yellow-600' : 'text-red-500'
+  const colorClass = diffMin < 60 ? 'text-emerald-600 dark:text-emerald-400' : diffHr < 4 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-500 dark:text-red-400'
   return { label, colorClass, isStale }
 }
 
@@ -148,7 +148,7 @@ export default function Header() {
   return (
     <>
       {/* ── Desktop header ── */}
-      <header className="hidden md:flex bg-white border-b border-gray-200 items-center flex-wrap px-4 py-2 gap-x-3 gap-y-2 shrink-0">
+      <header className="hidden md:flex bg-card border-b border-border items-center flex-wrap px-4 py-2 gap-x-3 gap-y-2 shrink-0">
 
         {/* Account filters */}
         {showAccountFilters && (
@@ -175,7 +175,7 @@ export default function Header() {
             {hasFilter && (
               <button
                 onClick={clearFilters}
-                className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+                className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
                 title="Clear account filters"
               >
                 <X className="h-3.5 w-3.5" />
@@ -188,7 +188,7 @@ export default function Header() {
         {/* Time range */}
         {showTimeRange && (
           <>
-            {showAccountFilters && <span className="text-gray-200 select-none shrink-0">|</span>}
+            {showAccountFilters && <span className="text-border select-none shrink-0">|</span>}
             <div className="flex items-center gap-2 shrink-0">
               <div className="flex gap-1">
                 {(['YTD', '1Y', '3Y', '5Y', 'ALL'] as TimeRange[]).map(r => (
@@ -196,7 +196,7 @@ export default function Header() {
                     key={r}
                     onClick={() => setTimeRange(r)}
                     className={`px-2.5 py-1 text-xs rounded font-medium transition-colors ${
-                      timeRange === r ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                      timeRange === r ? 'bg-primary text-primary-foreground' : 'bg-accent text-muted-foreground hover:bg-accent/70'
                     }`}
                   >
                     {r}
@@ -207,7 +207,7 @@ export default function Header() {
                 <DatePicker value={displayFrom || ''} onChange={setCustomFrom}
                   min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
                   placeholder="From" highlight={timeRange === 'CUSTOM'} />
-                <span className="text-gray-400 text-xs">→</span>
+                <span className="text-muted-foreground text-xs">→</span>
                 <DatePicker value={displayTo || ''} onChange={setCustomTo}
                   min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
                   placeholder="To" highlight={timeRange === 'CUSTOM'} />
@@ -222,7 +222,7 @@ export default function Header() {
             onClick={() => setHideValues(!hideValues)}
             title={hideValues ? 'Show portfolio values' : 'Hide portfolio values'}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors ${
-              hideValues ? 'bg-blue-50 text-blue-700 hover:bg-blue-100' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'
+              hideValues ? 'bg-primary/10 text-primary hover:bg-primary/20' : 'bg-accent text-muted-foreground hover:bg-accent/70'
             }`}
           >
             {hideValues ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
@@ -231,45 +231,45 @@ export default function Header() {
             title={ibeamConnected ? 'IBeam connected — live data available' : 'IBeam not connected'}
             className={`flex items-center gap-1.5 text-xs font-medium px-2 py-1 rounded-full border ${
               ibeamConnected
-                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-                : 'bg-gray-50 text-gray-400 border-gray-200'
+                ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border-emerald-500/30'
+                : 'bg-accent text-muted-foreground border-border'
             }`}
           >
-            <span className={`h-1.5 w-1.5 rounded-full ${ibeamConnected ? 'bg-emerald-500' : 'bg-gray-300'}`} />
+            <span className={`h-1.5 w-1.5 rounded-full ${ibeamConnected ? 'bg-emerald-500' : 'bg-muted-foreground/40'}`} />
             IBKR
           </div>
           <div className={`flex items-center gap-1.5 text-xs ${colorClass}`}>
             <Clock className="h-3.5 w-3.5" />
             <span>Prices: <span className="font-medium">{label}</span></span>
             {status?.history_last_date && (
-              <span className="text-gray-400 ml-1">· history to {status.history_last_date}</span>
+              <span className="text-muted-foreground ml-1">· history to {status.history_last_date}</span>
             )}
           </div>
           <button
             onClick={() => refreshMut.mutate()}
             disabled={isBusy}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 ${
-              isStale ? 'bg-blue-600 text-white hover:bg-blue-700' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              isStale ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-accent text-muted-foreground hover:bg-accent/70'
             }`}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? 'animate-spin' : ''}`} />
             {isBusy ? 'Refreshing…' : 'Refresh Prices'}
           </button>
-          {isDone && <span className="text-xs text-emerald-600">✓ Updated</span>}
-          {isErr  && <span className="text-xs text-red-500">Failed — try again</span>}
+          {isDone && <span className="text-xs text-emerald-600 dark:text-emerald-400">✓ Updated</span>}
+          {isErr  && <span className="text-xs text-destructive">Failed — try again</span>}
         </div>
       </header>
 
       {/* ── Mobile header ── */}
-      <header className="md:hidden bg-white border-b border-gray-200 flex items-center px-4 py-3 gap-3 shrink-0">
+      <header className="md:hidden bg-card border-b border-border flex items-center px-4 py-3 gap-3 shrink-0">
         {/* Page title */}
-        <h1 className="flex-1 text-base font-semibold text-gray-900">{pageTitle}</h1>
+        <h1 className="flex-1 text-base font-semibold text-foreground">{pageTitle}</h1>
 
         {/* Hide/show portfolio values */}
         <button
           onClick={() => setHideValues(!hideValues)}
           title={hideValues ? 'Show portfolio values' : 'Hide portfolio values'}
-          className={`p-1.5 rounded-lg ${hideValues ? 'text-blue-600' : 'text-gray-500'} hover:bg-gray-100`}
+          className={`p-1.5 rounded-lg ${hideValues ? 'text-primary' : 'text-muted-foreground'} hover:bg-accent`}
         >
           {hideValues ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
         </button>
@@ -279,21 +279,21 @@ export default function Header() {
           onClick={() => refreshMut.mutate()}
           disabled={isBusy}
           title="Refresh prices"
-          className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 disabled:opacity-40"
+          className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent disabled:opacity-40"
         >
-          <RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin text-blue-600' : isStale ? 'text-blue-600' : ''}`} />
+          <RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin text-primary' : isStale ? 'text-primary' : ''}`} />
         </button>
 
         {/* Filter icon — only on pages with filters */}
         {showAccountFilters && (
           <button
             onClick={() => setFilterSheetOpen(true)}
-            className="relative p-1.5 rounded-lg text-gray-500 hover:bg-gray-100"
+            className="relative p-1.5 rounded-lg text-muted-foreground hover:bg-accent"
             title="Filters"
           >
             <SlidersHorizontal className="h-4 w-4" />
             {activeFilterCount > 0 && (
-              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-blue-600 text-white text-[9px] font-bold flex items-center justify-center">
+              <span className="absolute -top-0.5 -right-0.5 h-4 w-4 rounded-full bg-primary text-primary-foreground text-[9px] font-bold flex items-center justify-center">
                 {activeFilterCount}
               </span>
             )}
@@ -304,7 +304,7 @@ export default function Header() {
         <button
           onClick={logout}
           title="Sign out"
-          className="p-1.5 rounded-lg text-gray-500 hover:bg-gray-100 active:bg-gray-200"
+          className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent active:bg-accent/70"
         >
           <LogOut className="h-4 w-4" />
         </button>
@@ -318,12 +318,12 @@ export default function Header() {
 
           {/* Sheet */}
           <div
-            className="relative bg-white rounded-t-2xl p-5 space-y-4 pb-10"
+            className="relative bg-card rounded-t-2xl p-5 space-y-4 pb-10"
             onClick={e => e.stopPropagation()}
           >
             <div className="flex items-center justify-between">
-              <h2 className="text-base font-semibold text-gray-900">Filters</h2>
-              <button onClick={() => setFilterSheetOpen(false)} className="text-gray-400 hover:text-gray-600">
+              <h2 className="text-base font-semibold text-foreground">Filters</h2>
+              <button onClick={() => setFilterSheetOpen(false)} className="text-muted-foreground hover:text-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -331,7 +331,7 @@ export default function Header() {
             {/* Account filters */}
             <div className="space-y-3">
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Brokerage</label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">Brokerage</label>
                 <MultiSelectDropdown
                   placeholder="All Brokerages"
                   options={brokerages.map(b => ({ value: b, label: b }))}
@@ -340,7 +340,7 @@ export default function Header() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Account Type</label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">Account Type</label>
                 <MultiSelectDropdown
                   placeholder="All Types"
                   options={accountTypes.map(t => ({ value: t, label: t }))}
@@ -349,7 +349,7 @@ export default function Header() {
                 />
               </div>
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Account</label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">Account</label>
                 <MultiSelectDropdown
                   placeholder="All Accounts"
                   options={accountOptions}
@@ -363,14 +363,14 @@ export default function Header() {
             {/* Time range — shown on Dashboard + Holdings */}
             {showTimeRange && (
               <div>
-                <label className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5 block">Time Range</label>
+                <label className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-1.5 block">Time Range</label>
                 <div className="flex gap-1.5 flex-wrap">
                   {(['YTD', '1Y', '3Y', '5Y', 'ALL'] as TimeRange[]).map(r => (
                     <button
                       key={r}
                       onClick={() => setTimeRange(r)}
                       className={`px-3 py-1.5 text-sm rounded-lg font-medium transition-colors ${
-                        timeRange === r ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600'
+                        timeRange === r ? 'bg-primary text-primary-foreground' : 'bg-accent text-muted-foreground'
                       }`}
                     >
                       {r}
@@ -381,7 +381,7 @@ export default function Header() {
                   <DatePicker value={displayFrom || ''} onChange={setCustomFrom}
                     min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
                     placeholder="From" highlight={timeRange === 'CUSTOM'} />
-                  <span className="text-gray-400 text-sm">→</span>
+                  <span className="text-muted-foreground text-sm">→</span>
                   <DatePicker value={displayTo || ''} onChange={setCustomTo}
                     min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
                     placeholder="To" highlight={timeRange === 'CUSTOM'} />
@@ -394,14 +394,14 @@ export default function Header() {
               {hasFilter && (
                 <button
                   onClick={() => { clearFilters(); setFilterSheetOpen(false) }}
-                  className="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-medium text-gray-600"
+                  className="flex-1 py-2.5 border border-border rounded-xl text-sm font-medium text-muted-foreground"
                 >
                   Clear filters
                 </button>
               )}
               <button
                 onClick={() => setFilterSheetOpen(false)}
-                className="flex-1 py-2.5 bg-blue-600 text-white rounded-xl text-sm font-medium"
+                className="flex-1 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium"
               >
                 Apply
               </button>

@@ -12,13 +12,8 @@ import {
   ChevronLeft,
   ChevronRight,
   LogOut,
-  Sun,
-  Moon,
-  Monitor,
 } from 'lucide-react'
 import { useAuth } from '../context/AuthContext'
-import { useTheme } from '../context/ThemeContext'
-import type { Theme } from '../context/ThemeContext'
 import { getDataHealth } from '../api/client'
 
 const nav = [
@@ -31,13 +26,8 @@ const nav = [
   { to: '/admin',       label: 'Admin',        icon: Settings },
 ]
 
-const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' }
-const THEME_ICON = { light: Sun, dark: Moon, system: Monitor }
-const THEME_LABEL: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'System' }
-
 export default function Sidebar() {
   const { user, logout } = useAuth()
-  const { theme, setTheme } = useTheme()
   const [collapsed, setCollapsed] = useState<boolean>(() => {
     return localStorage.getItem('sidebar-collapsed') === 'true'
   })
@@ -61,8 +51,6 @@ export default function Sidebar() {
       return next
     })
   }
-
-  const ThemeIcon = THEME_ICON[theme]
 
   return (
     <aside
@@ -121,18 +109,8 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Theme + user + logout */}
+      {/* User + logout */}
       <div className={`border-t border-border ${collapsed ? 'px-1 py-3' : 'px-3 py-3'}`}>
-        <button
-          onClick={() => setTheme(THEME_CYCLE[theme])}
-          title={`Theme: ${THEME_LABEL[theme]} (click to change)`}
-          className={`flex items-center w-full rounded-md text-sm font-medium text-muted-foreground
-            hover:bg-accent hover:text-foreground transition-colors mb-1
-            ${collapsed ? 'justify-center px-2 py-2.5' : 'gap-3 px-2 py-2'}`}
-        >
-          <ThemeIcon className="h-4 w-4 flex-shrink-0" />
-          {!collapsed && THEME_LABEL[theme]}
-        </button>
         {!collapsed && user && (
           <p className="text-xs text-muted-foreground truncate px-1 mb-2" title={user.email}>
             {user.name}

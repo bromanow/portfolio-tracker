@@ -5,19 +5,25 @@ import {
   getPriceStatus, refreshAllPrices, getPriceJob, getAccounts, getScannerMeta,
 } from '../api/client'
 import type { Account } from '../api/client'
-import { RefreshCw, Clock, X, SlidersHorizontal, LogOut, Eye, EyeOff } from 'lucide-react'
+import { RefreshCw, Clock, X, SlidersHorizontal, LogOut, Eye, EyeOff, Sun, Moon, Monitor } from 'lucide-react'
 import MultiSelectDropdown from './MultiSelectDropdown'
 import DatePicker from './DatePicker'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../context/ThemeContext'
+import type { Theme } from '../context/ThemeContext'
 import { getPref, usePreference } from '../hooks/usePreference'
 
 // Pages that show portfolio account filters
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
 // Pages that also show time range controls
 const TIME_RANGE_PATHS = new Set(['/dashboard', '/holdings'])
+
+const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' }
+const THEME_ICON = { light: Sun, dark: Moon, system: Monitor }
+const THEME_LABEL: Record<Theme, string> = { light: 'Light', dark: 'Dark', system: 'System' }
 
 function usePriceAge(liveLastUpdated: string | null) {
   if (!liveLastUpdated) return { label: 'Never', colorClass: 'text-red-500 dark:text-red-400', isStale: true }
@@ -51,6 +57,8 @@ const PAGE_TITLES: Record<string, string> = {
 export default function Header() {
   const location = useLocation()
   const { user, logout } = useAuth()
+  const { theme, setTheme } = useTheme()
+  const ThemeIcon = THEME_ICON[theme]
   const showAccountFilters = ACCOUNT_FILTER_PATHS.has(location.pathname)
   const showTimeRange      = TIME_RANGE_PATHS.has(location.pathname)
   const [filterSheetOpen, setFilterSheetOpen] = useState(false)
@@ -219,6 +227,13 @@ export default function Header() {
         {/* Right: price status + refresh */}
         <div className="flex items-center gap-3 ml-auto shrink-0">
           <button
+            onClick={() => setTheme(THEME_CYCLE[theme])}
+            title={`Theme: ${THEME_LABEL[theme]} (click to change)`}
+            className="flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors bg-accent text-muted-foreground hover:bg-accent/70"
+          >
+            <ThemeIcon className="h-3.5 w-3.5" />
+          </button>
+          <button
             onClick={() => setHideValues(!hideValues)}
             title={hideValues ? 'Show portfolio values' : 'Hide portfolio values'}
             className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs rounded-lg font-medium transition-colors ${
@@ -264,6 +279,15 @@ export default function Header() {
       <header className="md:hidden bg-card border-b border-border flex items-center px-4 py-3 gap-3 shrink-0">
         {/* Page title */}
         <h1 className="flex-1 text-base font-semibold text-foreground">{pageTitle}</h1>
+
+        {/* Theme */}
+        <button
+          onClick={() => setTheme(THEME_CYCLE[theme])}
+          title={`Theme: ${THEME_LABEL[theme]} (click to change)`}
+          className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent"
+        >
+          <ThemeIcon className="h-4 w-4" />
+        </button>
 
         {/* Hide/show portfolio values */}
         <button

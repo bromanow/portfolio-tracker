@@ -76,17 +76,17 @@ export default function FxRatesReport() {
   const toggleYear  = (y: string) => setExpanded(s => { const n = new Set(s); n.has(y) ? n.delete(y) : n.add(y); return n })
   const toggleMonth = (mk: string) => setExpanded(s => { const n = new Set(s); n.has(mk) ? n.delete(mk) : n.add(mk); return n })
 
-  if (isLoading) return <div className="text-sm text-gray-400 py-6 text-center">Loading…</div>
+  if (isLoading) return <div className="text-sm text-muted-foreground py-6 text-center">Loading…</div>
 
   return (
     <div className="space-y-6">
       {/* Latest rates summary cards */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {pairs.map(r => (
-          <div key={`${r.from_currency}${r.to_currency}`} className="bg-white border border-gray-200 rounded-xl px-4 py-3">
-            <p className="text-xs text-gray-500 mb-1">{r.from_currency} → {r.to_currency}</p>
-            <p className="text-xl font-semibold text-gray-900">{Number(r.rate).toFixed(4)}</p>
-            <p className="text-xs text-gray-400 mt-0.5">{r.rate_date}</p>
+          <div key={`${r.from_currency}${r.to_currency}`} className="bg-card border border-border rounded-xl px-4 py-3">
+            <p className="text-xs text-muted-foreground mb-1">{r.from_currency} → {r.to_currency}</p>
+            <p className="text-xl font-semibold text-foreground">{Number(r.rate).toFixed(4)}</p>
+            <p className="text-xs text-muted-foreground mt-0.5">{r.rate_date}</p>
           </div>
         ))}
       </div>
@@ -106,8 +106,8 @@ export default function FxRatesReport() {
         if (chartData.length < 2) return null
         const xInterval = Math.max(0, Math.floor(chartData.length / 10) - 1)
         return (
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Exchange Rate Over Time</h3>
+          <div className="bg-card rounded-xl border border-border p-4">
+            <h3 className="text-sm font-semibold text-foreground mb-3">Exchange Rate Over Time</h3>
             <ResponsiveContainer width="100%" height={220}>
               <LineChart data={chartData} margin={{ top: 4, right: 16, bottom: 4, left: 0 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -133,51 +133,51 @@ export default function FxRatesReport() {
       {/* Filters */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Year</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={yearFilter} onChange={e => { setYearFilter(e.target.value); setDateFrom(''); setDateTo('') }}>
+          <label className="block text-xs text-muted-foreground mb-1">Year</label>
+          <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={yearFilter} onChange={e => { setYearFilter(e.target.value); setDateFrom(''); setDateTo('') }}>
             <option value="">All years</option>
             {years.map(y => <option key={y} value={y}>{y}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From Date</label>
+          <label className="block text-xs text-muted-foreground mb-1">From Date</label>
           <DatePicker value={dateFrom || ''} onChange={v => { setDateFrom(v); setYearFilter('') }} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To Date</label>
+          <label className="block text-xs text-muted-foreground mb-1">To Date</label>
           <DatePicker value={dateTo || ''} onChange={v => { setDateTo(v); setYearFilter('') }} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
         </div>
         {(yearFilter || dateFrom || dateTo) && (
-          <button className="text-xs text-blue-600 hover:underline" onClick={() => { setYearFilter(''); setDateFrom(''); setDateTo('') }}>Clear filters</button>
+          <button className="text-xs text-primary hover:underline" onClick={() => { setYearFilter(''); setDateFrom(''); setDateTo('') }}>Clear filters</button>
         )}
-        <span className="text-xs text-gray-400 ml-auto">{filtered.length} entries</span>
+        <span className="text-xs text-muted-foreground ml-auto">{filtered.length} entries</span>
       </div>
 
       {/* Grouped rate history */}
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-gray-700">Rate History</h3>
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
+          <h3 className="text-sm font-semibold text-foreground">Rate History</h3>
           <div className="flex gap-2">
-            <button className="text-xs text-blue-600 hover:underline" onClick={() => {
+            <button className="text-xs text-primary hover:underline" onClick={() => {
               const allKeys = new Set<string>()
               byYear.forEach(([y, months]) => { allKeys.add(y); months.forEach(m => allKeys.add(m.monthKey)) })
               setExpanded(allKeys)
             }}>Expand all</button>
-            <span className="text-gray-300">|</span>
-            <button className="text-xs text-blue-600 hover:underline" onClick={() => setExpanded(new Set())}>Collapse all</button>
+            <span className="text-muted-foreground/50">|</span>
+            <button className="text-xs text-primary hover:underline" onClick={() => setExpanded(new Set())}>Collapse all</button>
           </div>
         </div>
-        <div className="divide-y divide-gray-100">
+        <div className="divide-y divide-border">
           {byYear.map(([year, months]) => (
             <div key={year}>
               {/* Year row */}
               <button
                 onClick={() => toggleYear(year)}
-                className="w-full flex items-center gap-2 px-4 py-2.5 bg-gray-50 hover:bg-gray-100 text-left"
+                className="w-full flex items-center gap-2 px-4 py-2.5 bg-muted/50 hover:bg-accent text-left"
               >
-                <ChevronRight className={`w-3.5 h-3.5 text-gray-400 transition-transform ${expanded.has(year) ? 'rotate-90' : ''}`} />
-                <span className="font-semibold text-gray-800 text-sm">{year}</span>
-                <span className="text-xs text-gray-400 ml-1">({months.reduce((s, m) => s + m.rows.length, 0)} entries)</span>
+                <ChevronRight className={`w-3.5 h-3.5 text-muted-foreground transition-transform ${expanded.has(year) ? 'rotate-90' : ''}`} />
+                <span className="font-semibold text-foreground text-sm">{year}</span>
+                <span className="text-xs text-muted-foreground ml-1">({months.reduce((s, m) => s + m.rows.length, 0)} entries)</span>
               </button>
 
               {expanded.has(year) && months.map(({ monthKey, month, rows: mRows }) => (
@@ -185,21 +185,21 @@ export default function FxRatesReport() {
                   {/* Month row */}
                   <button
                     onClick={() => toggleMonth(monthKey)}
-                    className="w-full flex items-center gap-2 px-8 py-2 hover:bg-gray-50 text-left"
+                    className="w-full flex items-center gap-2 px-8 py-2 hover:bg-muted/50 text-left"
                   >
-                    <ChevronRight className={`w-3 h-3 text-gray-400 transition-transform ${expanded.has(monthKey) ? 'rotate-90' : ''}`} />
-                    <span className="text-sm text-gray-700">{monthName(month)} {year}</span>
-                    <span className="text-xs text-gray-400 ml-1">({mRows.length} entries)</span>
+                    <ChevronRight className={`w-3 h-3 text-muted-foreground transition-transform ${expanded.has(monthKey) ? 'rotate-90' : ''}`} />
+                    <span className="text-sm text-foreground">{monthName(month)} {year}</span>
+                    <span className="text-xs text-muted-foreground ml-1">({mRows.length} entries)</span>
                   </button>
 
                   {expanded.has(monthKey) && (
                     <table className="w-full text-sm">
-                      <tbody className="divide-y divide-gray-100">
+                      <tbody className="divide-y divide-border">
                         {mRows.map(r => (
-                          <tr key={r.id} className="hover:bg-gray-50">
-                            <td className="px-12 py-1.5 text-gray-600 text-xs">{r.rate_date}</td>
-                            <td className="px-4 py-1.5 text-gray-600 text-xs">{r.from_currency} → {r.to_currency}</td>
-                            <td className="px-4 py-1.5 text-right font-mono text-gray-900 text-xs">{Number(r.rate).toFixed(6)}</td>
+                          <tr key={r.id} className="hover:bg-muted/50">
+                            <td className="px-12 py-1.5 text-muted-foreground text-xs">{r.rate_date}</td>
+                            <td className="px-4 py-1.5 text-muted-foreground text-xs">{r.from_currency} → {r.to_currency}</td>
+                            <td className="px-4 py-1.5 text-right font-mono text-foreground text-xs">{Number(r.rate).toFixed(6)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -210,7 +210,7 @@ export default function FxRatesReport() {
             </div>
           ))}
           {byYear.length === 0 && (
-            <div className="px-4 py-8 text-center text-gray-400 text-sm">No FX rates found.</div>
+            <div className="px-4 py-8 text-center text-muted-foreground text-sm">No FX rates found.</div>
           )}
         </div>
       </div>

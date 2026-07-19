@@ -69,27 +69,27 @@ export default function BrokeragesTab() {
 
       {/* New brokerage form */}
       {showForm ? (
-        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 space-y-3">
-          <h3 className="font-semibold text-sm text-blue-800">New Brokerage</h3>
+        <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 space-y-3">
+          <h3 className="font-semibold text-sm text-primary">New Brokerage</h3>
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Name *</label>
-              <input className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="e.g. TD Direct Investing"
+              <label className="block text-xs text-muted-foreground mb-1">Name *</label>
+              <input className="bg-background text-foreground w-full border border-border rounded px-2 py-1.5 text-sm" placeholder="e.g. TD Direct Investing"
                 value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Code * <span className="text-gray-400">(unique short id)</span></label>
-              <input className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm font-mono" placeholder="e.g. TDDI"
+              <label className="block text-xs text-muted-foreground mb-1">Code * <span className="text-muted-foreground">(unique short id)</span></label>
+              <input className="bg-background text-foreground w-full border border-border rounded px-2 py-1.5 text-sm font-mono" placeholder="e.g. TDDI"
                 value={form.code} onChange={e => setForm(f => ({ ...f, code: e.target.value.toUpperCase() }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Advisor</label>
-              <input className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm" placeholder="e.g. John Smith"
+              <label className="block text-xs text-muted-foreground mb-1">Advisor</label>
+              <input className="bg-background text-foreground w-full border border-border rounded px-2 py-1.5 text-sm" placeholder="e.g. John Smith"
                 value={form.advisor} onChange={e => setForm(f => ({ ...f, advisor: e.target.value }))} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Active</label>
-              <select className="w-full border border-gray-300 rounded px-2 py-1.5 text-sm"
+              <label className="block text-xs text-muted-foreground mb-1">Active</label>
+              <select className="bg-background text-foreground w-full border border-border rounded px-2 py-1.5 text-sm"
                 value={form.active ? 'true' : 'false'} onChange={e => setForm(f => ({ ...f, active: e.target.value === 'true' }))}>
                 <option value="true">Yes</option>
                 <option value="false">No</option>
@@ -100,24 +100,24 @@ export default function BrokeragesTab() {
             <button
               onClick={() => createMut.mutate({ ...form, advisor: form.advisor || null })}
               disabled={!form.name.trim() || !form.code.trim() || createMut.isPending}
-              className="px-4 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 disabled:opacity-50">
+              className="px-4 py-1.5 bg-primary text-white rounded text-sm hover:bg-primary/90 disabled:opacity-50">
               {createMut.isPending ? 'Saving…' : 'Save'}
             </button>
             <button onClick={() => { setShowForm(false); setForm(EMPTY_BROKERAGE); setError(null) }}
-              className="px-4 py-1.5 border border-gray-300 rounded text-sm hover:bg-gray-50">Cancel</button>
+              className="px-4 py-1.5 border border-border rounded text-sm hover:bg-muted/50">Cancel</button>
           </div>
         </div>
       ) : (
         <button onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm hover:bg-primary/90">
           <Plus className="h-4 w-4" /> New Brokerage
         </button>
       )}
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full text-sm divide-y divide-gray-100">
-          <thead className="bg-gray-50">
-            <tr className="text-xs text-gray-500 uppercase">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full text-sm divide-y divide-border">
+          <thead className="bg-muted/50">
+            <tr className="text-xs text-muted-foreground uppercase">
               <SortTh label="Name" col="name" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Code" col="code" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Advisor" col="advisor" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
@@ -125,24 +125,24 @@ export default function BrokeragesTab() {
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-border/60">
             {sortRows(brokerages, sort.col, sort.dir).map(b => (
               editingId === b.id ? (
                 <tr key={b.id} className="bg-yellow-50">
                   <td className="px-3 py-2">
-                    <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                    <input className="bg-background text-foreground w-full border border-border rounded px-2 py-1 text-sm"
                       value={editData.name} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} />
                   </td>
                   <td className="px-3 py-2">
-                    <input className="w-28 border border-gray-300 rounded px-2 py-1 text-sm font-mono"
+                    <input className="bg-background text-foreground w-28 border border-border rounded px-2 py-1 text-sm font-mono"
                       value={editData.code} onChange={e => setEditData(d => ({ ...d, code: e.target.value.toUpperCase() }))} />
                   </td>
                   <td className="px-3 py-2">
-                    <input className="w-full border border-gray-300 rounded px-2 py-1 text-sm"
+                    <input className="bg-background text-foreground w-full border border-border rounded px-2 py-1 text-sm"
                       value={editData.advisor} onChange={e => setEditData(d => ({ ...d, advisor: e.target.value }))} />
                   </td>
                   <td className="px-3 py-2">
-                    <select className="border border-gray-300 rounded px-2 py-1 text-sm"
+                    <select className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm"
                       value={editData.active ? 'true' : 'false'} onChange={e => setEditData(d => ({ ...d, active: e.target.value === 'true' }))}>
                       <option value="true">Yes</option>
                       <option value="false">No</option>
@@ -152,27 +152,27 @@ export default function BrokeragesTab() {
                     <div className="flex items-center justify-end gap-2">
                       <button onClick={() => updateMut.mutate({ id: b.id, data: { ...editData, advisor: editData.advisor || null } })}
                         disabled={updateMut.isPending}
-                        className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50">
+                        className="text-xs px-2 py-1 bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50">
                         {updateMut.isPending ? '…' : 'Save'}
                       </button>
-                      <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded hover:bg-gray-50">Cancel</button>
+                      <button onClick={() => setEditingId(null)} className="text-xs px-2 py-1 border rounded hover:bg-muted/50">Cancel</button>
                     </div>
                   </td>
                 </tr>
               ) : (
-                <tr key={b.id} className="hover:bg-gray-50">
+                <tr key={b.id} className="hover:bg-muted/50">
                   <td className="px-3 py-2.5 font-medium">{b.name}</td>
-                  <td className="px-3 py-2.5 font-mono text-xs text-gray-500">{b.code}</td>
-                  <td className="px-3 py-2.5 text-xs text-gray-600">{b.advisor || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-3 py-2.5 font-mono text-xs text-muted-foreground">{b.code}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{b.advisor || <span className="text-muted-foreground/50">—</span>}</td>
                   <td className="px-3 py-2.5">
-                    <span className={`text-xs font-medium ${b.active ? 'text-green-600' : 'text-gray-400'}`}>{b.active ? 'Yes' : 'No'}</span>
+                    <span className={`text-xs font-medium ${b.active ? 'text-green-600' : 'text-muted-foreground'}`}>{b.active ? 'Yes' : 'No'}</span>
                   </td>
                   <td className="px-3 py-2.5 text-right">
                     <div className="flex items-center justify-end gap-2">
-                      <button onClick={() => startEdit(b)} className="text-blue-400 hover:text-blue-600">
+                      <button onClick={() => startEdit(b)} className="text-primary/60 hover:text-primary">
                         <Pencil className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => setDeleteId(b.id)} className="text-red-400 hover:text-red-600">
+                      <button onClick={() => setDeleteId(b.id)} className="text-red-400 hover:text-red-600 dark:text-red-400">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>

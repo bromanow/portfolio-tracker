@@ -62,8 +62,8 @@ export default function MultiSelectDropdown({
         onClick={() => setOpen(o => !o)}
         className={`border rounded px-2 py-1 text-xs flex items-center gap-1 min-w-max transition-colors disabled:opacity-40 disabled:cursor-not-allowed ${
           isActive
-            ? 'border-blue-400 bg-blue-50 text-blue-700'
-            : 'border-gray-200 bg-white text-gray-600 hover:border-gray-300'
+            ? 'border-primary/40 bg-primary/10 text-primary'
+            : 'border-border bg-card text-muted-foreground hover:border-border'
         }`}
       >
         <span>{displayLabel}</span>
@@ -71,10 +71,10 @@ export default function MultiSelectDropdown({
       </button>
 
       {open && (
-        <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-xl z-50 min-w-max max-h-64 overflow-y-auto">
+        <div className="absolute top-full left-0 mt-1 bg-card border border-border rounded-lg shadow-xl z-50 min-w-max max-h-64 overflow-y-auto">
           {options.length > 0 && (
-            <div className="sticky top-0 bg-white px-3 py-1.5 border-b border-gray-100 flex justify-between items-center gap-3">
-              <span className="text-xs text-gray-400">
+            <div className="sticky top-0 bg-card px-3 py-1.5 border-b border-border flex justify-between items-center gap-3">
+              <span className="text-xs text-muted-foreground">
                 {selected.length === 0 ? 'All' : `${selected.length} selected`}
               </span>
               <div className="flex items-center gap-2">
@@ -82,16 +82,16 @@ export default function MultiSelectDropdown({
                   type="button"
                   onClick={() => onChange(options.map(o => o.value))}
                   disabled={selected.length === options.length}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-300 disabled:cursor-default"
+                  className="text-xs text-primary hover:text-primary font-medium disabled:text-muted-foreground/50 disabled:cursor-default"
                 >
                   Select all
                 </button>
-                <span className="text-gray-200">·</span>
+                <span className="text-muted-foreground/30">·</span>
                 <button
                   type="button"
                   onClick={() => onChange([])}
                   disabled={selected.length === 0}
-                  className="text-xs text-blue-600 hover:text-blue-800 font-medium disabled:text-gray-300 disabled:cursor-default"
+                  className="text-xs text-primary hover:text-primary font-medium disabled:text-muted-foreground/50 disabled:cursor-default"
                 >
                   Clear
                 </button>
@@ -99,18 +99,18 @@ export default function MultiSelectDropdown({
             </div>
           )}
           {options.length === 0 && (
-            <div className="px-3 py-2 text-xs text-gray-400">No options</div>
+            <div className="px-3 py-2 text-xs text-muted-foreground">No options</div>
           )}
           {options.map(opt => (
             <label
               key={opt.value}
-              className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer text-xs whitespace-nowrap"
+              className="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/50 cursor-pointer text-xs whitespace-nowrap"
             >
               <input
                 type="checkbox"
                 checked={selected.includes(opt.value)}
                 onChange={() => toggle(opt.value)}
-                className="rounded accent-blue-600"
+                className="bg-background text-foreground rounded accent-blue-600"
               />
               {opt.label}
             </label>

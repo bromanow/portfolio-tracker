@@ -56,14 +56,14 @@ export default function Holdings() {
     <div className="space-y-4">
       {/* Page header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Holdings</h1>
-        <span className="text-xs text-gray-400">
+        <h1 className="text-2xl font-bold text-foreground">Holdings</h1>
+        <span className="text-xs text-muted-foreground">
           {filteredPositions.length} position{filteredPositions.length !== 1 ? 's' : ''}
         </span>
       </div>
 
       {/* Tab navigation */}
-      <div className="border-b border-gray-200">
+      <div className="border-b border-border">
         <nav className="-mb-px flex gap-1">
           {TABS.map(tab => (
             <button
@@ -71,8 +71,8 @@ export default function Holdings() {
               onClick={() => setActiveTab(tab.id)}
               className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >
               {tab.label}

@@ -66,13 +66,13 @@ export default function PlaidConnect() {
   }
 
   return (
-    <div className="bg-white rounded-lg p-4 border border-gray-200 space-y-3">
+    <div className="bg-card rounded-lg p-4 border border-border space-y-3">
       <div className="flex items-center gap-2">
-        <Link2 className="h-4 w-4 text-blue-600" />
-        <h3 className="font-medium text-gray-700">Plaid connections</h3>
-        {env && <span className="text-[10px] uppercase tracking-wide bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">{env}</span>}
+        <Link2 className="h-4 w-4 text-primary" />
+        <h3 className="font-medium text-foreground">Plaid connections</h3>
+        {env && <span className="text-[10px] uppercase tracking-wide bg-accent text-muted-foreground rounded px-1.5 py-0.5">{env}</span>}
       </div>
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Connect or remove institutions here. To pull the latest holdings, use{' '}
         <strong>Activity → Import → Plaid</strong>.
       </p>
@@ -84,21 +84,21 @@ export default function PlaidConnect() {
         </div>
       )}
 
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+      {error && <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
 
       {configured && (
         <>
           <div className="flex items-center gap-2 flex-wrap">
-            <label className="text-xs text-gray-500">Owner</label>
+            <label className="text-xs text-muted-foreground">Owner</label>
             <select value={owner} onChange={e => setOwner(e.target.value)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm">
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm">
               <option>Brian</option>
               <option>Michelle</option>
             </select>
             <button
               onClick={startConnect}
               disabled={busy}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+              className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/90 disabled:opacity-50"
             >
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Connect account
@@ -108,7 +108,7 @@ export default function PlaidConnect() {
                 onClick={simulate}
                 disabled={busy}
                 title="Create a fake investment account directly (skips Link's depository-only test banks)"
-                className="flex items-center gap-1.5 px-3 py-1.5 border border-blue-300 text-blue-700 text-sm rounded hover:bg-blue-50 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 border border-primary/30 text-primary text-sm rounded hover:bg-primary/10 disabled:opacity-50"
               >
                 {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
                 Simulate investment account
@@ -116,7 +116,7 @@ export default function PlaidConnect() {
             )}
           </div>
           {env === 'sandbox' && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               Tip: "Simulate" is the reliable Sandbox path — Plaid Link's test flow only offers
               depository banks. Use the real <strong>Connect account</strong> flow in Production.
             </p>
@@ -131,23 +131,23 @@ export default function PlaidConnect() {
           }} />}
 
           {items.length === 0 ? (
-            <p className="text-sm text-gray-400">No institutions connected yet.</p>
+            <p className="text-sm text-muted-foreground">No institutions connected yet.</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-xs text-gray-400 text-left">
+                <tr className="text-xs text-muted-foreground text-left">
                   <th className="py-1">Institution</th><th>Accounts</th><th>Last sync</th><th></th>
                 </tr>
               </thead>
               <tbody>
                 {items.map(it => (
-                  <tr key={it.id} className="border-t border-gray-100">
-                    <td className="py-1.5 font-medium text-gray-700">{it.institution ?? '—'}</td>
-                    <td className="text-gray-500">{it.accounts}</td>
-                    <td className="text-gray-500">{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('en-CA') : '—'}</td>
+                  <tr key={it.id} className="border-t border-border">
+                    <td className="py-1.5 font-medium text-foreground">{it.institution ?? '—'}</td>
+                    <td className="text-muted-foreground">{it.accounts}</td>
+                    <td className="text-muted-foreground">{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('en-CA') : '—'}</td>
                     <td className="text-right">
                       <button onClick={() => remove(it.id)} disabled={busy} title="Disconnect"
-                        className="text-gray-400 hover:text-red-500 px-1 disabled:opacity-40">
+                        className="text-muted-foreground hover:text-red-500 dark:text-red-400 px-1 disabled:opacity-40">
                         <Trash2 className="h-4 w-4" />
                       </button>
                     </td>

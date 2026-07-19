@@ -42,55 +42,55 @@ export default function PlaidSyncPanel() {
 
   if (configured === false) {
     return (
-      <div className="bg-white rounded-lg border border-gray-200 p-4 text-sm text-gray-500">
+      <div className="bg-card rounded-lg border border-border p-4 text-sm text-muted-foreground">
         Plaid isn't set up yet. Connect an institution in <strong>Admin → Plaid</strong>.
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-3">
+    <div className="bg-card rounded-lg border border-border p-4 space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <Link2 className="h-4 w-4 text-blue-600" />
-          <h2 className="font-semibold text-gray-800">Plaid sync</h2>
+          <Link2 className="h-4 w-4 text-primary" />
+          <h2 className="font-semibold text-foreground">Plaid sync</h2>
         </div>
         <button
           onClick={syncAll}
           disabled={busy || items.length === 0}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/90 disabled:opacity-50"
         >
           {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
           Sync all
         </button>
       </div>
 
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Pulls the latest holdings from your connected institutions. No login or 2FA needed —
         Plaid keeps the connection alive. Connect or remove institutions in <strong>Admin → Plaid</strong>.
       </p>
 
-      {error && <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
+      {error && <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 border border-red-200 rounded p-2">{error}</div>}
       {result && <div className="text-sm text-emerald-700 bg-emerald-50 border border-emerald-200 rounded p-2">{result}</div>}
 
       {items.length === 0 ? (
-        <p className="text-sm text-gray-400">No connected institutions yet — add one in Admin → Plaid.</p>
+        <p className="text-sm text-muted-foreground">No connected institutions yet — add one in Admin → Plaid.</p>
       ) : (
         <table className="w-full text-sm">
           <thead>
-            <tr className="text-xs text-gray-400 text-left">
+            <tr className="text-xs text-muted-foreground text-left">
               <th className="py-1">Institution</th><th>Accounts</th><th>Last sync</th><th></th>
             </tr>
           </thead>
           <tbody>
             {items.map(it => (
-              <tr key={it.id} className="border-t border-gray-100">
-                <td className="py-1.5 font-medium text-gray-700">{it.institution ?? '—'}</td>
-                <td className="text-gray-500">{it.accounts}</td>
-                <td className="text-gray-500">{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('en-CA') : '—'}</td>
+              <tr key={it.id} className="border-t border-border">
+                <td className="py-1.5 font-medium text-foreground">{it.institution ?? '—'}</td>
+                <td className="text-muted-foreground">{it.accounts}</td>
+                <td className="text-muted-foreground">{it.last_synced_at ? new Date(it.last_synced_at).toLocaleString('en-CA') : '—'}</td>
                 <td className="text-right">
                   <button onClick={() => syncOne(it.id)} disabled={busy} title="Sync this one"
-                    className="text-gray-400 hover:text-blue-600 disabled:opacity-40">
+                    className="text-muted-foreground hover:text-primary disabled:opacity-40">
                     <RefreshCw className="h-4 w-4" />
                   </button>
                 </td>

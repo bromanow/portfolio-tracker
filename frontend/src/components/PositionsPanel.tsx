@@ -62,9 +62,9 @@ function fmtPct(val: string | null | undefined) {
 
 function pnlClass(val: string | number | null | undefined) {
   const n = typeof val === 'string' ? parseFloat(val) : (val ?? 0)
-  if ((n as number) > 0) return 'text-emerald-600'
-  if ((n as number) < 0) return 'text-red-500'
-  return 'text-gray-500'
+  if ((n as number) > 0) return 'text-emerald-600 dark:text-emerald-400'
+  if ((n as number) < 0) return 'text-red-500 dark:text-red-400'
+  return 'text-muted-foreground'
 }
 
 function fmtRangeVal(n: number) {
@@ -74,14 +74,14 @@ function fmtRangeVal(n: number) {
 /** Low/high bar with a pin marking today's price at its position between them (native currency). */
 function RangeBar({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
   if (low === null || high === null || current === null || !isFinite(low) || !isFinite(high) || high <= low) {
-    return <span className="text-gray-300 text-xs">—</span>
+    return <span className="text-muted-foreground/50 text-xs">—</span>
   }
   const pct = Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100))
   return (
     <div className="w-32">
       <div className="relative h-4">
         <div
-          className="absolute top-0 text-blue-600"
+          className="absolute top-0 text-primary"
           style={{ left: `${pct}%`, transform: 'translateX(-50%)' }}
           title={fmtRangeVal(current)}
         >
@@ -89,11 +89,11 @@ function RangeBar({ low, high, current }: { low: number | null; high: number | n
             <path d="M7 0C3.13 0 0 3.13 0 7c0 5.25 7 11 7 11s7-5.75 7-11c0-3.87-3.13-7-7-7z" />
           </svg>
         </div>
-        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-accent rounded-full overflow-hidden">
+          <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums leading-none">
+      <div className="flex justify-between text-[10px] text-muted-foreground mt-1 tabular-nums leading-none">
         <span>{fmtRangeVal(low)}</span>
         <span>{fmtRangeVal(high)}</span>
       </div>
@@ -104,31 +104,31 @@ function RangeBar({ low, high, current }: { low: number | null; high: number | n
 // ─── Colours ─────────────────────────────────────────────────────────────────
 
 const ACCOUNT_TYPE_COLORS: Record<string, string> = {
-  RRSP: 'bg-blue-100 text-blue-700',
-  TFSA: 'bg-green-100 text-green-700',
-  RESP: 'bg-yellow-100 text-yellow-700',
-  NON_REG: 'bg-gray-100 text-gray-600',
+  RRSP: 'bg-primary/15 text-primary',
+  TFSA: 'bg-green-100 text-green-600 dark:text-green-400',
+  RESP: 'bg-yellow-100 text-yellow-700 dark:text-yellow-400',
+  NON_REG: 'bg-accent text-muted-foreground',
   '401K': 'bg-purple-100 text-purple-700',
-  IRA: 'bg-indigo-100 text-indigo-700',
+  IRA: 'bg-primary/15 text-primary',
   ROTH: 'bg-pink-100 text-pink-700',
 }
 const ASSET_CLASS_COLORS: Record<string, string> = {
-  EQUITY: 'bg-blue-50 text-blue-700',
-  ETF: 'bg-indigo-50 text-indigo-700',
+  EQUITY: 'bg-primary/10 text-primary',
+  ETF: 'bg-primary/10 text-primary',
   OPTION: 'bg-purple-50 text-purple-700',
-  FIXED_INCOME: 'bg-green-50 text-green-700',
-  CASH: 'bg-gray-50 text-gray-600',
+  FIXED_INCOME: 'bg-green-50 text-green-600 dark:text-green-400',
+  CASH: 'bg-muted/50 text-muted-foreground',
 }
 
 // ─── PnL Badge ───────────────────────────────────────────────────────────────
 
 function PnlBadge({ pnl, pct }: { pnl: string | null | undefined; pct: string | null | undefined }) {
-  if (!pnl) return <span className="text-gray-300 text-xs">—</span>
+  if (!pnl) return <span className="text-muted-foreground/50 text-xs">—</span>
   const n = parseFloat(pnl)
   const isPos = n >= 0
   const pctStr = fmtPct(pct)
   return (
-    <div className={`flex items-center gap-0.5 justify-end ${isPos ? 'text-emerald-600' : 'text-red-500'}`}>
+    <div className={`flex items-center gap-0.5 justify-end ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
       {isPos ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
       <span className="font-medium text-xs">{fmtCAD(pnl)}</span>
       {pctStr && <span className="text-xs opacity-75">({pctStr})</span>}
@@ -398,20 +398,20 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
         return (
           <>
             <span
-              className="font-mono font-semibold text-blue-700 hover:underline cursor-pointer"
+              className="font-mono font-semibold text-primary hover:underline cursor-pointer"
               onClick={e => handleTickerClick(pos, e)}
             >
               {primary}
             </span>
             {!synthetic && pos.asset_class !== 'OPTION' && pos.security_name && (
-              <span className="ml-2 text-xs text-gray-500">{pos.security_name}</span>
+              <span className="ml-2 text-xs text-muted-foreground">{pos.security_name}</span>
             )}
           </>
         )
       },
       acct: a => (
         <>
-          <span className={`px-1.5 py-0.5 rounded text-xs mr-1.5 ${ACCOUNT_TYPE_COLORS[a.account_type] || 'bg-gray-100 text-gray-600'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-xs mr-1.5 ${ACCOUNT_TYPE_COLORS[a.account_type] || 'bg-accent text-muted-foreground'}`}>
             {a.account_type}
           </span>
           {a.account_name}
@@ -422,10 +422,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       col: 'asset_class', label: 'Class', right: false, nowrap: true,
       cell: pos => (
         <>
-          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-600'}`}>
+          <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-muted/50 text-muted-foreground'}`}>
             {pos.asset_class}
           </span>
-          {pos.exchange && <span className="ml-1.5 text-xs text-gray-400">{pos.exchange}</span>}
+          {pos.exchange && <span className="ml-1.5 text-xs text-muted-foreground">{pos.exchange}</span>}
         </>
       ),
     },
@@ -435,7 +435,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       acct: a => fmtQty(a.quantity),
     },
     acb_per_share_cad: {
-      col: 'acb_per_share_cad', label: 'ACB/Share (CAD)', right: true, tdClass: 'text-gray-600',
+      col: 'acb_per_share_cad', label: 'ACB/Share (CAD)', right: true, tdClass: 'text-muted-foreground',
       cell: pos => {
         const cadAcb = parseFloat(pos.acb_per_share_cad || '0')
         const isUSD = pos.price_currency === 'USD'
@@ -445,7 +445,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
         return (
           <div>
             <div>{fmtCAD(pos.acb_per_share_cad)}</div>
-            {usdAcb !== null && <div className="text-xs text-gray-400 leading-none">US{fmtUSD(usdAcb)}</div>}
+            {usdAcb !== null && <div className="text-xs text-muted-foreground leading-none">US{fmtUSD(usdAcb)}</div>}
           </div>
         )
       },
@@ -467,10 +467,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
             )}
           </div>
           {pos.price_currency === 'USD' && pos.current_price && (
-            <div className="text-xs text-gray-400 leading-none">US{fmtUSD(parseFloat(pos.current_price))}</div>
+            <div className="text-xs text-muted-foreground leading-none">US{fmtUSD(parseFloat(pos.current_price))}</div>
           )}
         </div>
-      ) : <span className="text-gray-300">—</span>,
+      ) : <span className="text-muted-foreground/50">—</span>,
     },
     market_value_cad: {
       col: 'market_value_cad', label: 'Mkt Value (CAD)', right: true, tdClass: 'font-semibold',
@@ -480,12 +480,12 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
           {pos.price_currency === 'USD' && (() => {
             const usd = usdMarketValue(pos)
             return usd !== null ? (
-              <div className="text-xs text-gray-400 font-normal leading-none">US{fmtUSD(usd)}</div>
+              <div className="text-xs text-muted-foreground font-normal leading-none">US{fmtUSD(usd)}</div>
             ) : null
           })()}
         </div>
       ) : (
-        <span className="text-amber-600" title="Valued at cost — no market price available">
+        <span className="text-amber-600 dark:text-amber-400" title="Valued at cost — no market price available">
           {fmtCAD(pos.total_acb_cad)}<span className="text-amber-400 ml-0.5">*</span>
         </span>
       ),
@@ -536,14 +536,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
       col: 'unrealized_pnl_cad', label: 'Total Gain ($)', right: true,
       cell: pos => pos.unrealized_pnl_cad
         ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_cad)}`}>{fmtCAD(pos.unrealized_pnl_cad)}</span>
-        : <span className="text-gray-300">—</span>,
+        : <span className="text-muted-foreground/50">—</span>,
       summary: c => <span className={pnlClass(c.pnl)}>{fmtCAD(c.pnl)}</span>,
     },
     unrealized_pnl_pct: {
       col: 'unrealized_pnl_pct', label: 'Total Gain (%)', right: true,
       cell: pos => pos.unrealized_pnl_pct
         ? <span className={`font-medium ${pnlClass(pos.unrealized_pnl_pct)}`}>{fmtPct(pos.unrealized_pnl_pct)}</span>
-        : <span className="text-gray-300">—</span>,
+        : <span className="text-muted-foreground/50">—</span>,
       summary: c => c.cost > 0
         ? <span className={pnlClass(c.pnl)}>{fmtPct(String((c.pnl / c.cost) * 100))}</span>
         : null,
@@ -605,26 +605,26 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
   function SortIcon({ col }: { col: string }) {
     if (sortCol !== col) return <ChevronsUpDown className="h-3 w-3 opacity-30 flex-shrink-0" />
     return sortDir === 'asc'
-      ? <ChevronUp className="h-3 w-3 text-blue-600 flex-shrink-0" />
-      : <ChevronDown className="h-3 w-3 text-blue-600 flex-shrink-0" />
+      ? <ChevronUp className="h-3 w-3 text-primary flex-shrink-0" />
+      : <ChevronDown className="h-3 w-3 text-primary flex-shrink-0" />
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
 
       {/* ── Collapsible header ── */}
       <div
-        className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-gray-50 select-none"
+        className="px-5 py-3 flex items-center gap-3 cursor-pointer hover:bg-muted/50 select-none"
         onClick={() => setExpanded(e => !e)}
       >
         {/* Chevron + title */}
         <div className="flex items-center gap-2 flex-shrink-0">
           {expanded
-            ? <ChevronDown className="h-4 w-4 text-gray-400" />
-            : <ChevronRight className="h-4 w-4 text-gray-400" />}
-          <h2 className="font-semibold text-gray-800">Holdings</h2>
+            ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+            : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+          <h2 className="font-semibold text-foreground">Holdings</h2>
           {!isLoading && (
-            <span className="text-xs text-gray-400">
+            <span className="text-xs text-muted-foreground">
               {(consolidated as ConsolidatedPosition[]).length} securities
             </span>
           )}
@@ -632,34 +632,34 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
 
         {/* Summary metrics */}
         {isLoading ? (
-          <span className="text-xs text-gray-400 ml-2">Loading…</span>
+          <span className="text-xs text-muted-foreground ml-2">Loading…</span>
         ) : (
           <div className="flex items-center gap-x-5 gap-y-1 flex-wrap ml-1">
             {/* Book / Securities / Cash — desktop only (redundant with Total on mobile) */}
             <div className="hidden md:block text-sm">
-              <span className="text-xs text-gray-400 mr-1">Book</span>
-              <span className="font-semibold text-gray-700">{fmtCAD0(totalACB)}</span>
+              <span className="text-xs text-muted-foreground mr-1">Book</span>
+              <span className="font-semibold text-foreground">{fmtCAD0(totalACB)}</span>
             </div>
             {hasPrices && (
               <div className="hidden md:block text-sm">
-                <span className="text-xs text-gray-400 mr-1">Securities</span>
-                <span className="font-semibold text-gray-700">{fmtCAD0(totalMkt)}</span>
+                <span className="text-xs text-muted-foreground mr-1">Securities</span>
+                <span className="font-semibold text-foreground">{fmtCAD0(totalMkt)}</span>
                 {fallbackCount > 0 && (
-                  <span className="text-amber-500 ml-0.5" title={`${fallbackCount} position(s) valued at cost — no market price available`}>*</span>
+                  <span className="text-amber-500 dark:text-amber-400 ml-0.5" title={`${fallbackCount} position(s) valued at cost — no market price available`}>*</span>
                 )}
               </div>
             )}
             <div className="hidden md:block text-sm">
-              <span className="text-xs text-gray-400 mr-1">Cash</span>
-              <span className={`font-semibold ${totalCash < 0 ? 'text-red-500' : 'text-gray-700'}`}>
+              <span className="text-xs text-muted-foreground mr-1">Cash</span>
+              <span className={`font-semibold ${totalCash < 0 ? 'text-red-500 dark:text-red-400' : 'text-foreground'}`}>
                 {fmtCAD0(totalCash)}
               </span>
             </div>
             {hasPrices && (
               <>
-                <div className="text-sm md:border-l md:border-gray-200 md:pl-5">
-                  <span className="text-xs text-gray-400 mr-1">Total</span>
-                  <span className="font-bold text-gray-900">{fmtCAD0(totalVal)}</span>
+                <div className="text-sm md:border-l md:border-border md:pl-5">
+                  <span className="text-xs text-muted-foreground mr-1">Total</span>
+                  <span className="font-bold text-foreground">{fmtCAD0(totalVal)}</span>
                 </div>
                 <div className={`text-sm flex items-center gap-1 ${pnlClass(totalPnl)}`}>
                   {totalPnl >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
@@ -677,7 +677,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
             {isCustomOrder && (
               <button
                 onClick={e => { e.stopPropagation(); persistOrder(DEFAULT_COL_ORDER); setColWidths({}) }}
-                className="hidden md:block text-xs border border-gray-200 rounded px-3 py-1 bg-white text-gray-500 hover:bg-gray-50"
+                className="hidden md:block text-xs border border-border rounded px-3 py-1 bg-card text-muted-foreground hover:bg-muted/50"
                 title="Reset column order to default"
               >
                 Reset columns
@@ -685,14 +685,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
             )}
             <button
               onClick={e => { e.stopPropagation(); cycleGroup() }}
-              className={`hidden md:block text-xs border rounded px-3 py-1 ${groupBy !== 'none' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+              className={`hidden md:block text-xs border rounded px-3 py-1 ${groupBy !== 'none' ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border text-muted-foreground hover:bg-muted/50'}`}
               title="Group holdings (off → by asset class → by brokerage) with subtotals"
             >
               {GROUP_LABEL[groupBy]}
             </button>
             <button
               onClick={e => { e.stopPropagation(); exportCsv() }}
-              className="text-xs bg-white border border-gray-200 rounded px-3 py-1 hover:bg-gray-50"
+              className="text-xs bg-card border border-border rounded px-3 py-1 hover:bg-muted/50"
             >
               Export CSV
             </button>
@@ -702,22 +702,22 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
 
       {/* ── Expanded table ── */}
       {expanded && (
-        <div className="border-t border-gray-100">
+        <div className="border-t border-border">
           {isLoading ? (
             <div className="flex items-center justify-center h-24">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
             </div>
           ) : (consolidated as ConsolidatedPosition[]).length === 0 ? (
-            <div className="p-8 text-center text-gray-400 text-sm">No positions found.</div>
+            <div className="p-8 text-center text-muted-foreground text-sm">No positions found.</div>
           ) : (
             <>
             {/* ── Mobile: sort control ── */}
-            <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-gray-100 bg-gray-50/40">
-              <span className="text-xs text-gray-400">Sort</span>
+            <div className="md:hidden flex items-center gap-2 px-4 py-2 border-b border-border bg-muted/40">
+              <span className="text-xs text-muted-foreground">Sort</span>
               <select
                 value={sortCol}
                 onChange={e => setSortCol(e.target.value)}
-                className="flex-1 text-sm border border-gray-200 rounded px-2 py-1.5 bg-white focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="flex-1 text-sm border border-border rounded px-2 py-1.5 bg-card focus:outline-none focus:ring-1 focus:ring-primary/40"
               >
                 {sortableCols.map(c => (
                   <option key={c.col} value={c.col}>{c.label}</option>
@@ -725,14 +725,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
               </select>
               <button
                 onClick={() => setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))}
-                className="text-sm border border-gray-200 rounded px-3 py-1.5 bg-white text-gray-600 hover:bg-gray-50"
+                className="text-sm border border-border rounded px-3 py-1.5 bg-card text-muted-foreground hover:bg-muted/50"
                 title={sortDir === 'asc' ? 'Ascending' : 'Descending'}
               >
                 {sortDir === 'asc' ? '↑' : '↓'}
               </button>
               <button
                 onClick={cycleGroup}
-                className={`text-sm border rounded px-3 py-1.5 ${groupBy !== 'none' ? 'bg-blue-50 border-blue-300 text-blue-700' : 'bg-white border-gray-200 text-gray-600 hover:bg-gray-50'}`}
+                className={`text-sm border rounded px-3 py-1.5 ${groupBy !== 'none' ? 'bg-primary/10 border-primary/30 text-primary' : 'bg-card border-border text-muted-foreground hover:bg-muted/50'}`}
                 title="Group: off → asset class → brokerage"
               >
                 {groupBy === 'none' ? 'Group' : groupBy === 'class' ? 'Class' : 'Broker'}
@@ -747,24 +747,24 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                   <div key={group.key || 'all'}>
                     {groupBy !== 'none' && group.key && (
                       <div
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-50 border-b border-gray-100 cursor-pointer select-none"
+                        className="flex items-center gap-2 px-4 py-2 bg-muted/50 border-b border-border cursor-pointer select-none"
                         onClick={() => toggleClass(group.key)}
                       >
                         {collapsed
-                          ? <ChevronRight className="h-3.5 w-3.5 text-gray-400" />
-                          : <ChevronDown className="h-3.5 w-3.5 text-gray-400" />}
-                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
-                        <span className="text-xs text-gray-400">{group.positions.length}</span>
-                        <span className="ml-auto text-sm font-semibold text-gray-800">{fmtCAD(group.mkt)}</span>
+                          ? <ChevronRight className="h-3.5 w-3.5 text-muted-foreground" />
+                          : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-accent text-muted-foreground'}`}>{group.key}</span>
+                        <span className="text-xs text-muted-foreground">{group.positions.length}</span>
+                        <span className="ml-auto text-sm font-semibold text-foreground">{fmtCAD(group.mkt)}</span>
                         {group.pnl !== 0 && (
-                          <span className={`text-xs font-medium ${group.pnl >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                          <span className={`text-xs font-medium ${group.pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                             {group.pnl >= 0 ? '+' : ''}{fmtCAD(group.pnl)}
                           </span>
                         )}
                       </div>
                     )}
                     {!collapsed && (
-                      <div className="divide-y divide-gray-100">
+                      <div className="divide-y divide-border">
                         {group.positions.map(pos => {
                 const mktVal  = pos.market_value_cad ? parseFloat(pos.market_value_cad) : null
                 const pnl     = pos.unrealized_pnl_cad ? parseFloat(pos.unrealized_pnl_cad) : null
@@ -774,22 +774,22 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 return (
                   <div
                     key={pos.ticker}
-                    className="flex items-center gap-3 px-4 py-3 hover:bg-gray-50 active:bg-gray-100 cursor-pointer"
+                    className="flex items-center gap-3 px-4 py-3 hover:bg-muted/50 active:bg-accent cursor-pointer"
                     onClick={() => pos.security_id && handleTickerClick(pos, { stopPropagation: () => {} } as React.MouseEvent)}
                   >
                     {/* Left: ticker + name */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-1.5">
-                        <span className="font-mono font-semibold text-blue-700 text-sm truncate">
+                        <span className="font-mono font-semibold text-primary text-sm truncate">
                           {pos.ticker.includes(':')
                             ? (pos.security_name || 'Fund')
                             : (pos.asset_class === 'OPTION' ? formatOptionTicker(pos.ticker) : pos.ticker)}
                         </span>
-                        <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-gray-50 text-gray-500'}`}>
+                        <span className={`px-1 py-0.5 rounded text-[10px] font-medium ${ASSET_CLASS_COLORS[pos.asset_class] || 'bg-muted/50 text-muted-foreground'}`}>
                           {pos.asset_class}
                         </span>
                       </div>
-                      <div className="text-xs text-gray-400 truncate mt-0.5">
+                      <div className="text-xs text-muted-foreground truncate mt-0.5">
                         {pos.security_name ?? pos.exchange ?? ''}
                         {qty !== 0 && <span className="ml-1">· {qty % 1 === 0 ? qty.toFixed(0) : qty.toFixed(2)} shares</span>}
                       </div>
@@ -797,10 +797,10 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
 
                     {/* Right: value + P&L */}
                     <div className="text-right flex-shrink-0">
-                      <div className="text-sm font-semibold text-gray-900">
+                      <div className="text-sm font-semibold text-foreground">
                         {mktVal != null ? fmtCAD(mktVal) : '—'}
                       </div>
-                      <div className={`text-xs font-medium ${pnl != null ? (pnl >= 0 ? 'text-emerald-600' : 'text-red-500') : 'text-gray-400'}`}>
+                      <div className={`text-xs font-medium ${pnl != null ? (pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400') : 'text-muted-foreground'}`}>
                         {pnl != null ? (pnl >= 0 ? '+' : '') + fmtCAD(pnl) : '—'}
                         {pnlPct != null && <span className="ml-1 text-[10px]">({pnlPct >= 0 ? '+' : ''}{pnlPct.toFixed(1)}%)</span>}
                       </div>
@@ -810,7 +810,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         </div>
                       )}
                     </div>
-                    <ChevronRight className="h-4 w-4 text-gray-300 flex-shrink-0" />
+                    <ChevronRight className="h-4 w-4 text-muted-foreground/50 flex-shrink-0" />
                   </div>
                 )
                         })}
@@ -823,9 +823,9 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
 
             {/* ── Desktop table ── */}
             <div className="hidden md:block overflow-x-auto">
-              <table className="min-w-full text-sm divide-y divide-gray-100">
-                <thead className="bg-gray-50">
-                  <tr className="text-xs text-gray-500 uppercase">
+              <table className="min-w-full text-sm divide-y divide-border">
+                <thead className="bg-muted/50">
+                  <tr className="text-xs text-muted-foreground uppercase">
                     {/* Expand chevron spacer */}
                     <th className="w-8 px-4 py-2.5" />
                     {orderedCols.map(c => (
@@ -840,7 +840,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         onClick={() => toggleSort(c.col)}
                         title="Drag to reorder · click to sort · drag right edge to resize"
                         style={colWidths[c.col] ? { width: colWidths[c.col], minWidth: colWidths[c.col], maxWidth: colWidths[c.col] } : undefined}
-                        className={`relative px-4 py-2.5 cursor-move hover:bg-gray-100 select-none ${c.right ? 'text-right' : 'text-left'} ${dragCol === c.col ? 'opacity-40' : ''} ${dragOverCol === c.col && dragCol && dragCol !== c.col ? 'border-l-2 border-blue-400' : ''}`}
+                        className={`relative px-4 py-2.5 cursor-move hover:bg-accent select-none ${c.right ? 'text-right' : 'text-left'} ${dragCol === c.col ? 'opacity-40' : ''} ${dragOverCol === c.col && dragCol && dragCol !== c.col ? 'border-l-2 border-primary/40' : ''}`}
                       >
                         <div className={`flex items-center gap-1 ${c.right ? 'justify-end' : ''} ${colWidths[c.col] ? 'overflow-hidden' : ''}`}>
                           {c.label}
@@ -850,7 +850,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           onMouseDown={e => startResize(e, c.col)}
                           onClick={e => e.stopPropagation()}
                           draggable={false}
-                          className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-blue-300/60"
+                          className="absolute top-0 right-0 h-full w-1.5 cursor-col-resize hover:bg-primary/60"
                           title="Drag to resize"
                         />
                       </th>
@@ -858,17 +858,17 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-gray-100 bg-white">
+                <tbody className="divide-y divide-border bg-card">
                   {groups.map(group => {
                     const groupCollapsed = collapsedClasses.has(group.key)
                     return (
                       <Fragment key={group.key || 'all'}>
                         {groupBy !== 'none' && group.key && (
                           <tr
-                            className="bg-gray-50/80 border-t border-gray-200 cursor-pointer select-none hover:bg-gray-100 font-semibold text-sm"
+                            className="bg-muted/80 border-t border-border cursor-pointer select-none hover:bg-accent font-semibold text-sm"
                             onClick={() => toggleClass(group.key)}
                           >
-                            <td className="w-8 px-4 py-2 text-gray-400">
+                            <td className="w-8 px-4 py-2 text-muted-foreground">
                               {groupCollapsed
                                 ? <ChevronRight className="h-4 w-4" />
                                 : <ChevronDown className="h-4 w-4" />}
@@ -876,8 +876,8 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                             {summaryCells(
                               { cost: group.cost, mkt: group.mkt, mktForPct: group.mkt, pnl: group.pnl, day: group.day, hasDay: group.hasDay, fallback: 0 },
                               <>
-                                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-gray-100 text-gray-600'}`}>{group.key}</span>
-                                <span className="ml-2 text-xs font-normal text-gray-400">{group.positions.length} position{group.positions.length !== 1 ? 's' : ''}</span>
+                                <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ASSET_CLASS_COLORS[group.key] || 'bg-accent text-muted-foreground'}`}>{group.key}</span>
+                                <span className="ml-2 text-xs font-normal text-muted-foreground">{group.positions.length} position{group.positions.length !== 1 ? 's' : ''}</span>
                               </>,
                             )}
                           </tr>
@@ -888,11 +888,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           return (
                             <Fragment key={pos.ticker}>
                               <tr
-                                className={`hover:bg-gray-50 ${canExpand ? 'cursor-pointer' : ''}`}
+                                className={`hover:bg-muted/50 ${canExpand ? 'cursor-pointer' : ''}`}
                                 onClick={() => canExpand && toggleTicker(pos.ticker)}
                               >
                                 {/* Expand chevron (fixed leading column) */}
-                                <td className="w-8 px-4 py-2.5 text-gray-400">
+                                <td className="w-8 px-4 py-2.5 text-muted-foreground">
                                   {canExpand
                                     ? isExp
                                       ? <ChevronDown className="h-4 w-4" />
@@ -906,12 +906,12 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
 
                               {/* Per-account breakdown rows */}
                               {isExp && pos.accounts.map(acct => (
-                                <tr key={`${pos.ticker}-${acct.account_id}`} className="bg-blue-50/40">
+                                <tr key={`${pos.ticker}-${acct.account_id}`} className="bg-primary/40">
                                   <td className="w-8 px-4 py-1.5" />
                                   {orderedCols.map(c => (
                                     <td
                                       key={c.col}
-                                      className={`px-4 py-1.5 text-xs text-gray-500 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'pl-10 whitespace-nowrap' : ''}`}
+                                      className={`px-4 py-1.5 text-xs text-muted-foreground ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'pl-10 whitespace-nowrap' : ''}`}
                                     >
                                       {c.acct ? c.acct(acct) : null}
                                     </td>
@@ -929,11 +929,11 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 {/* Securities subtotal row — sits between the last security and cash */}
                 {cash.length > 0 && hasPrices && (
                   <tbody>
-                    <tr className="bg-gray-50 border-t-2 border-gray-200 font-semibold text-sm">
+                    <tr className="bg-muted/50 border-t-2 border-border font-semibold text-sm">
                       <td className="w-8 px-4 py-2" />
                       {summaryCells(
                         { cost: totalACB, mkt: totalMkt, mktForPct: totalMkt, pnl: totalPnl, day: totalDayGain, hasDay: hasDayGain, fallback: fallbackCount },
-                        <span className="text-gray-500 text-xs uppercase tracking-wide">Securities subtotal</span>,
+                        <span className="text-muted-foreground text-xs uppercase tracking-wide">Securities subtotal</span>,
                       )}
                     </tr>
                   </tbody>
@@ -956,16 +956,16 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         <td key={c.col} className={`px-4 py-2.5 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'whitespace-nowrap' : ''}`}>
                           {c.col === 'ticker' ? (
                             <>
-                              <span className="font-mono font-semibold text-green-700">CASH</span>
-                              <span className="ml-2 text-xs text-gray-400">
+                              <span className="font-mono font-semibold text-green-600 dark:text-green-400">CASH</span>
+                              <span className="ml-2 text-xs text-muted-foreground">
                                 {cash.length} account{cash.length !== 1 ? 's' : ''}
                                 {!cashExpanded && ' — click to expand'}
                               </span>
                             </>
                           ) : c.col === 'asset_class' ? (
-                            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-700">CASH</span>
+                            <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-green-50 text-green-600 dark:text-green-400">CASH</span>
                           ) : c.col === 'market_value_cad' ? (
-                            <span className="font-semibold text-green-700">{fmtCAD(totalCash)}</span>
+                            <span className="font-semibold text-green-600 dark:text-green-400">{fmtCAD(totalCash)}</span>
                           ) : null}
                         </td>
                       ))}
@@ -979,14 +979,14 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                           <td key={c.col} className={`px-4 py-2 ${c.right ? 'text-right' : ''} ${c.col === 'ticker' ? 'pl-10 whitespace-nowrap' : ''}`}>
                             {c.col === 'ticker' ? (
                               <>
-                                <span className="text-xs text-gray-500">{cc.account_name}</span>
-                                <span className="ml-1.5 text-xs text-gray-400">· {cc.currency}</span>
+                                <span className="text-xs text-muted-foreground">{cc.account_name}</span>
+                                <span className="ml-1.5 text-xs text-muted-foreground">· {cc.currency}</span>
                               </>
                             ) : c.col === 'market_value_cad' ? (
                               <>
-                                <div className="font-semibold text-green-700">{fmtCAD(cc.balance_cad ?? cc.balance)}</div>
+                                <div className="font-semibold text-green-600 dark:text-green-400">{fmtCAD(cc.balance_cad ?? cc.balance)}</div>
                                 {cc.currency === 'USD' && (
-                                  <div className="text-xs text-gray-400 font-normal leading-none">US{fmtUSD(parseFloat(cc.balance))}</div>
+                                  <div className="text-xs text-muted-foreground font-normal leading-none">US{fmtUSD(parseFloat(cc.balance))}</div>
                                 )}
                               </>
                             ) : null}
@@ -998,7 +998,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 )}
 
                 {/* Totals footer */}
-                <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                <tfoot className="bg-muted/50 border-t-2 border-border">
                   <tr className="font-semibold text-sm">
                     <td className="w-8 px-4 py-2.5" />
                     {orderedCols.map(c => {
@@ -1007,7 +1007,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                         pnl: totalPnl, day: totalDayGain, hasDay: hasDayGain, fallback: fallbackCount,
                       }
                       let content: React.ReactNode = null
-                      if (c.col === 'ticker') content = <span className="text-gray-600">Totals</span>
+                      if (c.col === 'ticker') content = <span className="text-muted-foreground">Totals</span>
                       else if (c.col === 'market_value_cad') content = hasPrices ? c.summary?.(ctx) : '—'
                       else if (c.col === 'unrealized_pnl_cad') content = hasPrices ? c.summary?.(ctx) : '—'
                       else if (c.col === 'unrealized_pnl_pct') content = (hasPrices && totalACB > 0) ? c.summary?.(ctx) : '—'
@@ -1021,7 +1021,7 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
                 </tfoot>
               </table>
               {fallbackCount > 0 && (
-                <p className="px-4 py-2 text-xs text-amber-600 bg-amber-50 border-t border-amber-100">
+                <p className="px-4 py-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 border-t border-amber-100">
                   * {fallbackCount} position{fallbackCount !== 1 ? 's' : ''} valued at cost — no market price available
                 </p>
               )}

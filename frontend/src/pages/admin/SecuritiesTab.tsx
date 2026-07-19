@@ -44,7 +44,7 @@ function SecurityPicker({ securities, value, onChange, placeholder }: {
   return (
     <div className="relative">
       <input
-        className="border border-gray-200 rounded px-2 py-1.5 text-sm w-72"
+        className="bg-background text-foreground border border-border rounded px-2 py-1.5 text-sm w-72"
         placeholder={placeholder}
         value={selected && !open ? label(selected) : q}
         onChange={e => { setQ(e.target.value); setOpen(true); if (value) onChange(null) }}
@@ -52,12 +52,12 @@ function SecurityPicker({ securities, value, onChange, placeholder }: {
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
       {open && matches.length > 0 && (
-        <div className="absolute z-20 mt-1 max-h-64 overflow-auto bg-white border border-gray-200 rounded shadow-lg w-72">
+        <div className="absolute z-20 mt-1 max-h-64 overflow-auto bg-card border border-border rounded shadow-lg w-72">
           {matches.map(s => (
             <button key={s.id} type="button"
               onMouseDown={e => { e.preventDefault(); onChange(s.id); setQ(''); setOpen(false) }}
-              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 truncate">
-              {s.name || s.ticker} <span className="text-gray-400">— {s.ticker}</span>
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-primary/10 truncate">
+              {s.name || s.ticker} <span className="text-muted-foreground">— {s.ticker}</span>
             </button>
           ))}
         </div>
@@ -303,13 +303,13 @@ export default function SecuritiesTab() {
 
       <div className="flex gap-3 items-end flex-wrap">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Ticker Search</label>
-          <input className="border rounded px-3 py-1.5 text-sm w-36" placeholder="Ticker..." value={search}
+          <label className="block text-xs text-muted-foreground mb-1">Ticker Search</label>
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-36" placeholder="Ticker..." value={search}
             onChange={e => { setSearch(e.target.value.toUpperCase()); setPage(1) }} />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Asset Class</label>
-          <select className="border rounded px-3 py-1.5 text-sm" value={assetClassFilter}
+          <label className="block text-xs text-muted-foreground mb-1">Asset Class</label>
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={assetClassFilter}
             onChange={e => { setAssetClassFilter(e.target.value); setPage(1) }}>
             <option value="">All</option>
             {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t} value={t}>{t}</option>)}
@@ -318,13 +318,13 @@ export default function SecuritiesTab() {
         {(assetClassFilter === 'OPTION' || assetClassFilter === '') && (
           <>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Underlying</label>
-              <input className="border rounded px-3 py-1.5 text-sm w-28" placeholder="e.g. AAPL" value={underlyingFilter}
+              <label className="block text-xs text-muted-foreground mb-1">Underlying</label>
+              <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-28" placeholder="e.g. AAPL" value={underlyingFilter}
                 onChange={e => { setUnderlyingFilter(e.target.value.toUpperCase()); setPage(1) }} />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Option Type</label>
-              <select className="border rounded px-3 py-1.5 text-sm" value={optionTypeFilter}
+              <label className="block text-xs text-muted-foreground mb-1">Option Type</label>
+              <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={optionTypeFilter}
                 onChange={e => { setOptionTypeFilter(e.target.value as 'ALL' | 'CALL' | 'PUT'); setPage(1) }}>
                 <option value="ALL">All</option>
                 <option value="CALL">Call</option>
@@ -332,7 +332,7 @@ export default function SecuritiesTab() {
               </select>
             </div>
             <div className="flex items-end pb-1.5">
-              <label className="flex items-center gap-1.5 text-sm text-gray-600 cursor-pointer select-none">
+              <label className="flex items-center gap-1.5 text-sm text-muted-foreground cursor-pointer select-none">
                 <input type="checkbox" checked={hideExpired} onChange={e => { setHideExpired(e.target.checked); setPage(1) }} />
                 Hide expired
               </label>
@@ -353,22 +353,22 @@ export default function SecuritiesTab() {
         )}
       </div>
 
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-medium text-gray-700 mb-3">Merge securities</h3>
-        <p className="text-xs text-gray-500 mb-3">
+      <div className="bg-muted/50 rounded-lg p-4 border border-border">
+        <h3 className="font-medium text-foreground mb-3">Merge securities</h3>
+        <p className="text-xs text-muted-foreground mb-3">
           Move one security's transactions, prices and Plaid mapping onto another, then delete it —
           e.g. join a Plaid-mis-named holding (“Cluster Group Holdings”/CLUS) onto your real fund.
           Type to search either field.
         </p>
         <div className="flex flex-wrap items-end gap-3">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Merge this (deleted)</label>
+            <label className="text-xs text-muted-foreground">Merge this (deleted)</label>
             <SecurityPicker securities={(allSecurities as Security[]).filter(s => !s.is_option)}
               value={mergeSource} onChange={setMergeSource} placeholder="Search source…" />
           </div>
-          <span className="pb-2 text-gray-400">→ into →</span>
+          <span className="pb-2 text-muted-foreground">→ into →</span>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Keep this (target)</label>
+            <label className="text-xs text-muted-foreground">Keep this (target)</label>
             <SecurityPicker securities={(allSecurities as Security[]).filter(s => !s.is_option)}
               value={mergeTarget} onChange={setMergeTarget} placeholder="Search target…" />
           </div>
@@ -379,36 +379,36 @@ export default function SecuritiesTab() {
             {mergeMut.isPending ? 'Merging…' : 'Merge'}
           </button>
         </div>
-        {mergeMsg && <p className="text-xs text-gray-600 mt-2">{mergeMsg}</p>}
+        {mergeMsg && <p className="text-xs text-muted-foreground mt-2">{mergeMsg}</p>}
       </div>
 
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-medium text-gray-700 mb-3">Add Security</h3>
+      <div className="bg-muted/50 rounded-lg p-4 border border-border">
+        <h3 className="font-medium text-foreground mb-3">Add Security</h3>
         <div className="flex flex-wrap gap-3">
-          <input className="border rounded px-3 py-1.5 text-sm w-24" placeholder="Ticker" value={form.ticker}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-24" placeholder="Ticker" value={form.ticker}
             onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
-          <input className="border rounded px-3 py-1.5 text-sm w-48" placeholder="Name" value={form.name}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-48" placeholder="Name" value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <select className="border rounded px-3 py-1.5 text-sm" value={form.asset_class}
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.asset_class}
             onChange={e => setForm(f => ({ ...f, asset_class: e.target.value }))}>
             {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
           </select>
-          <select className="border rounded px-3 py-1.5 text-sm" value={form.currency}
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.currency}
             onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
             <option>CAD</option><option>USD</option>
           </select>
-          <input className="border rounded px-3 py-1.5 text-sm w-28" placeholder="Exchange" value={form.exchange}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-28" placeholder="Exchange" value={form.exchange}
             list="exchange-options"
             onChange={e => setForm(f => ({ ...f, exchange: e.target.value.toUpperCase() }))} />
           <button onClick={() => createMut.mutate()} disabled={!form.ticker}
-            className="bg-blue-600 text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">Add</button>
+            className="bg-primary text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">Add</button>
         </div>
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full text-sm divide-y divide-gray-100">
-          <thead className="bg-gray-50">
-            <tr className="text-xs text-gray-500 uppercase">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full text-sm divide-y divide-border">
+          <thead className="bg-muted/50">
+            <tr className="text-xs text-muted-foreground uppercase">
               <SortTh label="Ticker" col="ticker" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Name" col="name" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Asset Class" col="asset_class" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
@@ -419,7 +419,7 @@ export default function SecuritiesTab() {
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-border/60">
             {(() => {
               const today = new Date().toISOString().slice(0, 10)
               // Client-side filtering on top of server search
@@ -451,13 +451,13 @@ export default function SecuritiesTab() {
                     const isDup = tickerCounts[s.ticker] > 1
                     const opt = s.asset_class === 'OPTION' ? parseOptionTicker(s.ticker) : null
                     return (
-                      <tr key={s.id} className={`hover:bg-gray-50 ${isDup ? 'bg-amber-50' : ''}`}>
+                      <tr key={s.id} className={`hover:bg-muted/50 ${isDup ? 'bg-amber-50' : ''}`}>
                         {editing === s.id ? (
                           <>
-                            <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-28"
+                            <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
                               value={editData.ticker ?? s.ticker} onChange={e => setEditData(d => ({ ...d, ticker: e.target.value.toUpperCase() }))} /></td>
                             <td className="px-3 py-2">
-                              <input className="border rounded px-2 py-1 text-xs w-40"
+                              <input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-40"
                                 value={editData.name ?? (s.name || '')} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} />
                               <div className="mt-1">
                                 <input className="border rounded px-2 py-1 text-xs w-40 border-purple-200 bg-purple-50"
@@ -466,79 +466,79 @@ export default function SecuritiesTab() {
                                   value={editData.fetch_ticker_override ?? (s.fetch_ticker_override || '')}
                                   onChange={e => setEditData(d => ({ ...d, fetch_ticker_override: e.target.value || null }))} />
                               </div>
-                              {updateError && <p className="mt-1 text-xs text-red-600">{updateError}</p>}
+                              {updateError && <p className="mt-1 text-xs text-red-600 dark:text-red-400">{updateError}</p>}
                             </td>
-                            <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.asset_class ?? s.asset_class}
+                            <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs" value={editData.asset_class ?? s.asset_class}
                               onChange={e => setEditData(d => ({ ...d, asset_class: e.target.value }))}>
                               {['EQUITY', 'ETF', 'MUTUAL_FUND', 'FUND', 'OPTION', 'CURRENCY', 'MORTGAGE', 'FIXED_INCOME', 'STRUCTURED_NOTE', 'SAVINGS_ACCOUNT', 'CRYPTO', 'REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'].map(t => <option key={t}>{t}</option>)}
                             </select></td>
-                            <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-24"
+                            <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-24"
                               list="exchange-options"
                               value={editData.exchange ?? (s.exchange || '')} onChange={e => setEditData(d => ({ ...d, exchange: e.target.value.toUpperCase() }))} /></td>
-                            <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.currency ?? (s.currency || 'CAD')}
+                            <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs" value={editData.currency ?? (s.currency || 'CAD')}
                               onChange={e => setEditData(d => ({ ...d, currency: e.target.value }))}>
                               <option>CAD</option><option>USD</option>
                             </select></td>
                             <td className="px-3 py-2 text-right">
-                              <input type="number" step="0.01" className="border rounded px-2 py-1 text-xs w-20 text-right"
+                              <input type="number" step="0.01" className="bg-background text-foreground border rounded px-2 py-1 text-xs w-20 text-right"
                                 placeholder="—"
                                 title="Annual coupon/interest rate (%) — for structured notes, mortgages, and other manually-priced interest-bearing securities. Used by the Projected Income report."
                                 value={editData.interest_rate ?? (s.interest_rate ?? '')}
                                 onChange={e => setEditData(d => ({ ...d, interest_rate: e.target.value || null }))} />
                             </td>
-                            <td className="px-3 py-2 text-right text-xs text-gray-400">{s.transaction_count}</td>
+                            <td className="px-3 py-2 text-right text-xs text-muted-foreground">{s.transaction_count}</td>
                             <td className="px-3 py-2 text-right">
                               <div className="flex gap-2 justify-end">
                                 <button onClick={() => updateMut.mutate({ id: s.id, data: editData })} disabled={updateMut.isPending} className="text-green-600 disabled:opacity-40"><Check className="h-4 w-4" /></button>
-                                <button onClick={() => { setEditing(null); setUpdateError(null) }} className="text-gray-400"><X className="h-4 w-4" /></button>
+                                <button onClick={() => { setEditing(null); setUpdateError(null) }} className="text-muted-foreground"><X className="h-4 w-4" /></button>
                               </div>
                             </td>
                           </>
                         ) : (
                           <>
-                            <td className="px-3 py-2.5 font-mono font-semibold text-blue-700 text-xs leading-snug">
-                              <div>{s.ticker}{isDup && <span className="ml-1.5 text-amber-600 font-normal">⚠ dup</span>}</div>
+                            <td className="px-3 py-2.5 font-mono font-semibold text-primary text-xs leading-snug">
+                              <div>{s.ticker}{isDup && <span className="ml-1.5 text-amber-600 dark:text-amber-400 font-normal">⚠ dup</span>}</div>
                             </td>
                             {opt ? (
                               <td className="px-3 py-2.5 leading-snug">
                                 <div className="flex flex-wrap gap-x-2 gap-y-0.5 items-baseline">
-                                  <span className={`text-xs font-bold ${opt.optionType === 'CALL' ? 'text-green-700' : 'text-red-700'}`}>{opt.optionType}</span>
+                                  <span className={`text-xs font-bold ${opt.optionType === 'CALL' ? 'text-green-600 dark:text-green-400' : 'text-red-700'}`}>{opt.optionType}</span>
                                   <button
                                     onClick={() => { setUnderlyingFilter(u => u === opt.underlying ? '' : opt.underlying); setAssetClassFilter('OPTION'); setPage(1) }}
                                     title="Filter by this underlying"
-                                    className="text-xs font-mono font-semibold text-blue-600 hover:underline"
+                                    className="text-xs font-mono font-semibold text-primary hover:underline"
                                   >{opt.underlying}</button>
-                                  <span className="text-xs text-gray-600">K={opt.strike}</span>
-                                  <span className={`text-xs ${opt.expiry < today ? 'text-red-400' : 'text-gray-500'}`}>{opt.expiry}</span>
+                                  <span className="text-xs text-muted-foreground">K={opt.strike}</span>
+                                  <span className={`text-xs ${opt.expiry < today ? 'text-red-400' : 'text-muted-foreground'}`}>{opt.expiry}</span>
                                 </div>
-                                {s.name && <div className="text-xs text-gray-400 mt-0.5">{s.name}</div>}
+                                {s.name && <div className="text-xs text-muted-foreground mt-0.5">{s.name}</div>}
                                 {s.fetch_ticker_override && (
                                   <span className="text-xs text-purple-500 font-mono">↗{s.fetch_ticker_override}</span>
                                 )}
                               </td>
                             ) : (
-                              <td className="px-3 py-2.5 text-gray-600 text-sm">
+                              <td className="px-3 py-2.5 text-muted-foreground text-sm">
                                 {s.name || '—'}
                                 {s.fetch_ticker_override && (
                                   <span className="ml-1.5 text-xs text-purple-500 font-mono">↗{s.fetch_ticker_override}</span>
                                 )}
                               </td>
                             )}
-                            <td className="px-3 py-2.5 text-xs text-gray-500">{s.asset_class}</td>
-                            <td className="px-3 py-2.5 text-xs text-gray-500">{s.exchange || '—'}</td>
+                            <td className="px-3 py-2.5 text-xs text-muted-foreground">{s.asset_class}</td>
+                            <td className="px-3 py-2.5 text-xs text-muted-foreground">{s.exchange || '—'}</td>
                             <td className="px-3 py-2.5 text-xs">{s.currency || '—'}</td>
-                            <td className="px-3 py-2.5 text-right text-xs text-gray-600">{s.interest_rate ? `${s.interest_rate}%` : '—'}</td>
+                            <td className="px-3 py-2.5 text-right text-xs text-muted-foreground">{s.interest_rate ? `${s.interest_rate}%` : '—'}</td>
                             <td className="px-3 py-2.5 text-right">
                               <span className={`text-xs font-medium px-1.5 py-0.5 rounded ${
-                                s.transaction_count === 0 ? 'text-gray-400 bg-gray-100' :
-                                s.transaction_count >= 10 ? 'text-blue-700 bg-blue-50' : 'text-gray-700'
+                                s.transaction_count === 0 ? 'text-muted-foreground bg-accent' :
+                                s.transaction_count >= 10 ? 'text-primary bg-primary/10' : 'text-foreground'
                               }`}>
                                 {s.transaction_count}
                               </span>
                             </td>
                             <td className="px-3 py-2.5 text-right">
                               <div className="flex gap-2 justify-end items-center">
-                                <button onClick={() => { setEditing(s.id); setEditData({}); setUpdateError(null) }} className="text-blue-500 hover:text-blue-700"><Edit2 className="h-3.5 w-3.5" /></button>
+                                <button onClick={() => { setEditing(s.id); setEditData({}); setUpdateError(null) }} className="text-primary/70 hover:text-primary"><Edit2 className="h-3.5 w-3.5" /></button>
                                 <button
                                   onClick={() => openYahooPicker(s)}
                                   title="Search Yahoo Finance to pick the correct security"
@@ -549,7 +549,7 @@ export default function SecuritiesTab() {
                                 <button
                                   onClick={() => openNoteDetails(s)}
                                   title="Note details — term-sheet fields + info-sheet PDF"
-                                  className="text-indigo-400 hover:text-indigo-600"
+                                  className="text-primary/60 hover:text-primary"
                                 >
                                   <FileText className="h-3.5 w-3.5" />
                                 </button>
@@ -559,13 +559,13 @@ export default function SecuritiesTab() {
                                   title="Re-download price history for this security from Yahoo Finance"
                                   className={`transition-colors disabled:opacity-40 ${
                                     histFetchStatus[s.id] === 'ok' ? 'text-green-500' :
-                                    histFetchStatus[s.id] === 'err' ? 'text-red-500' :
-                                    'text-gray-400 hover:text-blue-500'
+                                    histFetchStatus[s.id] === 'err' ? 'text-red-500 dark:text-red-400' :
+                                    'text-muted-foreground hover:text-primary/70'
                                   }`}
                                 >
                                   <RefreshCw className={`h-3.5 w-3.5 ${histFetchStatus[s.id] === 'pending' ? 'animate-spin' : ''}`} />
                                 </button>
-                                <button onClick={() => setDeleteId(s.id)} className="text-red-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                                <button onClick={() => setDeleteId(s.id)} className="text-red-400 hover:text-red-600 dark:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
                               </div>
                             </td>
                           </>
@@ -574,34 +574,34 @@ export default function SecuritiesTab() {
                     )
                   })}
                   {pageRows.length === 0 && (
-                    <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-gray-400">No securities match the current filters.</td></tr>
+                    <tr><td colSpan={8} className="px-3 py-8 text-center text-sm text-muted-foreground">No securities match the current filters.</td></tr>
                   )}
                   <tr>
-                    <td colSpan={8} className="px-3 py-2 border-t border-gray-200 bg-gray-50">
+                    <td colSpan={8} className="px-3 py-2 border-t border-border bg-muted/50">
                       <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-2 text-xs text-muted-foreground">
                           <span>Rows per page:</span>
-                          <select className="border rounded px-2 py-0.5 text-xs" value={pageSize}
+                          <select className="bg-background text-foreground border rounded px-2 py-0.5 text-xs" value={pageSize}
                             onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}>
                             <option value={25}>25</option>
                             <option value={50}>50</option>
                             <option value={100}>100</option>
                           </select>
                         </div>
-                        <div className="flex items-center gap-3 text-xs text-gray-500">
+                        <div className="flex items-center gap-3 text-xs text-muted-foreground">
                           <span>
                             {totalFiltered === 0 ? '0' : `${(safePage - 1) * pageSize + 1}–${Math.min(safePage * pageSize, totalFiltered)}`} of {totalFiltered}
                           </span>
                           <button
                             disabled={safePage <= 1}
                             onClick={() => setPage(p => Math.max(1, p - 1))}
-                            className="px-2 py-0.5 border rounded text-xs disabled:opacity-40 hover:bg-gray-100"
+                            className="px-2 py-0.5 border rounded text-xs disabled:opacity-40 hover:bg-accent"
                           >Prev</button>
                           <span>Page {safePage} of {totalPages}</span>
                           <button
                             disabled={safePage >= totalPages}
                             onClick={() => setPage(p => p + 1)}
-                            className="px-2 py-0.5 border rounded text-xs disabled:opacity-40 hover:bg-gray-100"
+                            className="px-2 py-0.5 border rounded text-xs disabled:opacity-40 hover:bg-accent"
                           >Next</button>
                         </div>
                       </div>
@@ -631,24 +631,24 @@ export default function SecuritiesTab() {
         const pickerSec = (securities as Security[]).find(s => s.id === yahooPicker.secId)
         return (
           <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/30" onClick={() => setYahooPicker(null)}>
-            <div className="bg-white rounded-xl shadow-2xl w-[520px] max-h-[480px] flex flex-col" onClick={e => e.stopPropagation()}>
+            <div className="bg-card rounded-xl shadow-2xl w-[520px] max-h-[480px] flex flex-col" onClick={e => e.stopPropagation()}>
               {/* Header */}
               <div className="flex items-center justify-between px-4 py-3 border-b">
                 <div className="flex items-center gap-2">
                   <Sparkles className="h-4 w-4 text-purple-500" />
-                  <span className="font-semibold text-sm text-gray-800">
+                  <span className="font-semibold text-sm text-foreground">
                     Yahoo Finance — {pickerSec?.ticker}
                   </span>
                 </div>
-                <button onClick={() => setYahooPicker(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+                <button onClick={() => setYahooPicker(null)} className="text-muted-foreground hover:text-muted-foreground"><X className="h-4 w-4" /></button>
               </div>
 
               {/* Search box */}
               <div className="px-4 py-2 border-b flex gap-2 items-center">
-                <Search className="h-4 w-4 text-gray-400 shrink-0" />
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
                 <input
                   ref={yahooInputRef}
-                  className="flex-1 text-sm outline-none"
+                  className="bg-background text-foreground flex-1 text-sm outline-none"
                   placeholder="Search ticker or company name…"
                   value={yahooPicker.query}
                   onChange={e => setYahooPicker(p => p ? { ...p, query: e.target.value } : p)}
@@ -666,13 +666,13 @@ export default function SecuritiesTab() {
               {/* Results */}
               <div className="overflow-y-auto flex-1">
                 {yahooPicker.loading && (
-                  <div className="text-center text-gray-400 text-sm py-6">Searching Yahoo Finance…</div>
+                  <div className="text-center text-muted-foreground text-sm py-6">Searching Yahoo Finance…</div>
                 )}
                 {yahooPicker.error && (
-                  <div className="text-center text-red-500 text-sm py-6">{yahooPicker.error}</div>
+                  <div className="text-center text-red-500 dark:text-red-400 text-sm py-6">{yahooPicker.error}</div>
                 )}
                 {!yahooPicker.loading && !yahooPicker.error && yahooPicker.results.length === 0 && (
-                  <div className="text-center text-gray-400 text-sm py-6">No results</div>
+                  <div className="text-center text-muted-foreground text-sm py-6">No results</div>
                 )}
                 {yahooPicker.results.map(r => (
                   <button
@@ -681,18 +681,18 @@ export default function SecuritiesTab() {
                       setYahooPicker(p => p ? { ...p, loading: true, applyMsg: null } : p)
                       fetchYahooMut.mutate({ id: yahooPicker.secId, symbol: r.symbol })
                     }}
-                    className="w-full text-left px-4 py-2.5 hover:bg-purple-50 border-b border-gray-50 flex items-center gap-3"
+                    className="w-full text-left px-4 py-2.5 hover:bg-purple-50 border-b border-border flex items-center gap-3"
                   >
                     <div className="w-20 shrink-0">
-                      <span className="font-mono font-semibold text-sm text-blue-700">{r.symbol}</span>
+                      <span className="font-mono font-semibold text-sm text-primary">{r.symbol}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="text-sm text-gray-800 truncate">{r.name || '—'}</div>
-                      <div className="text-xs text-gray-400">{r.quote_type}</div>
+                      <div className="text-sm text-foreground truncate">{r.name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{r.quote_type}</div>
                     </div>
                     <div className="text-right shrink-0">
-                      <div className="text-xs font-medium text-gray-600">{r.exchange || '—'}</div>
-                      <div className="text-xs text-gray-400">{r.currency}</div>
+                      <div className="text-xs font-medium text-muted-foreground">{r.exchange || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{r.currency}</div>
                     </div>
                   </button>
                 ))}
@@ -701,7 +701,7 @@ export default function SecuritiesTab() {
               {/* Apply result feedback */}
               {yahooPicker.applyMsg && (
                 <div className={`px-4 py-2 text-xs border-t ${
-                  yahooPicker.applyMsg.startsWith('✓') ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-600'
+                  yahooPicker.applyMsg.startsWith('✓') ? 'bg-green-50 text-green-600 dark:text-green-400' : 'bg-red-50 text-red-600 dark:text-red-400'
                 } flex justify-between items-center`}>
                   <span>{yahooPicker.applyMsg}</span>
                   <button onClick={() => setYahooPicker(null)} className="text-xs underline ml-4">Close</button>
@@ -715,16 +715,16 @@ export default function SecuritiesTab() {
       {/* Note Details Modal */}
       {noteDetailsFor && (
         <div className="fixed inset-0 z-50 flex items-start justify-center pt-12 bg-black/30 overflow-y-auto" onClick={() => setNoteDetailsFor(null)}>
-          <div className="bg-white rounded-xl shadow-2xl w-[640px] max-h-[85vh] flex flex-col my-8" onClick={e => e.stopPropagation()}>
+          <div className="bg-card rounded-xl shadow-2xl w-[640px] max-h-[85vh] flex flex-col my-8" onClick={e => e.stopPropagation()}>
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b">
               <div className="flex items-center gap-2">
-                <FileText className="h-4 w-4 text-indigo-500" />
-                <span className="font-semibold text-sm text-gray-800">
+                <FileText className="h-4 w-4 text-primary/70" />
+                <span className="font-semibold text-sm text-foreground">
                   Note Details — {noteDetailsFor.ticker}
                 </span>
               </div>
-              <button onClick={() => setNoteDetailsFor(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+              <button onClick={() => setNoteDetailsFor(null)} className="text-muted-foreground hover:text-muted-foreground"><X className="h-4 w-4" /></button>
             </div>
 
             <div className="overflow-y-auto px-4 py-4 space-y-5">
@@ -733,40 +733,40 @@ export default function SecuritiesTab() {
               <div
                 {...getNoteDropRootProps()}
                 className={`rounded-lg p-3 border transition-colors ${
-                  isNoteDragActive ? 'bg-blue-50 border-blue-400 border-dashed' : 'bg-gray-50 border-gray-200'
+                  isNoteDragActive ? 'bg-primary/10 border-primary/40 border-dashed' : 'bg-muted/50 border-border'
                 }`}
               >
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-                  Info Sheet {isNoteDragActive && <span className="text-blue-600 normal-case font-normal">— drop PDF to upload</span>}
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+                  Info Sheet {isNoteDragActive && <span className="text-primary normal-case font-normal">— drop PDF to upload</span>}
                 </p>
                 {noteDetailsForm.original_filename ? (
                   <div className="flex items-center justify-between gap-2">
-                    <span className="text-sm text-gray-700 truncate">{noteDetailsForm.original_filename}</span>
+                    <span className="text-sm text-foreground truncate">{noteDetailsForm.original_filename}</span>
                     <div className="flex gap-2 flex-shrink-0">
                       <button
                         onClick={() => openNoteDetailsFile(noteDetailsFor.id)}
-                        className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+                        className="flex items-center gap-1 text-xs text-primary hover:text-primary"
                       >
                         <ExternalLink className="h-3 w-3" /> View
                       </button>
-                      <label className="flex items-center gap-1 text-xs text-gray-600 hover:text-gray-800 cursor-pointer">
+                      <label className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground cursor-pointer">
                         <Upload className="h-3 w-3" /> Replace
-                        <input type="file" accept="application/pdf" className="hidden"
+                        <input type="file" accept="application/pdf" className="bg-background text-foreground hidden"
                           onChange={e => { const f = e.target.files?.[0]; if (f) uploadNoteFileMut.mutate(f); e.target.value = '' }} />
                       </label>
                       <button
                         onClick={() => deleteNoteFileMut.mutate()}
-                        className="flex items-center gap-1 text-xs text-red-500 hover:text-red-600"
+                        className="flex items-center gap-1 text-xs text-red-500 dark:text-red-400 hover:text-red-600 dark:text-red-400"
                       >
                         <Trash2 className="h-3 w-3" /> Remove
                       </button>
                     </div>
                   </div>
                 ) : (
-                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-gray-300 rounded-lg py-4 text-sm text-gray-500 hover:border-blue-400 hover:text-blue-600 cursor-pointer transition-colors">
+                  <label className="flex items-center justify-center gap-2 border-2 border-dashed border-border rounded-lg py-4 text-sm text-muted-foreground hover:border-primary/40 hover:text-primary cursor-pointer transition-colors">
                     {noteDetailsUploading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Upload className="h-4 w-4" />}
                     {noteDetailsUploading ? 'Uploading…' : 'Upload PDF info sheet'}
-                    <input type="file" accept="application/pdf" className="hidden"
+                    <input type="file" accept="application/pdf" className="bg-background text-foreground hidden"
                       onChange={e => { const f = e.target.files?.[0]; if (f) uploadNoteFileMut.mutate(f); e.target.value = '' }} />
                   </label>
                 )}
@@ -774,30 +774,30 @@ export default function SecuritiesTab() {
 
               {/* Terms */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Terms</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Terms</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs text-gray-500 col-span-2">Reference Asset
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.reference_asset ?? ''}
+                  <label className="text-xs text-muted-foreground col-span-2">Reference Asset
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.reference_asset ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, reference_asset: e.target.value }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Payment Amount
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="$10.74 per Note" value={noteDetailsForm.payment_amount ?? ''}
+                  <label className="text-xs text-muted-foreground">Payment Amount
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="$10.74 per Note" value={noteDetailsForm.payment_amount ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, payment_amount: e.target.value }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Payment Frequency
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Monthly" value={noteDetailsForm.payment_frequency ?? ''}
+                  <label className="text-xs text-muted-foreground">Payment Frequency
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Monthly" value={noteDetailsForm.payment_frequency ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, payment_frequency: e.target.value }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Payment Barrier (%)
-                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.payment_barrier_pct ?? ''}
+                  <label className="text-xs text-muted-foreground">Payment Barrier (%)
+                    <input type="number" step="0.01" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.payment_barrier_pct ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, payment_barrier_pct: e.target.value || null }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Autocall Level (%)
-                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.autocall_level_pct ?? ''}
+                  <label className="text-xs text-muted-foreground">Autocall Level (%)
+                    <input type="number" step="0.01" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.autocall_level_pct ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, autocall_level_pct: e.target.value || null }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Barrier Level (%)
-                    <input type="number" step="0.01" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.barrier_level_pct ?? ''}
+                  <label className="text-xs text-muted-foreground">Barrier Level (%)
+                    <input type="number" step="0.01" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.barrier_level_pct ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, barrier_level_pct: e.target.value || null }))} />
                   </label>
                 </div>
@@ -805,10 +805,10 @@ export default function SecuritiesTab() {
 
               {/* Identifiers */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Identifiers</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Identifiers</p>
                 <div className="grid grid-cols-2 gap-3">
-                  <label className="text-xs text-gray-500">Status
-                    <select className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.status ?? ''}
+                  <label className="text-xs text-muted-foreground">Status
+                    <select className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.status ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, status: e.target.value || null }))}>
                       <option value="">—</option>
                       <option>Active</option>
@@ -816,16 +816,16 @@ export default function SecuritiesTab() {
                       <option>Matured</option>
                     </select>
                   </label>
-                  <label className="text-xs text-gray-500">Product Category
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Callable Contingent Coupon/ROC" value={noteDetailsForm.product_category ?? ''}
+                  <label className="text-xs text-muted-foreground">Product Category
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" placeholder="Callable Contingent Coupon/ROC" value={noteDetailsForm.product_category ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, product_category: e.target.value }))} />
                   </label>
-                  <label className="text-xs text-gray-500">CUSIP Code
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.cusip_code ?? ''}
+                  <label className="text-xs text-muted-foreground">CUSIP Code
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.cusip_code ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, cusip_code: e.target.value }))} />
                   </label>
-                  <label className="text-xs text-gray-500">ADP Code
-                    <input className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.adp_code ?? ''}
+                  <label className="text-xs text-muted-foreground">ADP Code
+                    <input className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.adp_code ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, adp_code: e.target.value }))} />
                   </label>
                 </div>
@@ -833,32 +833,32 @@ export default function SecuritiesTab() {
 
               {/* Dates */}
               <div>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Dates</p>
+                <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Dates</p>
                 <div className="grid grid-cols-3 gap-3">
-                  <label className="text-xs text-gray-500">Issue Date
-                    <input type="date" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.issue_date ?? ''}
+                  <label className="text-xs text-muted-foreground">Issue Date
+                    <input type="date" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.issue_date ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, issue_date: e.target.value || null }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Maturity Date
-                    <input type="date" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.maturity_date ?? ''}
+                  <label className="text-xs text-muted-foreground">Maturity Date
+                    <input type="date" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.maturity_date ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, maturity_date: e.target.value || null }))} />
                   </label>
-                  <label className="text-xs text-gray-500">Term (years)
-                    <input type="number" step="0.1" className="mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.term_years ?? ''}
+                  <label className="text-xs text-muted-foreground">Term (years)
+                    <input type="number" step="0.1" className="bg-background text-foreground mt-1 w-full border rounded px-2 py-1.5 text-sm" value={noteDetailsForm.term_years ?? ''}
                       onChange={e => setNoteDetailsForm(f => ({ ...f, term_years: e.target.value || null }))} />
                   </label>
                 </div>
               </div>
 
-              {noteDetailsError && <p className="text-xs text-red-600">{noteDetailsError}</p>}
+              {noteDetailsError && <p className="text-xs text-red-600 dark:text-red-400">{noteDetailsError}</p>}
             </div>
 
             <div className="flex items-center justify-end gap-2 px-4 py-3 border-t">
-              <button onClick={() => setNoteDetailsFor(null)} className="text-sm text-gray-500 px-3 py-1.5 rounded hover:bg-gray-100">Cancel</button>
+              <button onClick={() => setNoteDetailsFor(null)} className="text-sm text-muted-foreground px-3 py-1.5 rounded hover:bg-accent">Cancel</button>
               <button
                 onClick={() => saveNoteDetailsMut.mutate()}
                 disabled={saveNoteDetailsMut.isPending}
-                className="text-sm bg-blue-600 text-white px-4 py-1.5 rounded hover:bg-blue-700 disabled:opacity-50"
+                className="text-sm bg-primary text-white px-4 py-1.5 rounded hover:bg-primary/90 disabled:opacity-50"
               >
                 {saveNoteDetailsMut.isPending ? 'Saving…' : 'Save'}
               </button>

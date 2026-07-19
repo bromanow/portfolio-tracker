@@ -182,17 +182,17 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
   const systemRateHint = () => {
     if (!isNonCAD) return null
     const backComputedNote = cadManual
-      ? <span className="text-xs text-amber-600 ml-1">← back-computed from CAD ÷ amount</span>
+      ? <span className="text-xs text-amber-600 dark:text-amber-400 ml-1">← back-computed from CAD ÷ amount</span>
       : null
-    if (fxLoading) return <span className="text-xs text-gray-400">Fetching system rate…{backComputedNote}</span>
-    if (!systemFxRate) return <span className="text-xs text-gray-400">No system rate for this date{backComputedNote}</span>
+    if (fxLoading) return <span className="text-xs text-muted-foreground">Fetching system rate…{backComputedNote}</span>
+    if (!systemFxRate) return <span className="text-xs text-muted-foreground">No system rate for this date{backComputedNote}</span>
     const rounded = parseFloat(fxRateStr).toFixed(4)
     const roundedSys = parseFloat(systemFxRate).toFixed(4)
-    if (rounded === roundedSys) return <span className="text-xs text-gray-400">System rate ✓{backComputedNote}</span>
+    if (rounded === roundedSys) return <span className="text-xs text-muted-foreground">System rate ✓{backComputedNote}</span>
     return (
-      <span className="text-xs text-gray-400">
+      <span className="text-xs text-muted-foreground">
         System: {systemFxRate}{' '}
-        <button type="button" className="text-xs text-blue-500 underline" onClick={() => handleFxRateChange(systemFxRate)}>
+        <button type="button" className="text-xs text-primary/70 underline" onClick={() => handleFxRateChange(systemFxRate)}>
           {mode === 'create' ? 'Apply' : 'Apply system rate'}
         </button>
         {backComputedNote}
@@ -204,10 +204,10 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
     <div className="grid grid-cols-2 gap-3 text-sm">
       {/* Account */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">
+        <label className="block text-xs text-muted-foreground mb-1">
           Account {mode === 'create' && <span className="text-red-400">*</span>}
         </label>
-        <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <select className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={fields.account_id || ''}
           onChange={e => onChange({ ...fields, account_id: e.target.value ? Number(e.target.value) : undefined })}>
           {mode === 'edit' && <option value="">— unchanged —</option>}
@@ -217,15 +217,15 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
       </div>
       {/* Date */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-400">*</span></label>
+        <label className="block text-xs text-muted-foreground mb-1">Date <span className="text-red-400">*</span></label>
         <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
           value={(fields.transaction_date as string) || ''}
           onChange={v => { lastFetchRef.current = ''; onChange({ ...fields, transaction_date: v }) }} />
       </div>
       {/* Type */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Type <span className="text-red-400">*</span></label>
-        <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Type <span className="text-red-400">*</span></label>
+        <select className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.transaction_type as string) || ''}
           onChange={e => onChange({ ...fields, transaction_type: e.target.value })}>
           {ALL_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
@@ -233,8 +233,8 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
       </div>
       {/* Ticker */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Ticker (Security)</label>
-        <input list={tickerDatalistId} className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full uppercase"
+        <label className="block text-xs text-muted-foreground mb-1">Ticker (Security)</label>
+        <input list={tickerDatalistId} className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full uppercase"
           value={tickerInput}
           onChange={e => onTickerChange(e.target.value.toUpperCase())}
           placeholder="e.g. ENB" />
@@ -244,22 +244,22 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
           ))}
         </datalist>
         {tickerInput && !(securities as Security[]).find(s => s.ticker.toUpperCase() === tickerInput) && (
-          <p className="text-xs text-amber-600 mt-0.5">
+          <p className="text-xs text-amber-600 dark:text-amber-400 mt-0.5">
             {mode === 'create' ? '⚠ Ticker not found — new security will be created' : '⚠ Ticker not found in securities list'}
           </p>
         )}
       </div>
       {/* Quantity */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Quantity</label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.quantity as string) || ''}
           onChange={e => onChange({ ...fields, quantity: e.target.value || undefined })} />
       </div>
       {/* Transaction Currency */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Transaction Currency</label>
-        <select className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Transaction Currency</label>
+        <select className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={currency}
           onChange={e => {
             lastFetchRef.current = ''
@@ -271,24 +271,24 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
       </div>
       {/* Price */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Price ({currency})</label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Price ({currency})</label>
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.price as string) || ''}
           onChange={e => onChange({ ...fields, price: e.target.value || undefined })} />
       </div>
       {/* Commission */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Commission ({currency})</label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Commission ({currency})</label>
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.commission as string) || ''}
           onChange={e => onChange({ ...fields, commission: e.target.value || undefined })} />
       </div>
       {/* Net Amount / Book Value */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">
+        <label className="block text-xs text-muted-foreground mb-1">
           {isJournal ? `Book Value (${currency})` : `Net Amount (${currency})`}
         </label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.transaction_amount as string) || ''}
           onChange={e => handleTxAmountChange(e.target.value)} />
       </div>
@@ -307,7 +307,7 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
                 Use the original purchase cost — <strong>not</strong> the current market price.
               </p>
               {fields.quantity && parseFloat(fields.quantity as string) < 0 && (
-                <p className="text-amber-600 italic">
+                <p className="text-amber-600 dark:text-amber-400 italic">
                   This appears to be the <strong>outgoing leg (−qty)</strong>. The ACB here has no effect —
                   edit the receiving leg (+qty) instead.
                 </p>
@@ -318,10 +318,10 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
             {/* FX Rate — only for non-CAD */}
             {isNonCAD && (
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
+                <label className="block text-xs text-muted-foreground mb-1">
                   {isJournal ? `FX Rate on transfer date (${currency} → CAD)` : `FX Rate (${currency} → CAD)`}
                 </label>
-                <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                   value={fxRateStr}
                   onChange={e => handleFxRateChange(e.target.value)} />
                 <div className="mt-0.5">{systemRateHint()}</div>
@@ -329,21 +329,21 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
             )}
             {/* CAD Amount — always shown for JOURNAL or non-CAD */}
             <div>
-              <label className="block text-xs text-gray-500 mb-1">
+              <label className="block text-xs text-muted-foreground mb-1">
                 {isJournal ? 'Book Value (CAD) ← used as ACB' : 'CAD Amount'}
               </label>
-              <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                 value={(fields.cad_amount as string) || ''}
                 onChange={e => handleCadAmountChange(e.target.value)} />
               <div className="mt-0.5">
                 {isNonCAD
                   ? cadManual
-                    ? <span className="text-xs text-gray-400">manual —{' '}
-                        <button type="button" className="text-xs text-blue-500 underline" onClick={handleCadReset}>↺ auto</button>
+                    ? <span className="text-xs text-muted-foreground">manual —{' '}
+                        <button type="button" className="text-xs text-primary/70 underline" onClick={handleCadReset}>↺ auto</button>
                       </span>
-                    : <span className="text-xs text-gray-400">auto-computed from amount × FX rate</span>
+                    : <span className="text-xs text-muted-foreground">auto-computed from amount × FX rate</span>
                   : isJournal
-                    ? <span className="text-xs text-gray-400">enter the CAD book value directly</span>
+                    ? <span className="text-xs text-muted-foreground">enter the CAD book value directly</span>
                     : null
                 }
               </div>
@@ -353,18 +353,18 @@ export function TxFormFields({ fields, onChange, accounts, securities, tickerInp
       )}
       {/* Notes */}
       <div>
-        <label className="block text-xs text-gray-500 mb-1">Notes {mode === 'edit' && <span className="text-gray-400">(user field)</span>}</label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+        <label className="block text-xs text-muted-foreground mb-1">Notes {mode === 'edit' && <span className="text-muted-foreground">(user field)</span>}</label>
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
           value={(fields.notes as string) || ''}
           onChange={e => onChange({ ...fields, notes: e.target.value || undefined })} />
       </div>
       {/* Description */}
       <div className="col-span-2">
-        <label className="block text-xs text-gray-500 mb-1">
-          Description{mode === 'edit' && <span className="text-gray-400"> (original CSV text — editable)</span>}
-          {mode === 'create' && <span className="text-gray-400"> (optional)</span>}
+        <label className="block text-xs text-muted-foreground mb-1">
+          Description{mode === 'edit' && <span className="text-muted-foreground"> (original CSV text — editable)</span>}
+          {mode === 'create' && <span className="text-muted-foreground"> (optional)</span>}
         </label>
-        <input type="text" className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full text-gray-600"
+        <input type="text" className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full text-muted-foreground"
           value={(fields.raw_description as string) || ''}
           onChange={e => onChange({ ...fields, raw_description: e.target.value || undefined })} />
       </div>
@@ -425,10 +425,10 @@ export function TransactionEditModal({
 
   return (
     <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4">
+      <div className="bg-card rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4">
         <div className="flex items-center justify-between">
-          <h3 className="font-semibold text-gray-900">Edit Transaction #{editing.tx.id}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+          <h3 className="font-semibold text-foreground">Edit Transaction #{editing.tx.id}</h3>
+          <button onClick={onClose} className="text-muted-foreground hover:text-muted-foreground">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -443,8 +443,8 @@ export function TransactionEditModal({
           mode="edit"
         />
         {canCreateRule && (
-          <label className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-3 py-2 text-xs text-blue-800 cursor-pointer">
-            <input type="checkbox" className="mt-0.5" checked={createRule} onChange={e => setCreateRule(e.target.checked)} />
+          <label className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-lg px-3 py-2 text-xs text-primary cursor-pointer">
+            <input type="checkbox" className="bg-background text-foreground mt-0.5" checked={createRule} onChange={e => setCreateRule(e.target.checked)} />
             <span>
               Always reclassify <strong>{originalType}</strong> → <strong>{draftType}</strong> for{' '}
               <strong>{editing.tx.security_ticker || 'this security'}</strong> in <strong>{editing.tx.account_name}</strong>{' '}
@@ -462,17 +462,17 @@ export function TransactionEditModal({
             Error: {error}
           </div>
         )}
-        <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+        <div className="flex justify-end gap-3 pt-2 border-t border-border">
           <button
             onClick={onClose}
-            className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+            className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50"
           >
             Cancel
           </button>
           <button
             onClick={handleSave}
             disabled={saving}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             <Check className="h-4 w-4" />
             {saving ? 'Saving…' : 'Save'}

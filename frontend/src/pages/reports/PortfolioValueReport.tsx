@@ -88,18 +88,18 @@ export default function PortfolioValueReport() {
       {/* Controls */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Brokerage</label>
+          <label className="block text-xs text-muted-foreground mb-1">Brokerage</label>
           <select
             value={brokerageFilter}
             onChange={e => setBrokerageFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">All brokerages</option>
             {brokerages.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Account(s)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Account(s)</label>
           <MultiSelectDropdown
             placeholder="All accounts"
             options={accountOptions}
@@ -108,22 +108,22 @@ export default function PortfolioValueReport() {
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Range</label>
+          <label className="block text-xs text-muted-foreground mb-1">Range</label>
           <div className="flex gap-1">
             {(['YTD', '1Y', '3Y', '5Y', 'ALL'] as PortfolioRange[]).map(r => (
               <button key={r} onClick={() => setRange(r)}
-                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${range === r ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${range === r ? 'bg-primary text-white' : 'bg-accent text-muted-foreground hover:bg-accent'}`}>
                 {r}
               </button>
             ))}
           </div>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Interval</label>
+          <label className="block text-xs text-muted-foreground mb-1">Interval</label>
           <div className="flex gap-1">
             {(['daily', 'weekly', 'monthly'] as const).map(iv => (
               <button key={iv} onClick={() => setChartInterval(iv)}
-                className={`px-2.5 py-1.5 text-xs rounded font-medium capitalize transition-colors ${chartInterval === iv ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded font-medium capitalize transition-colors ${chartInterval === iv ? 'bg-primary text-white' : 'bg-accent text-muted-foreground hover:bg-accent'}`}>
                 {iv[0].toUpperCase()}
               </button>
             ))}
@@ -132,11 +132,11 @@ export default function PortfolioValueReport() {
         <div className="flex flex-col gap-1">
           <button
             onClick={() => setCommitted({ fromDate, toDate, accountIds, interval: chartInterval })}
-            className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+            className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
           >
             <Play className="w-3.5 h-3.5" /> Run
           </button>
-          {lastRunTime && <span className="text-xs text-gray-400 text-center">Last run: {lastRunTime}</span>}
+          {lastRunTime && <span className="text-xs text-muted-foreground text-center">Last run: {lastRunTime}</span>}
         </div>
         <div className="flex flex-col gap-1">
           <button
@@ -144,10 +144,10 @@ export default function PortfolioValueReport() {
             disabled={rebuildStatus === 'running'}
             title="Purge and regenerate portfolio snapshots for selected accounts. Use this to fix phantom positions."
             className={`flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border transition-colors
-              ${rebuildStatus === 'running' ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-not-allowed'
-              : rebuildStatus === 'done'    ? 'bg-green-50 text-green-700 border-green-300'
+              ${rebuildStatus === 'running' ? 'bg-accent text-muted-foreground border-border cursor-not-allowed'
+              : rebuildStatus === 'done'    ? 'bg-green-50 text-green-600 dark:text-green-400 border-green-300'
               : rebuildStatus === 'error'   ? 'bg-red-50 text-red-700 border-red-300'
-              : 'bg-white text-gray-600 border-gray-300 hover:bg-gray-50'}`}
+              : 'bg-card text-muted-foreground border-border hover:bg-muted/50'}`}
           >
             {rebuildStatus === 'running'
               ? <><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Rebuilding…</>
@@ -157,33 +157,33 @@ export default function PortfolioValueReport() {
               ? <><Trash2 className="w-3.5 h-3.5" /> Failed</>
               : <><Database className="w-3.5 h-3.5" /> Rebuild Snapshots</>}
           </button>
-          <span className="text-xs text-gray-400 text-center">Fixes phantom positions</span>
+          <span className="text-xs text-muted-foreground text-center">Fixes phantom positions</span>
         </div>
       </div>
 
       {/* Chart */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="bg-card rounded-xl border border-border p-5">
         {committed === null ? (
-          <div className="h-72 flex flex-col items-center justify-center gap-2 text-gray-400">
-            <p className="text-sm">Configure your filters and click <strong className="text-blue-600">Run</strong> to generate this report.</p>
+          <div className="h-72 flex flex-col items-center justify-center gap-2 text-muted-foreground">
+            <p className="text-sm">Configure your filters and click <strong className="text-primary">Run</strong> to generate this report.</p>
           </div>
         ) : isLoading ? (
           <div className="h-72 flex items-center justify-center">
-            <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" />
+            <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-primary" />
           </div>
         ) : !hasMarketPrices ? (
-          <div className="h-72 flex flex-col items-center justify-center gap-2 text-gray-400">
+          <div className="h-72 flex flex-col items-center justify-center gap-2 text-muted-foreground">
             <p className="text-sm">No historical price data for this period.</p>
             <p className="text-xs">Use <strong>Refresh Prices</strong> in the header to populate prices.</p>
           </div>
         ) : (
           <>
-            <div className="flex items-center gap-4 mb-3 text-xs text-gray-500">
+            <div className="flex items-center gap-4 mb-3 text-xs text-muted-foreground">
               <span className="flex items-center gap-1.5">
-                <span className="inline-block w-8 h-0.5 bg-blue-500 rounded" /> Total Value
+                <span className="inline-block w-8 h-0.5 bg-primary rounded" /> Total Value
               </span>
               <span className="flex items-center gap-1.5">
-                <span className="inline-block w-8 border-t-2 border-dashed border-gray-400" /> Book Value
+                <span className="inline-block w-8 border-t-2 border-dashed border-border" /> Book Value
               </span>
             </div>
             <ResponsiveContainer width="100%" height={320}>

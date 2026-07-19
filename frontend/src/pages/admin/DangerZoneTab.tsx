@@ -64,7 +64,7 @@ export default function DangerZoneTab() {
 
       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
         <div className="flex items-start gap-2 mb-3">
-          <AlertTriangle className="h-5 w-5 text-red-600 flex-shrink-0 mt-0.5" />
+          <AlertTriangle className="h-5 w-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
           <div>
             <h3 className="font-semibold text-red-800">Danger Zone</h3>
             <p className="text-sm text-red-700 mt-1">These actions are irreversible. Use them to reset test data before loading real data.</p>
@@ -73,7 +73,7 @@ export default function DangerZoneTab() {
       </div>
 
       {result && (
-        <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-700 flex justify-between">
+        <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-600 dark:text-green-400 flex justify-between">
           <span>{result}</span>
           <button onClick={() => setResult(null)}><X className="h-4 w-4" /></button>
         </div>
@@ -81,9 +81,9 @@ export default function DangerZoneTab() {
 
       <div className="space-y-4">
         {/* Delete all transactions */}
-        <div className="border border-red-200 rounded-lg p-4 bg-white">
-          <h4 className="font-medium text-gray-800 mb-1">Delete All Transactions</h4>
-          <p className="text-sm text-gray-500 mb-3">Removes every transaction from every account. Use to reset before loading real data.</p>
+        <div className="border border-red-200 rounded-lg p-4 bg-card">
+          <h4 className="font-medium text-foreground mb-1">Delete All Transactions</h4>
+          <p className="text-sm text-muted-foreground mb-3">Removes every transaction from every account. Use to reset before loading real data.</p>
           <button
             onClick={() => setConfirm({ type: 'all-transactions' })}
             className="bg-red-600 text-white text-sm px-4 py-2 rounded hover:bg-red-700 flex items-center gap-2"
@@ -93,11 +93,11 @@ export default function DangerZoneTab() {
         </div>
 
         {/* Delete transactions by account */}
-        <div className="border border-orange-200 rounded-lg p-4 bg-white">
-          <h4 className="font-medium text-gray-800 mb-1">Delete Transactions for One Account</h4>
-          <p className="text-sm text-gray-500 mb-3">Removes all transactions for a specific account only.</p>
+        <div className="border border-orange-200 rounded-lg p-4 bg-card">
+          <h4 className="font-medium text-foreground mb-1">Delete Transactions for One Account</h4>
+          <p className="text-sm text-muted-foreground mb-3">Removes all transactions for a specific account only.</p>
           <div className="flex gap-3 items-center">
-            <select className="border rounded px-3 py-1.5 text-sm flex-1 max-w-xs" id="danger-account">
+            <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm flex-1 max-w-xs" id="danger-account">
               <option value="">Select account…</option>
               {(accounts as Account[]).map(a => <option key={a.id} value={`${a.id}|${a.name}`}>{a.name}</option>)}
             </select>
@@ -116,9 +116,9 @@ export default function DangerZoneTab() {
         </div>
 
         {/* Delete all imports */}
-        <div className="border border-yellow-200 rounded-lg p-4 bg-white">
-          <h4 className="font-medium text-gray-800 mb-1">Clear Import History</h4>
-          <p className="text-sm text-gray-500 mb-3">Deletes all import batches and raw rows. Does NOT delete committed transactions.</p>
+        <div className="border border-yellow-200 rounded-lg p-4 bg-card">
+          <h4 className="font-medium text-foreground mb-1">Clear Import History</h4>
+          <p className="text-sm text-muted-foreground mb-3">Deletes all import batches and raw rows. Does NOT delete committed transactions.</p>
           <button
             onClick={() => setConfirm({ type: 'all-imports' })}
             className="bg-yellow-600 text-white text-sm px-4 py-2 rounded hover:bg-yellow-700 flex items-center gap-2"

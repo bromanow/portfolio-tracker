@@ -46,16 +46,16 @@ function MiniPie({ data, title, colorMap }: {
 
   if (!display.length) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">{title}</h3>
-        <p className="text-xs text-gray-400">No data</p>
+      <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
+        <p className="text-xs text-muted-foreground">No data</p>
       </div>
     )
   }
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-700 mb-1">{title}</h3>
+    <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground mb-1">{title}</h3>
       <ResponsiveContainer width="100%" height={190}>
         <PieChart>
           <Pie
@@ -87,7 +87,7 @@ function MiniPie({ data, title, colorMap }: {
             iconSize={8}
             iconType="circle"
             formatter={(value: string) => (
-              <span className="text-xs text-gray-600">{value}</span>
+              <span className="text-xs text-muted-foreground">{value}</span>
             )}
           />
         </PieChart>
@@ -105,9 +105,9 @@ function HBarChart({ data, title, colorFn }: {
 }) {
   if (!data.length) {
     return (
-      <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-        <h3 className="text-sm font-semibold text-gray-700 mb-2">{title}</h3>
-        <p className="text-xs text-gray-400">No data</p>
+      <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
+        <h3 className="text-sm font-semibold text-foreground mb-2">{title}</h3>
+        <p className="text-xs text-muted-foreground">No data</p>
       </div>
     )
   }
@@ -116,8 +116,8 @@ function HBarChart({ data, title, colorFn }: {
   const chartHeight = Math.max(160, data.length * 28 + 32)
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4 shadow-sm">
-      <h3 className="text-sm font-semibold text-gray-700 mb-1">{title}</h3>
+    <div className="bg-card rounded-xl border border-border p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-foreground mb-1">{title}</h3>
       <ResponsiveContainer width="100%" height={chartHeight}>
         <BarChart
           data={data}
@@ -173,26 +173,26 @@ export default function PortfolioAnalyticsPanel({ accountIds, asOf }: Props) {
   })
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+    <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
       <div
-        className="px-5 py-3 flex items-center gap-2 cursor-pointer hover:bg-gray-50 select-none"
+        className="px-5 py-3 flex items-center gap-2 cursor-pointer hover:bg-muted/50 select-none"
         onClick={() => setExpanded(e => !e)}
       >
         {expanded
-          ? <ChevronDown className="h-4 w-4 text-gray-400" />
-          : <ChevronRight className="h-4 w-4 text-gray-400" />}
-        <h2 className="font-semibold text-gray-800">Portfolio Analytics</h2>
-        <span className="text-xs text-gray-400">sector · geography · currency · concentration</span>
+          ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+          : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+        <h2 className="font-semibold text-foreground">Portfolio Analytics</h2>
+        <span className="text-xs text-muted-foreground">sector · geography · currency · concentration</span>
       </div>
 
       {expanded && (
-        <div className="border-t border-gray-100 p-5">
+        <div className="border-t border-border p-5">
           {isLoading ? (
             <div className="flex items-center justify-center h-40">
-              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-blue-600" />
+              <div className="animate-spin rounded-full h-6 w-6 border-b-2 border-primary" />
             </div>
           ) : !data ? (
-            <p className="text-gray-400 text-sm">No analytics data.</p>
+            <p className="text-muted-foreground text-sm">No analytics data.</p>
           ) : (
             <div className="space-y-4">
               {/* Row 1: Asset Class + Sector */}

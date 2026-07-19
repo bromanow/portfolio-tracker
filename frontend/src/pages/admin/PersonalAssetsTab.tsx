@@ -47,7 +47,7 @@ function LinkPicker({ assets, value, onChange, excludeId }: {
   return (
     <div className="relative">
       <input
-        className="border border-gray-200 rounded px-2 py-1.5 text-sm w-full"
+        className="bg-background text-foreground border border-border rounded px-2 py-1.5 text-sm w-full"
         placeholder="Search to link an asset/liability…"
         value={selected && !open ? selected.name || '' : q}
         onChange={e => { setQ(e.target.value); setOpen(true); if (value) onChange(null) }}
@@ -55,18 +55,18 @@ function LinkPicker({ assets, value, onChange, excludeId }: {
         onBlur={() => setTimeout(() => setOpen(false), 150)}
       />
       {open && matches.length > 0 && (
-        <div className="absolute z-20 mt-1 max-h-56 overflow-auto bg-white border border-gray-200 rounded shadow-lg w-full">
+        <div className="absolute z-20 mt-1 max-h-56 overflow-auto bg-card border border-border rounded shadow-lg w-full">
           {matches.map(a => (
             <button key={a.security_id} type="button"
               onMouseDown={e => { e.preventDefault(); onChange(a.security_id); setQ(''); setOpen(false) }}
-              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-blue-50 truncate">
-              {a.name} <span className="text-gray-400">— {CLASS_LABELS[a.asset_class]}</span>
+              className="block w-full text-left px-3 py-1.5 text-sm hover:bg-primary/10 truncate">
+              {a.name} <span className="text-muted-foreground">— {CLASS_LABELS[a.asset_class]}</span>
             </button>
           ))}
         </div>
       )}
       {value != null && (
-        <button type="button" onClick={() => onChange(null)} className="text-xs text-gray-400 hover:text-red-500 mt-1">
+        <button type="button" onClick={() => onChange(null)} className="text-xs text-muted-foreground hover:text-red-500 dark:text-red-400 mt-1">
           Clear link
         </button>
       )}
@@ -104,49 +104,49 @@ function IncomeLedger({ securityId }: { securityId: number }) {
   const noi = rent + other - expense
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
+    <div className="bg-muted/50 rounded-lg p-4 space-y-3">
       <div className="flex items-center gap-4 text-sm">
-        <span className="font-semibold text-gray-700">Net Operating Income (all-time):</span>
-        <span className={`font-bold ${noi >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+        <span className="font-semibold text-foreground">Net Operating Income (all-time):</span>
+        <span className={`font-bold ${noi >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
           {noi.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', maximumFractionDigits: 0 })}
         </span>
-        <span className="text-xs text-gray-400">rent {rent.toLocaleString()} + other {other.toLocaleString()} − expenses {expense.toLocaleString()}</span>
+        <span className="text-xs text-muted-foreground">rent {rent.toLocaleString()} + other {other.toLocaleString()} − expenses {expense.toLocaleString()}</span>
       </div>
 
       <div className="flex flex-wrap gap-2 items-end text-xs">
-        <input type="date" className="border rounded px-2 py-1" value={form.entry_date}
+        <input type="date" className="bg-background text-foreground border rounded px-2 py-1" value={form.entry_date}
           onChange={e => setForm(f => ({ ...f, entry_date: e.target.value }))} />
-        <select className="border rounded px-2 py-1" value={form.category}
+        <select className="bg-background text-foreground border rounded px-2 py-1" value={form.category}
           onChange={e => setForm(f => ({ ...f, category: e.target.value as typeof f.category }))}>
           <option value="RENT">Rent</option>
           <option value="EXPENSE">Expense</option>
           <option value="OTHER_INCOME">Other Income</option>
         </select>
-        <input className="border rounded px-2 py-1 w-24" placeholder="Amount" value={form.amount_cad}
+        <input className="bg-background text-foreground border rounded px-2 py-1 w-24" placeholder="Amount" value={form.amount_cad}
           onChange={e => setForm(f => ({ ...f, amount_cad: e.target.value }))} />
-        <input className="border rounded px-2 py-1 flex-1 min-w-[120px]" placeholder="Description" value={form.description}
+        <input className="bg-background text-foreground border rounded px-2 py-1 flex-1 min-w-[120px]" placeholder="Description" value={form.description}
           onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
         <button onClick={() => addMut.mutate()} disabled={!form.amount_cad || addMut.isPending}
-          className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-40">Add</button>
+          className="px-3 py-1 bg-primary text-white rounded disabled:opacity-40">Add</button>
       </div>
 
-      <div className="divide-y divide-gray-200 max-h-48 overflow-auto">
+      <div className="divide-y divide-border max-h-48 overflow-auto">
         {entries.map(e => (
           <div key={e.id} className="flex items-center justify-between py-1.5 text-xs">
             <div className="flex items-center gap-2">
-              <span className="text-gray-400">{e.entry_date}</span>
-              <span className={`px-1.5 py-0.5 rounded ${e.category === 'EXPENSE' ? 'bg-red-100 text-red-600' : 'bg-emerald-100 text-emerald-700'}`}>
+              <span className="text-muted-foreground">{e.entry_date}</span>
+              <span className={`px-1.5 py-0.5 rounded ${e.category === 'EXPENSE' ? 'bg-red-100 text-red-600 dark:text-red-400' : 'bg-emerald-100 text-emerald-700'}`}>
                 {e.category}
               </span>
               <span className="font-medium">{fmtCAD(e.amount_cad)}</span>
-              {e.description && <span className="text-gray-400">{e.description}</span>}
+              {e.description && <span className="text-muted-foreground">{e.description}</span>}
             </div>
-            <button onClick={() => delMut.mutate(e.id)} className="text-gray-300 hover:text-red-500">
+            <button onClick={() => delMut.mutate(e.id)} className="text-muted-foreground/50 hover:text-red-500 dark:text-red-400">
               <Trash2 className="h-3 w-3" />
             </button>
           </div>
         ))}
-        {entries.length === 0 && <p className="text-xs text-gray-400 py-2">No entries yet.</p>}
+        {entries.length === 0 && <p className="text-xs text-muted-foreground py-2">No entries yet.</p>}
       </div>
     </div>
   )
@@ -184,26 +184,26 @@ function ValueHistory({ asset }: { asset: PersonalAsset }) {
   })
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+    <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <Clock className="h-3.5 w-3.5" /> Value History
       </div>
       <div className="flex flex-wrap gap-2 items-end text-xs">
-        <input type="date" className="border rounded px-2 py-1" value={entryDate}
+        <input type="date" className="bg-background text-foreground border rounded px-2 py-1" value={entryDate}
           onChange={e => setEntryDate(e.target.value)} />
-        <input className="border rounded px-2 py-1 w-32" placeholder={`${isLiability ? 'Amount owed' : 'Value'} (${asset.currency})`}
+        <input className="bg-background text-foreground border rounded px-2 py-1 w-32" placeholder={`${isLiability ? 'Amount owed' : 'Value'} (${asset.currency})`}
           value={amount} onChange={e => setAmount(e.target.value)} />
         <button onClick={() => addMut.mutate()} disabled={!amount || addMut.isPending}
-          className="px-3 py-1 bg-blue-600 text-white rounded disabled:opacity-40">Add value point</button>
+          className="px-3 py-1 bg-primary text-white rounded disabled:opacity-40">Add value point</button>
       </div>
-      <div className="divide-y divide-gray-200 max-h-48 overflow-auto">
+      <div className="divide-y divide-border max-h-48 overflow-auto">
         {[...points].reverse().map(p => (
           <div key={p.date} className="flex items-center justify-between py-1.5 text-xs">
-            <span className="text-gray-400">{p.date}</span>
+            <span className="text-muted-foreground">{p.date}</span>
             <span className="font-medium">{p.close_cad != null ? fmtCAD(String(Math.abs(p.close_cad))) : '—'}</span>
           </div>
         ))}
-        {points.length === 0 && <p className="text-xs text-gray-400 py-2">No value history yet.</p>}
+        {points.length === 0 && <p className="text-xs text-muted-foreground py-2">No value history yet.</p>}
       </div>
     </div>
   )
@@ -224,30 +224,30 @@ function StatementUpload({ securityId }: { securityId: number }) {
   })
 
   return (
-    <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-      <div className="flex items-center gap-2 text-sm font-semibold text-gray-700">
+    <div className="bg-muted/50 rounded-lg p-4 space-y-3">
+      <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         <ScanLine className="h-3.5 w-3.5" /> Upload Statement
       </div>
-      <p className="text-xs text-gray-500">
+      <p className="text-xs text-muted-foreground">
         Upload the insurer's statement PDF — fields (contract type, sum insured, death benefit,
         cash surrender value, insured, beneficiary) are extracted automatically and applied to
         this asset, with the statement stored as its attached document.
       </p>
-      <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-blue-600 text-white text-xs font-medium rounded cursor-pointer disabled:opacity-40 w-fit">
+      <label className="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-white text-xs font-medium rounded cursor-pointer disabled:opacity-40 w-fit">
         <Upload className="h-3.5 w-3.5" />
         {parseMut.isPending ? 'Extracting…' : 'Choose PDF'}
-        <input type="file" accept="application/pdf" className="hidden" disabled={parseMut.isPending}
+        <input type="file" accept="application/pdf" className="bg-background text-foreground hidden" disabled={parseMut.isPending}
           onChange={e => { const f = e.target.files?.[0]; if (f) parseMut.mutate(f) }} />
       </label>
       {parseMut.isError && (
-        <p className="text-xs text-red-500">
+        <p className="text-xs text-red-500 dark:text-red-400">
           {(parseMut.error as { response?: { data?: { detail?: string } } })?.response?.data?.detail
             || 'Could not parse this statement.'}
         </p>
       )}
       {result && (
-        <div className="text-xs text-gray-600 bg-white border border-gray-200 rounded p-3 space-y-1">
-          <div className="font-medium text-gray-800">Extracted from statement dated {result.statement_date}:</div>
+        <div className="text-xs text-muted-foreground bg-card border border-border rounded p-3 space-y-1">
+          <div className="font-medium text-foreground">Extracted from statement dated {result.statement_date}:</div>
           {result.contract_type && <div>Contract Type: {result.contract_type}</div>}
           {result.policy_number && <div>Policy Number: {result.policy_number}</div>}
           {result.policy_issue_date && <div>Policy Issue Date: {result.policy_issue_date}</div>}
@@ -332,8 +332,8 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <div>
-        <label className="text-xs text-gray-500">Type</label>
-        <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.assetClass} disabled={lockClass}
+        <label className="text-xs text-muted-foreground">Type</label>
+        <select className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.assetClass} disabled={lockClass}
           onChange={e => set('assetClass', e.target.value as PersonalAssetClass)}>
           {(Object.keys(CLASS_LABELS) as PersonalAssetClass[]).map(c => (
             <option key={c} value={c}>{CLASS_LABELS[c]}</option>
@@ -341,76 +341,76 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
         </select>
       </div>
       <div>
-        <label className="text-xs text-gray-500">Name</label>
-        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.name} onChange={e => set('name', e.target.value)}
+        <label className="text-xs text-muted-foreground">Name</label>
+        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.name} onChange={e => set('name', e.target.value)}
           placeholder={f.assetClass === 'LIABILITY' ? 'e.g. Mortgage - 123 Main St' : 'e.g. 123 Main St'} />
       </div>
       <div>
-        <label className="text-xs text-gray-500">Owner</label>
-        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)} placeholder="Brian" />
+        <label className="text-xs text-muted-foreground">Owner</label>
+        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)} placeholder="Brian" />
       </div>
       <div>
-        <label className="text-xs text-gray-500">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'}</label>
-        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.value} onChange={e => set('value', e.target.value)} placeholder="650000" />
+        <label className="text-xs text-muted-foreground">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'}</label>
+        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.value} onChange={e => set('value', e.target.value)} placeholder="650000" />
       </div>
       <div>
-        <label className="text-xs text-gray-500">Currency</label>
-        <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.currency} onChange={e => set('currency', e.target.value)}>
+        <label className="text-xs text-muted-foreground">Currency</label>
+        <select className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.currency} onChange={e => set('currency', e.target.value)}>
           {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
         </select>
       </div>
       {(f.assetClass === 'REAL_ESTATE' || f.assetClass === 'OTHER_ASSET') && (
         <div>
-          <label className="text-xs text-gray-500">Initial Book Value ({f.currency}, optional)</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.bookValue}
+          <label className="text-xs text-muted-foreground">Initial Book Value ({f.currency}, optional)</label>
+          <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.bookValue}
             onChange={e => set('bookValue', e.target.value)} placeholder="e.g. original purchase price" />
         </div>
       )}
       <div>
-        <label className="text-xs text-gray-500">Acquired / Setup Date</label>
-        <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={f.acquiredDate}
+        <label className="text-xs text-muted-foreground">Acquired / Setup Date</label>
+        <input type="date" className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.acquiredDate}
           onChange={e => set('acquiredDate', e.target.value)} />
       </div>
       <div>
-        <label className="text-xs text-gray-500">Interest Rate % (optional)</label>
-        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.interestRate} onChange={e => set('interestRate', e.target.value)} placeholder="4.5" />
+        <label className="text-xs text-muted-foreground">Interest Rate % (optional)</label>
+        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.interestRate} onChange={e => set('interestRate', e.target.value)} placeholder="4.5" />
       </div>
       <div>
-        <label className="text-xs text-gray-500 flex items-center gap-1"><Link2 className="h-3 w-3" /> Link to existing asset/liability</label>
+        <label className="text-xs text-muted-foreground flex items-center gap-1"><Link2 className="h-3 w-3" /> Link to existing asset/liability</label>
         <LinkPicker assets={assets} value={f.linkedId} onChange={id => set('linkedId', id)} excludeId={excludeId} />
       </div>
 
       {f.assetClass === 'REAL_ESTATE' && (
         <>
           <div>
-            <label className="text-xs text-gray-500">Property Type</label>
-            <select className="border rounded px-2 py-1.5 text-sm w-full" value={f.propertyType} onChange={e => set('propertyType', e.target.value)}>
+            <label className="text-xs text-muted-foreground">Property Type</label>
+            <select className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.propertyType} onChange={e => set('propertyType', e.target.value)}>
               {PROPERTY_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </div>
           <div>
-            <label className="text-xs text-gray-500">Street</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressStreet} onChange={e => set('addressStreet', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Street</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.addressStreet} onChange={e => set('addressStreet', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">City</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressCity} onChange={e => set('addressCity', e.target.value)} />
+            <label className="text-xs text-muted-foreground">City</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.addressCity} onChange={e => set('addressCity', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Province / State</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressProvince} onChange={e => set('addressProvince', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Province / State</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.addressProvince} onChange={e => set('addressProvince', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Postal / ZIP Code</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressPostalCode} onChange={e => set('addressPostalCode', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Postal / ZIP Code</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.addressPostalCode} onChange={e => set('addressPostalCode', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Country</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.addressCountry} onChange={e => set('addressCountry', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Country</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.addressCountry} onChange={e => set('addressCountry', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Zillow Estimate (CAD, optional)</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.zillowEstimate} onChange={e => set('zillowEstimate', e.target.value)}
+            <label className="text-xs text-muted-foreground">Zillow Estimate (CAD, optional)</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.zillowEstimate} onChange={e => set('zillowEstimate', e.target.value)}
               placeholder="Paste from Zillow" />
           </div>
         </>
@@ -419,25 +419,25 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
       {f.assetClass === 'LIFE_INSURANCE' && (
         <>
           <div>
-            <label className="text-xs text-gray-500">Policy Number</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.policyNumber} onChange={e => set('policyNumber', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Policy Number</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.policyNumber} onChange={e => set('policyNumber', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Insurer</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.insurerName} onChange={e => set('insurerName', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Insurer</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.insurerName} onChange={e => set('insurerName', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Type of Contract</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.contractType} onChange={e => set('contractType', e.target.value)}
+            <label className="text-xs text-muted-foreground">Type of Contract</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.contractType} onChange={e => set('contractType', e.target.value)}
               placeholder="e.g. Perspecta - Single Life" />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Insured</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.insuredName} onChange={e => set('insuredName', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Insured</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.insuredName} onChange={e => set('insuredName', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Sum Insured (CAD, optional)</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.sumInsured} onChange={e => set('sumInsured', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Sum Insured (CAD, optional)</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.sumInsured} onChange={e => set('sumInsured', e.target.value)} />
           </div>
         </>
       )}
@@ -445,33 +445,33 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
       {f.assetClass === 'LIABILITY' && (
         <>
           <div>
-            <label className="text-xs text-gray-500">Lender</label>
-            <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.lenderName} onChange={e => set('lenderName', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Lender</label>
+            <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.lenderName} onChange={e => set('lenderName', e.target.value)} />
           </div>
           <div>
-            <label className="text-xs text-gray-500">Maturity Date</label>
-            <input type="date" className="border rounded px-2 py-1.5 text-sm w-full" value={f.maturityDate} onChange={e => set('maturityDate', e.target.value)} />
+            <label className="text-xs text-muted-foreground">Maturity Date</label>
+            <input type="date" className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.maturityDate} onChange={e => set('maturityDate', e.target.value)} />
           </div>
         </>
       )}
 
       <div className="flex items-end gap-2">
-        <label className="flex items-center gap-2 text-xs text-gray-600">
+        <label className="flex items-center gap-2 text-xs text-muted-foreground">
           <input type="checkbox" checked={f.isCorporate} onChange={e => set('isCorporate', e.target.checked)} />
           Held via a corporation
         </label>
       </div>
       {f.isCorporate && (
         <div>
-          <label className="text-xs text-gray-500">Entity Name</label>
-          <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.entityName} onChange={e => set('entityName', e.target.value)}
+          <label className="text-xs text-muted-foreground">Entity Name</label>
+          <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.entityName} onChange={e => set('entityName', e.target.value)}
             placeholder="e.g. Romanow Holdings Inc." />
         </div>
       )}
 
       <div className="sm:col-span-3">
-        <label className="text-xs text-gray-500">Notes</label>
-        <input className="border rounded px-2 py-1.5 text-sm w-full" value={f.notes} onChange={e => set('notes', e.target.value)} />
+        <label className="text-xs text-muted-foreground">Notes</label>
+        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.notes} onChange={e => set('notes', e.target.value)} />
       </div>
     </div>
   )
@@ -518,17 +518,17 @@ function AssetForm({ assets, onCreated }: { assets: PersonalAsset[]; onCreated: 
   })
 
   return (
-    <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
-      <h3 className="font-semibold text-gray-800">Add a personal asset or liability</h3>
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <h3 className="font-semibold text-foreground">Add a personal asset or liability</h3>
       <AssetFields f={f} setF={setF} assets={assets} />
       <button
         onClick={() => createMut.mutate()}
         disabled={!f.name || !f.owner || !f.value || createMut.isPending}
-        className="px-4 py-2 bg-blue-600 text-white text-sm rounded disabled:opacity-40"
+        className="px-4 py-2 bg-primary text-white text-sm rounded disabled:opacity-40"
       >
         {createMut.isPending ? 'Adding…' : 'Add'}
       </button>
-      {createMut.isError && <p className="text-xs text-red-500">Failed to add — check the name isn't already in use.</p>}
+      {createMut.isError && <p className="text-xs text-red-500 dark:text-red-400">Failed to add — check the name isn't already in use.</p>}
     </div>
   )
 }
@@ -551,16 +551,16 @@ function EditForm({ asset, assets, onDone }: { asset: PersonalAsset; assets: Per
   })
 
   return (
-    <div className="bg-blue-50/50 border border-blue-100 rounded-lg p-4 space-y-3 mb-3">
+    <div className="bg-primary/50 border border-primary/10 rounded-lg p-4 space-y-3 mb-3">
       <AssetFields f={f} setF={setF} assets={assets} excludeId={asset.security_id} lockClass />
       <div className="flex items-center gap-2">
         <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-          className="px-4 py-1.5 bg-blue-600 text-white text-sm rounded disabled:opacity-40">
+          className="px-4 py-1.5 bg-primary text-white text-sm rounded disabled:opacity-40">
           {saveMut.isPending ? 'Saving…' : 'Save changes'}
         </button>
-        <button onClick={onDone} className="px-3 py-1.5 text-sm text-gray-500">Cancel</button>
+        <button onClick={onDone} className="px-3 py-1.5 text-sm text-muted-foreground">Cancel</button>
       </div>
-      <p className="text-[11px] text-gray-400">
+      <p className="text-[11px] text-muted-foreground">
         Saving here also records today's value as a new value-history point. To back-date a
         value change, use Value History below instead.
       </p>
@@ -591,28 +591,28 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
     .filter(Boolean).join(', ')
 
   return (
-    <div className="border-b border-gray-100 last:border-0">
+    <div className="border-b border-border last:border-0">
       <div className="flex items-center gap-3 py-3">
-        <button onClick={() => setExpanded(e => !e)} className="text-gray-400 hover:text-gray-600">
+        <button onClick={() => setExpanded(e => !e)} className="text-muted-foreground hover:text-muted-foreground">
           {expanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         </button>
 
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-medium text-gray-800">{asset.name}</span>
-            <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-500">{CLASS_LABELS[asset.asset_class]}</span>
+            <span className="font-medium text-foreground">{asset.name}</span>
+            <span className="text-[10px] px-1.5 py-0.5 rounded bg-accent text-muted-foreground">{CLASS_LABELS[asset.asset_class]}</span>
             {asset.is_corporate && (
               <span className="text-[10px] px-1.5 py-0.5 rounded bg-purple-100 text-purple-700">
                 Held via: {asset.entity_name || 'corporation'}
               </span>
             )}
             {asset.linked_name && (
-              <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-50 text-blue-600 flex items-center gap-1">
+              <span className="text-[10px] px-1.5 py-0.5 rounded bg-primary/10 text-primary flex items-center gap-1">
                 <Link2 className="h-2.5 w-2.5" /> {asset.linked_name}
               </span>
             )}
           </div>
-          <div className="text-xs text-gray-400 mt-0.5">
+          <div className="text-xs text-muted-foreground mt-0.5">
             {asset.owner} · {addressLine || asset.insurer_name || asset.lender_name || ''}
             {asset.zillow_estimate_cad && <> · Zillow est. {fmtCAD(asset.zillow_estimate_cad)}</>}
             {asset.acquired_date && <> · Acquired {asset.acquired_date}</>}
@@ -620,32 +620,32 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
         </div>
 
         <div className="text-right">
-          <div className={`font-semibold ${asset.asset_class === 'LIABILITY' ? 'text-red-500' : 'text-gray-800'}`}>
+          <div className={`font-semibold ${asset.asset_class === 'LIABILITY' ? 'text-red-500 dark:text-red-400' : 'text-foreground'}`}>
             {asset.asset_class === 'LIABILITY' ? '-' : ''}{fmtNative(asset.current_value ? Math.abs(parseFloat(asset.current_value)).toString() : null, asset.currency)}
           </div>
           {asset.currency !== 'CAD' && (
-            <div className="text-[10px] text-gray-400">
+            <div className="text-[10px] text-muted-foreground">
               = {fmtCAD(asset.current_value_cad ? Math.abs(parseFloat(asset.current_value_cad)).toString() : null)}
             </div>
           )}
-          <div className="text-[10px] text-gray-400">{asset.value_updated_at?.slice(0, 10)}</div>
+          <div className="text-[10px] text-muted-foreground">{asset.value_updated_at?.slice(0, 10)}</div>
         </div>
 
         <div className="flex items-center gap-1">
-          <button onClick={() => { setEditing(e => !e); setExpanded(true) }} className="p-1.5 text-gray-400 hover:text-blue-600 rounded" title="Edit">
+          <button onClick={() => { setEditing(e => !e); setExpanded(true) }} className="p-1.5 text-muted-foreground hover:text-primary rounded" title="Edit">
             <Pencil className="h-3.5 w-3.5" />
           </button>
           {asset.original_filename ? (
             <>
               <button onClick={() => openPersonalAssetFile(asset.security_id)} title={asset.original_filename}
-                className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><FileText className="h-3.5 w-3.5" /></button>
-              <button onClick={() => deleteFileMut.mutate()} className="p-1.5 text-gray-300 hover:text-red-500 rounded">
+                className="p-1.5 text-primary hover:bg-primary/10 rounded"><FileText className="h-3.5 w-3.5" /></button>
+              <button onClick={() => deleteFileMut.mutate()} className="p-1.5 text-muted-foreground/50 hover:text-red-500 dark:text-red-400 rounded">
                 <Trash2 className="h-3.5 w-3.5" /></button>
             </>
           ) : (
-            <label className="p-1.5 text-gray-400 hover:text-blue-600 rounded cursor-pointer" title="Upload document">
+            <label className="p-1.5 text-muted-foreground hover:text-primary rounded cursor-pointer" title="Upload document">
               <Upload className="h-3.5 w-3.5" />
-              <input type="file" accept="application/pdf" className="hidden"
+              <input type="file" accept="application/pdf" className="bg-background text-foreground hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) uploadMut.mutate(f) }} />
             </label>
           )}
@@ -656,7 +656,7 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
               }
             }}
             disabled={deleteMut.isPending}
-            className="p-1.5 text-gray-300 hover:text-red-500 rounded disabled:opacity-40"
+            className="p-1.5 text-muted-foreground/50 hover:text-red-500 dark:text-red-400 rounded disabled:opacity-40"
             title="Delete"
           >
             <X className="h-3.5 w-3.5" />
@@ -669,12 +669,12 @@ function AssetRow({ asset, assets }: { asset: PersonalAsset; assets: PersonalAss
           {asset.asset_class === 'REAL_ESTATE' && <IncomeLedger securityId={asset.security_id} />}
           {asset.asset_class === 'LIFE_INSURANCE' && (
             (asset.contract_type || asset.insured_name || asset.sum_insured_cad || asset.death_benefit_cad) && (
-              <div className="bg-gray-50 rounded-lg p-4 text-xs grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {asset.contract_type && <div><div className="text-gray-400">Contract Type</div><div className="font-medium text-gray-800">{asset.contract_type}</div></div>}
-                {asset.insured_name && <div><div className="text-gray-400">Insured</div><div className="font-medium text-gray-800">{asset.insured_name}</div></div>}
-                {asset.beneficiary && <div><div className="text-gray-400">Beneficiary</div><div className="font-medium text-gray-800">{asset.beneficiary}</div></div>}
-                {asset.sum_insured_cad && <div><div className="text-gray-400">Sum Insured</div><div className="font-medium text-gray-800">{fmtCAD(asset.sum_insured_cad)}</div></div>}
-                {asset.death_benefit_cad && <div><div className="text-gray-400">Death Benefit</div><div className="font-medium text-gray-800">{fmtCAD(asset.death_benefit_cad)}</div></div>}
+              <div className="bg-muted/50 rounded-lg p-4 text-xs grid grid-cols-2 sm:grid-cols-3 gap-3">
+                {asset.contract_type && <div><div className="text-muted-foreground">Contract Type</div><div className="font-medium text-foreground">{asset.contract_type}</div></div>}
+                {asset.insured_name && <div><div className="text-muted-foreground">Insured</div><div className="font-medium text-foreground">{asset.insured_name}</div></div>}
+                {asset.beneficiary && <div><div className="text-muted-foreground">Beneficiary</div><div className="font-medium text-foreground">{asset.beneficiary}</div></div>}
+                {asset.sum_insured_cad && <div><div className="text-muted-foreground">Sum Insured</div><div className="font-medium text-foreground">{fmtCAD(asset.sum_insured_cad)}</div></div>}
+                {asset.death_benefit_cad && <div><div className="text-muted-foreground">Death Benefit</div><div className="font-medium text-foreground">{fmtCAD(asset.death_benefit_cad)}</div></div>}
               </div>
             )
           )}
@@ -704,15 +704,15 @@ export default function PersonalAssetsTab() {
     <div className="space-y-5">
       <div className="flex items-start justify-between gap-3">
         <div>
-          <h2 className="text-lg font-semibold text-gray-900">Other Assets and Liabilities</h2>
-          <p className="text-sm text-gray-500">
+          <h2 className="text-lg font-semibold text-foreground">Other Assets and Liabilities</h2>
+          <p className="text-sm text-muted-foreground">
             Real estate, life insurance, and other assets — plus what's owed against them —
             feed the Dashboard's Net Worth figure alongside your investment accounts.
           </p>
         </div>
         <button
           onClick={() => setShowAdd(s => !s)}
-          className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 flex-shrink-0"
+          className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 flex-shrink-0"
         >
           {showAdd ? <X className="h-4 w-4" /> : <Plus className="h-4 w-4" />}
           {showAdd ? 'Cancel' : 'Add'}
@@ -722,11 +722,11 @@ export default function PersonalAssetsTab() {
       <div className="flex gap-4 text-sm">
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">
           <span className="text-emerald-700 font-semibold">{fmtCAD(String(totalAssets))}</span>
-          <span className="text-emerald-600 text-xs ml-1">other assets</span>
+          <span className="text-emerald-600 dark:text-emerald-400 text-xs ml-1">other assets</span>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
-          <span className="text-red-600 font-semibold">-{fmtCAD(String(totalLiabilities))}</span>
-          <span className="text-red-500 text-xs ml-1">liabilities</span>
+          <span className="text-red-600 dark:text-red-400 font-semibold">-{fmtCAD(String(totalLiabilities))}</span>
+          <span className="text-red-500 dark:text-red-400 text-xs ml-1">liabilities</span>
         </div>
       </div>
 
@@ -735,8 +735,8 @@ export default function PersonalAssetsTab() {
       )}
 
       {assets.length === 0 && (
-        <div className="bg-white border border-gray-200 rounded-xl px-5">
-          <p className="text-sm text-gray-400 py-6 text-center">No other assets or liabilities yet.</p>
+        <div className="bg-card border border-border rounded-xl px-5">
+          <p className="text-sm text-muted-foreground py-6 text-center">No other assets or liabilities yet.</p>
         </div>
       )}
 
@@ -745,8 +745,8 @@ export default function PersonalAssetsTab() {
         if (group.length === 0) return null
         return (
           <div key={cls}>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">{CLASS_LABELS[cls]}</h3>
-            <div className="bg-white border border-gray-200 rounded-xl px-5">
+            <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">{CLASS_LABELS[cls]}</h3>
+            <div className="bg-card border border-border rounded-xl px-5">
               {group.map(a => <AssetRow key={a.security_id} asset={a} assets={assets} />)}
             </div>
           </div>

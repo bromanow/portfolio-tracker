@@ -85,49 +85,49 @@ export default function DatePicker({
       <button
         type="button"
         onClick={() => setOpen(o => !o)}
-        className={`flex items-center gap-1.5 border rounded px-2 py-1 text-xs ${className} focus:outline-none focus:ring-1 focus:ring-blue-400 ${
-          highlight ? 'border-blue-400 text-blue-700' : 'border-gray-200 text-gray-600'
+        className={`flex items-center gap-1.5 border rounded px-2 py-1 text-xs ${className} focus:outline-none focus:ring-1 focus:ring-primary/40 ${
+          highlight ? 'border-primary/40 text-primary' : 'border-border text-muted-foreground'
         }`}
       >
-        <CalIcon className="h-3.5 w-3.5 text-gray-400 shrink-0" />
-        <span className={`truncate ${value ? '' : 'text-gray-400'}`}>{value ? fmtDisplay(value) : placeholder}</span>
+        <CalIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+        <span className={`truncate ${value ? '' : 'text-muted-foreground'}`}>{value ? fmtDisplay(value) : placeholder}</span>
         {value && (
           <X
-            className="h-3 w-3 text-gray-300 hover:text-red-500 ml-auto shrink-0"
+            className="h-3 w-3 text-muted-foreground/50 hover:text-red-500 dark:text-red-400 ml-auto shrink-0"
             onClick={e => { e.stopPropagation(); onChange(''); setOpen(false) }}
           />
         )}
       </button>
 
       {open && (
-        <div className="absolute z-30 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 w-60">
+        <div className="absolute z-30 mt-1 bg-card border border-border rounded-lg shadow-lg p-2 w-60">
           <div className="flex items-center justify-between gap-1 mb-2">
-            <button type="button" onClick={() => shiftMonth(-1)} className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100">
+            <button type="button" onClick={() => shiftMonth(-1)} className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-accent">
               <ChevronLeft className="h-4 w-4" />
             </button>
             <div className="flex items-center gap-1">
               <select
                 value={view.m}
                 onChange={e => setView(v => ({ ...v, m: +e.target.value }))}
-                className="text-xs border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="bg-background text-foreground text-xs border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
               >
                 {MONTHS.map((mo, i) => <option key={mo} value={i}>{mo}</option>)}
               </select>
               <select
                 value={view.y}
                 onChange={e => setView(v => ({ ...v, y: +e.target.value }))}
-                className="text-xs border border-gray-200 rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-400"
+                className="bg-background text-foreground text-xs border border-border rounded px-1 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary/40"
               >
                 {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
-            <button type="button" onClick={() => shiftMonth(1)} className="p-1 text-gray-400 hover:text-gray-700 rounded hover:bg-gray-100">
+            <button type="button" onClick={() => shiftMonth(1)} className="p-1 text-muted-foreground hover:text-foreground rounded hover:bg-accent">
               <ChevronRight className="h-4 w-4" />
             </button>
           </div>
 
           <div className="grid grid-cols-7 gap-0.5 text-center">
-            {WD.map(w => <div key={w} className="text-[10px] text-gray-400 font-medium py-0.5">{w}</div>)}
+            {WD.map(w => <div key={w} className="text-[10px] text-muted-foreground font-medium py-0.5">{w}</div>)}
             {cells.map((d, i) => {
               if (d === null) return <div key={i} />
               const isSel = sel && sel.y === view.y && sel.m === view.m && sel.d === d
@@ -140,10 +140,10 @@ export default function DatePicker({
                   disabled={dis}
                   onClick={() => { onChange(iso(view.y, view.m, d)); setOpen(false) }}
                   className={`text-xs rounded py-1 transition-colors ${
-                    isSel ? 'bg-blue-600 text-white font-semibold'
-                      : dis ? 'text-gray-300 cursor-not-allowed'
-                      : isToday ? 'text-blue-600 font-semibold hover:bg-blue-50'
-                      : 'text-gray-700 hover:bg-blue-50'
+                    isSel ? 'bg-primary text-white font-semibold'
+                      : dis ? 'text-muted-foreground/50 cursor-not-allowed'
+                      : isToday ? 'text-primary font-semibold hover:bg-primary/10'
+                      : 'text-foreground hover:bg-primary/10'
                   }`}
                 >
                   {d}
@@ -152,16 +152,16 @@ export default function DatePicker({
             })}
           </div>
 
-          <div className="flex justify-between mt-2 pt-2 border-t border-gray-100">
+          <div className="flex justify-between mt-2 pt-2 border-t border-border">
             <button
               type="button"
               onClick={() => { const t = new Date(); onChange(iso(t.getFullYear(), t.getMonth(), t.getDate())); setOpen(false) }}
-              className="text-[11px] text-blue-600 hover:text-blue-700"
+              className="text-[11px] text-primary hover:text-primary"
             >
               Today
             </button>
             {value && (
-              <button type="button" onClick={() => { onChange(''); setOpen(false) }} className="text-[11px] text-gray-400 hover:text-red-500">
+              <button type="button" onClick={() => { onChange(''); setOpen(false) }} className="text-[11px] text-muted-foreground hover:text-red-500 dark:text-red-400">
                 Clear
               </button>
             )}

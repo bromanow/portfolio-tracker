@@ -28,13 +28,13 @@ const ROW_STATUS_BADGE: Record<string, string> = {
   PENDING:  'bg-yellow-200 text-yellow-800',
   IMPORTED: 'bg-green-200 text-green-800',
   ERROR:    'bg-red-200 text-red-800',
-  SKIPPED:  'bg-gray-200 text-gray-600',
+  SKIPPED:  'bg-accent text-muted-foreground',
 }
 const ROW_BG: Record<string, string> = {
   PENDING:  '',
   IMPORTED: 'bg-green-50/40',
   ERROR:    'bg-red-50/40',
-  SKIPPED:  'bg-gray-50/60 opacity-60',
+  SKIPPED:  'bg-muted/60 opacity-60',
 }
 
 function getRowBg(row: RawRow): string {
@@ -243,25 +243,25 @@ function IBKRFlexPanel() {
   const logDetails = uploadDetails ?? (myConfig?.last_sync_status === 'ok' ? lastSyncDetails : null)
 
   if (isLoading) {
-    return <div className="text-sm text-gray-400 py-6">Loading Flex config…</div>
+    return <div className="text-sm text-muted-foreground py-6">Loading Flex config…</div>
   }
 
   return (
     <div className="space-y-5">
 
       {/* ── Configuration card ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
+      <div className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-4">
         <div className="flex items-center justify-between">
-          <h2 className="font-semibold text-gray-800">Flex Query Configuration</h2>
+          <h2 className="font-semibold text-foreground">Flex Query Configuration</h2>
           {myConfig && !showConfigForm && (
             <div className="flex gap-2 items-center">
               <button onClick={openConfigForm}
-                className="text-sm text-blue-600 border border-blue-300 rounded px-3 py-1 hover:bg-blue-50">
+                className="text-sm text-primary border border-primary/30 rounded px-3 py-1 hover:bg-primary/10">
                 Edit
               </button>
               {!deleteConfirm ? (
                 <button onClick={() => setDeleteConfirm(true)}
-                  className="text-sm text-red-600 border border-red-300 rounded px-3 py-1 hover:bg-red-50">
+                  className="text-sm text-red-600 dark:text-red-400 border border-red-300 rounded px-3 py-1 hover:bg-red-50">
                   Remove
                 </button>
               ) : (
@@ -273,7 +273,7 @@ function IBKRFlexPanel() {
                     {deleteConfigMutation.isPending ? '…' : 'Yes'}
                   </button>
                   <button onClick={() => { setDeleteConfirm(false); setConfigError(null) }}
-                    className="text-gray-600 border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50">
+                    className="text-muted-foreground border border-border rounded px-2 py-0.5 hover:bg-muted/50">
                     No
                   </button>
                 </span>
@@ -286,17 +286,17 @@ function IBKRFlexPanel() {
         {myConfig && !showConfigForm && (
           <div className="grid grid-cols-3 gap-4 text-sm">
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">Query ID</p>
-              <p className="font-mono text-gray-800">{myConfig.query_id}</p>
+              <p className="text-xs text-muted-foreground mb-0.5">Query ID</p>
+              <p className="font-mono text-foreground">{myConfig.query_id}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">Token</p>
-              <p className="font-mono text-gray-500">{myConfig.token_hint}</p>
+              <p className="text-xs text-muted-foreground mb-0.5">Token</p>
+              <p className="font-mono text-muted-foreground">{myConfig.token_hint}</p>
             </div>
             <div>
-              <p className="text-xs text-gray-500 mb-0.5">Auto-sync</p>
+              <p className="text-xs text-muted-foreground mb-0.5">Auto-sync</p>
               <span className={`inline-flex items-center text-xs font-medium px-2 py-0.5 rounded-full ${
-                myConfig.enabled ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'
+                myConfig.enabled ? 'bg-green-100 text-green-600 dark:text-green-400' : 'bg-accent text-muted-foreground'
               }`}>
                 {myConfig.enabled ? '● Enabled' : '○ Disabled'}
               </span>
@@ -306,11 +306,11 @@ function IBKRFlexPanel() {
 
         {/* No config yet → prompt to set up */}
         {!myConfig && !showConfigForm && (
-          <div className="text-sm text-gray-500 space-y-3">
+          <div className="text-sm text-muted-foreground space-y-3">
             <p>Connect to IBKR Flex Query to automatically import your trades, dividends, and other transactions.</p>
             <button
               onClick={() => { setConfigForm({ query_id: '', token: '', enabled: true }); setConfigError(null); setShowConfigForm(true) }}
-              className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700">
+              className="bg-primary text-white rounded-lg px-4 py-2 text-sm hover:bg-primary/90">
               Set Up Flex Query
             </button>
           </div>
@@ -318,59 +318,59 @@ function IBKRFlexPanel() {
 
         {/* Config form (create or edit) */}
         {showConfigForm && (
-          <div className="space-y-3 border-t border-gray-100 pt-4">
+          <div className="space-y-3 border-t border-border pt-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Query ID <span className="text-red-500">*</span>
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Query ID <span className="text-red-500 dark:text-red-400">*</span>
                 </label>
                 <input
                   type="text"
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full font-mono"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full font-mono"
                   value={configForm.query_id}
                   onChange={e => setConfigForm(f => ({ ...f, query_id: e.target.value }))}
                   placeholder="e.g. 123456"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">
-                  Token <span className="text-red-500">*</span>
-                  {myConfig && <span className="ml-1 text-gray-400">(re-enter to update)</span>}
+                <label className="block text-xs text-muted-foreground mb-1">
+                  Token <span className="text-red-500 dark:text-red-400">*</span>
+                  {myConfig && <span className="ml-1 text-muted-foreground">(re-enter to update)</span>}
                 </label>
                 <input
                   type="password"
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full font-mono"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full font-mono"
                   value={configForm.token}
                   onChange={e => setConfigForm(f => ({ ...f, token: e.target.value }))}
                   placeholder={myConfig ? '••••••••••••' : 'Paste token from IBKR'}
                 />
               </div>
             </div>
-            <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
+            <label className="flex items-center gap-2 text-sm text-foreground cursor-pointer select-none">
               <input
                 type="checkbox"
                 checked={configForm.enabled}
                 onChange={e => setConfigForm(f => ({ ...f, enabled: e.target.checked }))}
-                className="rounded"
+                className="bg-background text-foreground rounded"
               />
               Enable automatic nightly sync
             </label>
-            {configError && <p className="text-sm text-red-600">{configError}</p>}
+            {configError && <p className="text-sm text-red-600 dark:text-red-400">{configError}</p>}
             <div className="flex gap-2">
               <button
                 onClick={handleSaveConfig}
                 disabled={saveConfigMutation.isPending}
-                className="bg-blue-600 text-white rounded-lg px-4 py-2 text-sm hover:bg-blue-700 disabled:opacity-50">
+                className="bg-primary text-white rounded-lg px-4 py-2 text-sm hover:bg-primary/90 disabled:opacity-50">
                 {saveConfigMutation.isPending ? 'Saving…' : 'Save'}
               </button>
               <button
                 onClick={() => { setShowConfigForm(false); setConfigError(null) }}
-                className="border border-gray-300 rounded-lg px-4 py-2 text-sm hover:bg-gray-50">
+                className="border border-border rounded-lg px-4 py-2 text-sm hover:bg-muted/50">
                 Cancel
               </button>
             </div>
 
-            <div className="bg-blue-50 border border-blue-200 rounded p-3 text-xs text-blue-800 space-y-1">
+            <div className="bg-primary/10 border border-primary/20 rounded p-3 text-xs text-primary space-y-1">
               <p className="font-semibold">How to find your Query ID and Token:</p>
               <ol className="list-decimal ml-4 space-y-0.5">
                 <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
@@ -385,26 +385,26 @@ function IBKRFlexPanel() {
 
       {/* ── Sync card (only shown if config exists and not editing config) ── */}
       {myConfig && !showConfigForm && (
-        <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm">
+        <div className="bg-card rounded-xl border border-border p-5 shadow-sm">
           <div className="flex items-start justify-between gap-4 flex-wrap">
             <div className="space-y-1">
-              <h2 className="font-semibold text-gray-800">Sync Transactions</h2>
-              <p className="text-xs text-gray-500">
+              <h2 className="font-semibold text-foreground">Sync Transactions</h2>
+              <p className="text-xs text-muted-foreground">
                 Pulls Year-to-Date trades, cash, option events and corporate actions from IBKR.
                 Use "Check Duplicates" in the preview to flag potential duplicates before committing.
               </p>
               {myConfig.last_sync_at && (
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-muted-foreground">
                   Last sync: {new Date(myConfig.last_sync_at).toLocaleString('en-CA', { dateStyle: 'medium', timeStyle: 'short' })}
                   {' · '}
                   {myConfig.last_sync_status === 'ok' && (
-                    <span className="text-emerald-600">{myConfig.last_sync_message}</span>
+                    <span className="text-emerald-600 dark:text-emerald-400">{myConfig.last_sync_message}</span>
                   )}
                   {myConfig.last_sync_status === 'error' && (
-                    <span className="text-red-600">{myConfig.last_sync_message}</span>
+                    <span className="text-red-600 dark:text-red-400">{myConfig.last_sync_message}</span>
                   )}
                   {myConfig.last_sync_status === 'running' && (
-                    <span className="text-blue-600 inline-flex items-center gap-1">
+                    <span className="text-primary inline-flex items-center gap-1">
                       <Loader2 className="h-3 w-3 animate-spin" /> Running…
                     </span>
                   )}
@@ -416,7 +416,7 @@ function IBKRFlexPanel() {
               <button
                 onClick={handleSync}
                 disabled={syncPending}
-                className="flex items-center gap-1.5 text-sm bg-blue-600 text-white rounded-lg px-4 py-2 hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-sm bg-primary text-white rounded-lg px-4 py-2 hover:bg-primary/90 disabled:opacity-50"
               >
                 {syncPending
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Syncing…</>
@@ -432,7 +432,7 @@ function IBKRFlexPanel() {
                   ? <><Loader2 className="h-4 w-4 animate-spin" /> Importing…</>
                   : <><Database className="h-4 w-4" /> Upload XML</>}
               </button>
-              <input ref={xmlInputRef} type="file" accept=".xml" className="hidden" onChange={handleUploadXml} />
+              <input ref={xmlInputRef} type="file" accept=".xml" className="bg-background text-foreground hidden" onChange={handleUploadXml} />
             </div>
           </div>
 
@@ -458,17 +458,17 @@ function IBKRFlexPanel() {
 
       {/* ── Import log ── */}
       {myConfig && !showConfigForm && (logDetails !== null || myConfig.last_sync_status === 'ok') && (
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+        <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
           <button
             onClick={() => setLogOpen(o => !o)}
-            className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+            className="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/50 transition-colors"
           >
             <div className="flex items-center gap-2">
               {logOpen
-                ? <ChevronDown className="h-4 w-4 text-gray-400" />
-                : <ChevronRight className="h-4 w-4 text-gray-400" />}
-              <h2 className="font-semibold text-gray-800">Import Log</h2>
-              <span className="text-xs text-gray-400">
+                ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+              <h2 className="font-semibold text-foreground">Import Log</h2>
+              <span className="text-xs text-muted-foreground">
                 {logDetails && logDetails.length > 0
                   ? `(${logDetails.length} transaction${logDetails.length !== 1 ? 's' : ''} imported)`
                   : '(no new transactions)'}
@@ -477,12 +477,12 @@ function IBKRFlexPanel() {
           </button>
 
           {logOpen && (
-            <div className="border-t border-gray-100">
+            <div className="border-t border-border">
               {logDetails && logDetails.length > 0 ? (
                 <div className="overflow-x-auto max-h-96 overflow-y-auto">
-                  <table className="min-w-full text-xs divide-y divide-gray-100">
-                    <thead className="sticky top-0 bg-gray-50 z-10">
-                      <tr className="text-gray-500 uppercase">
+                  <table className="min-w-full text-xs divide-y divide-border">
+                    <thead className="sticky top-0 bg-muted/50 z-10">
+                      <tr className="text-muted-foreground uppercase">
                         <th className="px-4 py-2 text-left">Date</th>
                         <th className="px-4 py-2 text-left">Account</th>
                         <th className="px-4 py-2 text-left">Type</th>
@@ -492,27 +492,27 @@ function IBKRFlexPanel() {
                         <th className="px-4 py-2 text-left">Ccy</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-50">
+                    <tbody className="divide-y divide-border/60">
                       {logDetails.map((row, i) => (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-1.5 text-gray-600 whitespace-nowrap">{row.date}</td>
-                          <td className="px-4 py-1.5 text-gray-700 max-w-[10rem] truncate" title={row.account}>{row.account}</td>
+                        <tr key={i} className="hover:bg-muted/50">
+                          <td className="px-4 py-1.5 text-muted-foreground whitespace-nowrap">{row.date}</td>
+                          <td className="px-4 py-1.5 text-foreground max-w-[10rem] truncate" title={row.account}>{row.account}</td>
                           <td className="px-4 py-1.5">
-                            <span className="font-mono bg-gray-100 px-1.5 py-0.5 rounded text-gray-700">
+                            <span className="font-mono bg-accent px-1.5 py-0.5 rounded text-foreground">
                               {row.type}
                             </span>
                           </td>
                           <td className="px-4 py-1.5 font-mono font-medium">{row.ticker || '—'}</td>
                           <td className="px-4 py-1.5 text-right tabular-nums">{row.qty || '—'}</td>
                           <td className="px-4 py-1.5 text-right tabular-nums">{row.amount || '—'}</td>
-                          <td className="px-4 py-1.5 text-gray-500">{row.currency}</td>
+                          <td className="px-4 py-1.5 text-muted-foreground">{row.currency}</td>
                         </tr>
                       ))}
                     </tbody>
                   </table>
                 </div>
               ) : (
-                <p className="px-6 py-4 text-sm text-gray-400">
+                <p className="px-6 py-4 text-sm text-muted-foreground">
                   No new transactions were imported — all were duplicates or already up to date.
                 </p>
               )}
@@ -523,7 +523,7 @@ function IBKRFlexPanel() {
 
       {/* How-to hint */}
       {myConfig && !showConfigForm && (
-        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-xs text-blue-800 space-y-1">
+        <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 text-xs text-primary space-y-1">
           <p className="font-semibold">When "Sync Now" fails with a rate-limit error:</p>
           <ol className="list-decimal ml-4 space-y-0.5">
             <li>Log in to <strong>interactivebrokers.com</strong> → Reports → Flex Queries</li>
@@ -597,7 +597,7 @@ function ManualEntryPanel() {
 
   return (
     <div className="space-y-5">
-      <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-sm text-blue-800">
+      <div className="bg-primary/10 border border-primary/20 rounded-xl p-4 text-sm text-primary">
         <p className="font-semibold mb-1">When to use Manual Entry</p>
         <ul className="list-disc ml-4 space-y-0.5 text-xs">
           <li>FX translation adjustments (e.g. year-end unrealized FX position not in Flex XML)</li>
@@ -606,14 +606,14 @@ function ManualEntryPanel() {
         </ul>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 p-5 shadow-sm space-y-4">
-        <h2 className="font-semibold text-gray-800">Create Manual Transaction</h2>
+      <div className="bg-card rounded-xl border border-border p-5 shadow-sm space-y-4">
+        <h2 className="font-semibold text-foreground">Create Manual Transaction</h2>
 
         <div className="grid grid-cols-2 gap-3 text-sm">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Account <span className="text-red-400">*</span></label>
+            <label className="block text-xs text-muted-foreground mb-1">Account <span className="text-red-400">*</span></label>
             <select
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
               value={form.account_id || ''}
               onChange={e => setForm(f => ({ ...f, account_id: e.target.value ? Number(e.target.value) : undefined }))}
             >
@@ -625,16 +625,16 @@ function ManualEntryPanel() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Date <span className="text-red-400">*</span></label>
+            <label className="block text-xs text-muted-foreground mb-1">Date <span className="text-red-400">*</span></label>
             <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
               value={(form.transaction_date as string) || ''}
               onChange={v => setForm(f => ({ ...f, transaction_date: v }))} />
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Type <span className="text-red-400">*</span></label>
+            <label className="block text-xs text-muted-foreground mb-1">Type <span className="text-red-400">*</span></label>
             <select
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
               value={(form.transaction_type as string) || ''}
               onChange={e => setForm(f => ({ ...f, transaction_type: e.target.value }))}
             >
@@ -645,10 +645,10 @@ function ManualEntryPanel() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Ticker (optional)</label>
+            <label className="block text-xs text-muted-foreground mb-1">Ticker (optional)</label>
             <input
               list="manual-tickers"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full uppercase"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full uppercase"
               value={tickerInput}
               onChange={e => {
                 const v = e.target.value.toUpperCase()
@@ -666,9 +666,9 @@ function ManualEntryPanel() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Currency</label>
+            <label className="block text-xs text-muted-foreground mb-1">Currency</label>
             <select
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
               value={currency}
               onChange={e => setForm(f => ({ ...f, transaction_currency: e.target.value }))}
             >
@@ -678,36 +678,36 @@ function ManualEntryPanel() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Amount ({currency}) <span className="text-red-400">*</span></label>
+            <label className="block text-xs text-muted-foreground mb-1">Amount ({currency}) <span className="text-red-400">*</span></label>
             <input
               type="number"
               step="0.01"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
               value={(form.transaction_amount as string) || ''}
               onChange={e => setForm(f => ({ ...f, transaction_amount: e.target.value || undefined }))}
               placeholder="e.g. -5.17"
             />
-            <p className="text-xs text-gray-400 mt-0.5">Use negative values for losses / outflows</p>
+            <p className="text-xs text-muted-foreground mt-0.5">Use negative values for losses / outflows</p>
           </div>
 
           {!isCAD && (
             <>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">FX Rate (USD → CAD)</label>
+                <label className="block text-xs text-muted-foreground mb-1">FX Rate (USD → CAD)</label>
                 <input
                   type="number"
                   step="0.000001"
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                   value={(form.fx_rate_to_cad as string) || ''}
                   onChange={e => setForm(f => ({ ...f, fx_rate_to_cad: e.target.value || undefined, fx_rate_to_account: e.target.value || undefined }))}
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">CAD Amount</label>
+                <label className="block text-xs text-muted-foreground mb-1">CAD Amount</label>
                 <input
                   type="number"
                   step="0.01"
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                   value={(form.cad_amount as string) || ''}
                   onChange={e => setForm(f => ({ ...f, cad_amount: e.target.value || undefined }))}
                 />
@@ -716,10 +716,10 @@ function ManualEntryPanel() {
           )}
 
           <div className="col-span-2">
-            <label className="block text-xs text-gray-500 mb-1">Description</label>
+            <label className="block text-xs text-muted-foreground mb-1">Description</label>
             <input
               type="text"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
               value={(form.raw_description as string) || ''}
               onChange={e => setForm(f => ({ ...f, raw_description: e.target.value || undefined }))}
               placeholder="e.g. FX Translation Gain/Loss 2025-01-01 to 2025-12-31"
@@ -733,7 +733,7 @@ function ManualEntryPanel() {
           </div>
         )}
         {success && (
-          <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-700">
+          <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-600 dark:text-green-400">
             ✓ {success}
           </div>
         )}
@@ -742,7 +742,7 @@ function ManualEntryPanel() {
           <button
             onClick={handleSubmit}
             disabled={createMutation.isPending || !form.account_id || !form.transaction_date || !form.transaction_type || !form.transaction_amount}
-            className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+            className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
           >
             <Plus className="h-4 w-4" />
             {createMutation.isPending ? 'Creating…' : 'Create Transaction'}
@@ -956,11 +956,11 @@ export default function Import() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>
+        <h1 className="text-2xl font-bold text-foreground">Transactions</h1>
         {activeTab === 'csv' && (
           <button
             onClick={() => { setDialogError(null); setDialog({ type: 'delete-all' }) }}
-            className="flex items-center gap-2 text-sm text-red-600 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
+            className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
           >
             <Trash2 className="h-4 w-4" /> Delete All Imports
           </button>
@@ -968,15 +968,15 @@ export default function Import() {
       </div>
 
       {/* ── Tabs ── */}
-      <div className="flex border-b border-gray-200">
+      <div className="flex border-b border-border">
         {(['status', 'csv', 'flex', 'plaid', 'statement', 'manual'] as const).map(tab => (
           <button
             key={tab}
             onClick={() => setActiveTab(tab)}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
               activeTab === tab
-                ? 'border-blue-600 text-blue-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
+                ? 'border-primary text-primary'
+                : 'border-transparent text-muted-foreground hover:text-foreground'
             }`}
           >
             {tab === 'status' ? 'Status' : tab === 'csv' ? 'CSV Upload' : tab === 'flex' ? 'IBKR Flex Query' : tab === 'plaid' ? 'Plaid' : tab === 'statement' ? 'Statements' : 'Manual Entry'}
@@ -991,15 +991,15 @@ export default function Import() {
       {activeTab === 'csv' && (
         <>
           {/* Upload zone */}
-          <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm space-y-4">
-            <h2 className="font-semibold text-gray-800">Upload CSV File</h2>
+          <div className="bg-card rounded-xl border border-border p-6 shadow-sm space-y-4">
+            <h2 className="font-semibold text-foreground">Upload CSV File</h2>
 
             {/* Brokerage + Account selectors */}
             <div className="flex flex-wrap items-center gap-3">
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 whitespace-nowrap">Brokerage:</label>
+                <label className="text-sm text-muted-foreground whitespace-nowrap">Brokerage:</label>
                 <select
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm"
                   value={selectedBrokerageId ?? ''}
                   onChange={e => handleBrokerageChange(e.target.value ? Number(e.target.value) : undefined)}
                 >
@@ -1011,9 +1011,9 @@ export default function Import() {
               </div>
 
               <div className="flex items-center gap-2">
-                <label className="text-sm text-gray-600 whitespace-nowrap">Account:</label>
+                <label className="text-sm text-muted-foreground whitespace-nowrap">Account:</label>
                 <select
-                  className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+                  className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm"
                   value={selectedAccountId ?? ''}
                   onChange={e => setSelectedAccountId(e.target.value ? Number(e.target.value) : undefined)}
                 >
@@ -1035,7 +1035,7 @@ export default function Import() {
                   ? `${acct.brokerage_name} · ${acct.name}`
                   : brok ? brok.name : ''
                 return label ? (
-                  <span className="text-xs bg-blue-50 border border-blue-200 text-blue-700 px-2 py-1 rounded">
+                  <span className="text-xs bg-primary/10 border border-primary/20 text-primary px-2 py-1 rounded">
                     ✓ {label}
                   </span>
                 ) : null
@@ -1045,29 +1045,29 @@ export default function Import() {
             <div
               {...getRootProps()}
               className={`border-2 border-dashed rounded-xl p-10 text-center cursor-pointer transition-colors ${
-                isDragActive ? 'border-blue-400 bg-blue-50' : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+                isDragActive ? 'border-primary/40 bg-primary/10' : 'border-border hover:border-primary/40 hover:bg-primary/10'
               }`}
             >
               <input {...getInputProps()} />
-              <Upload className="h-10 w-10 text-gray-400 mx-auto mb-3" />
-              <p className="text-gray-600 font-medium">
+              <Upload className="h-10 w-10 text-muted-foreground mx-auto mb-3" />
+              <p className="text-muted-foreground font-medium">
                 {isDragActive ? 'Drop the file here' : 'Drag & drop a CSV file here, or click to select'}
               </p>
-              <p className="text-xs text-gray-400 mt-2">
+              <p className="text-xs text-muted-foreground mt-2">
                 Supports Scotia iTrade, Scotia Wealth and Interactive Brokers transaction history formats
               </p>
-              <p className="text-xs text-blue-500 mt-1">
+              <p className="text-xs text-primary/70 mt-1">
                 For IBKR multi-account files: leave account as "Auto-detect" and set the IB Alias on each account in Admin → Accounts to match the alias names used in the CSV (e.g. "Brian TFSA"). Rows with unrecognized aliases are skipped automatically.
               </p>
             </div>
             {uploadMutation.isPending && (
-              <div className="text-blue-600 text-sm flex items-center gap-2">
-                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-blue-600" />
+              <div className="text-primary text-sm flex items-center gap-2">
+                <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-primary" />
                 Uploading and parsing...
               </div>
             )}
             {uploadError && (
-              <div className="text-red-600 text-sm bg-red-50 rounded p-3 flex items-center gap-2">
+              <div className="text-red-600 dark:text-red-400 text-sm bg-red-50 rounded p-3 flex items-center gap-2">
                 <AlertCircle className="h-4 w-4 shrink-0" />{uploadError}
               </div>
             )}
@@ -1080,18 +1080,18 @@ export default function Import() {
           </div>
 
           {/* Import history — collapsible */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
             <button
               onClick={() => setHistoryOpen(o => !o)}
-              className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50 transition-colors"
+              className="w-full flex items-center justify-between px-6 py-4 hover:bg-muted/50 transition-colors"
             >
               <div className="flex items-center gap-2">
                 {historyOpen
-                  ? <ChevronDown className="h-4 w-4 text-gray-400" />
-                  : <ChevronRight className="h-4 w-4 text-gray-400" />}
-                <h2 className="font-semibold text-gray-800">Import History</h2>
+                  ? <ChevronDown className="h-4 w-4 text-muted-foreground" />
+                  : <ChevronRight className="h-4 w-4 text-muted-foreground" />}
+                <h2 className="font-semibold text-foreground">Import History</h2>
                 {!historyOpen && visibleImports.length > 0 && (
-                  <span className="text-xs text-gray-400">
+                  <span className="text-xs text-muted-foreground">
                     ({visibleImports.length} batch{visibleImports.length !== 1 ? 'es' : ''}
                     {(selectedBrokerageId || selectedAccountId) ? ', filtered' : ''})
                   </span>
@@ -1100,18 +1100,18 @@ export default function Import() {
             </button>
 
             {historyOpen && (
-              <div className="px-6 pb-5 border-t border-gray-100">
+              <div className="px-6 pb-5 border-t border-border">
                 {isLoading ? (
-                  <div className="text-gray-400 text-sm py-4">Loading...</div>
+                  <div className="text-muted-foreground text-sm py-4">Loading...</div>
                 ) : visibleImports.length === 0 ? (
-                  <p className="text-gray-400 text-sm py-4">
+                  <p className="text-muted-foreground text-sm py-4">
                     {(selectedBrokerageId || selectedAccountId) ? 'No imports match the current filter.' : 'No imports yet.'}
                   </p>
                 ) : (
                   <div className="overflow-x-auto mt-4">
-                    <table className="min-w-full text-sm divide-y divide-gray-100">
+                    <table className="min-w-full text-sm divide-y divide-border">
                       <thead>
-                        <tr className="text-xs text-gray-500 uppercase">
+                        <tr className="text-xs text-muted-foreground uppercase">
                           <th className="pb-2 text-left">File</th>
                           <th className="pb-2 text-left">Date</th>
                           <th className="pb-2 text-center">Rows</th>
@@ -1121,16 +1121,16 @@ export default function Import() {
                           <th className="pb-2 text-center">Actions</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-gray-50">
+                      <tbody className="divide-y divide-border/60">
                         {visibleImports.map(batch => (
-                          <tr key={batch.id} className="hover:bg-gray-50">
-                            <td className="py-2 pr-4 font-medium text-gray-800">{batch.filename}</td>
-                            <td className="py-2 pr-4 text-gray-500">{new Date(batch.import_date).toLocaleDateString()}</td>
+                          <tr key={batch.id} className="hover:bg-muted/50">
+                            <td className="py-2 pr-4 font-medium text-foreground">{batch.filename}</td>
+                            <td className="py-2 pr-4 text-muted-foreground">{new Date(batch.import_date).toLocaleDateString()}</td>
                             <td className="py-2 text-center">{batch.row_count}</td>
                             <td className="py-2 text-center text-green-600 font-medium">{batch.imported_count}</td>
-                            <td className="py-2 text-center text-red-600 font-medium">{batch.error_count}</td>
+                            <td className="py-2 text-center text-red-600 dark:text-red-400 font-medium">{batch.error_count}</td>
                             <td className="py-2 text-center">
-                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[batch.status] || 'bg-gray-100 text-gray-600'}`}>
+                              <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[batch.status] || 'bg-accent text-muted-foreground'}`}>
                                 {batch.status}
                               </span>
                             </td>
@@ -1138,7 +1138,7 @@ export default function Import() {
                               <div className="flex items-center justify-center gap-2">
                                 <button
                                   onClick={() => setPreviewBatchId(previewBatchId === batch.id ? null : batch.id)}
-                                  className="text-blue-600 hover:text-blue-800 flex items-center gap-1 text-xs"
+                                  className="text-primary hover:text-primary flex items-center gap-1 text-xs"
                                 >
                                   <Eye className="h-3.5 w-3.5" />
                                   {previewBatchId === batch.id ? 'Hide' : 'Preview'}
@@ -1163,7 +1163,7 @@ export default function Import() {
                                     </button>
                                     <button
                                       onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
-                                      className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
+                                      className="text-red-500 dark:text-red-400 hover:text-red-700 flex items-center gap-1 text-xs">
                                       <Trash2 className="h-3.5 w-3.5" /> Delete
                                     </button>
                                   </>
@@ -1171,7 +1171,7 @@ export default function Import() {
                                 {batch.status === 'REJECTED' && (
                                   <button
                                     onClick={() => { setDialogError(null); setDialog({ type: 'delete-batch', batchId: batch.id, label: batch.filename }) }}
-                                    className="text-red-500 hover:text-red-700 flex items-center gap-1 text-xs">
+                                    className="text-red-500 dark:text-red-400 hover:text-red-700 flex items-center gap-1 text-xs">
                                     <Trash2 className="h-3.5 w-3.5" /> Delete
                                   </button>
                                 )}
@@ -1189,21 +1189,21 @@ export default function Import() {
 
           {/* ── Preview / Edit panel ── */}
           {previewBatchId && preview && (
-            <div className="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+            <div className="bg-card rounded-xl border border-border p-6 shadow-sm">
               {/* Header */}
               <div className="flex items-center justify-between mb-4">
                 <div className="flex items-center gap-3">
-                  <h2 className="font-semibold text-gray-800">Preview: {preview.filename}</h2>
-                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[preview.status] || 'bg-gray-100 text-gray-600'}`}>
+                  <h2 className="font-semibold text-foreground">Preview: {preview.filename}</h2>
+                  <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${STATUS_COLORS[preview.status] || 'bg-accent text-muted-foreground'}`}>
                     {preview.status}
                   </span>
                 </div>
                 <div className="flex gap-2 items-center">
                   <div className="flex gap-1.5 text-xs">
-                    {pending  > 0 && <span className="bg-yellow-100 text-yellow-700 px-2 py-1 rounded">{pending} pending</span>}
+                    {pending  > 0 && <span className="bg-yellow-100 text-yellow-700 dark:text-yellow-400 px-2 py-1 rounded">{pending} pending</span>}
                     {errors   > 0 && <span className="bg-red-100 text-red-700 px-2 py-1 rounded">{errors} errors</span>}
-                    {skipped  > 0 && <span className="bg-gray-100 text-gray-600 px-2 py-1 rounded">{skipped} skipped</span>}
-                    {imported > 0 && <span className="bg-green-100 text-green-700 px-2 py-1 rounded">{imported} imported</span>}
+                    {skipped  > 0 && <span className="bg-accent text-muted-foreground px-2 py-1 rounded">{skipped} skipped</span>}
+                    {imported > 0 && <span className="bg-green-100 text-green-600 dark:text-green-400 px-2 py-1 rounded">{imported} imported</span>}
                   </div>
                   {preview.status === 'PENDING' && (
                     <>
@@ -1250,9 +1250,9 @@ export default function Import() {
 
               {/* Row table */}
               <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
-                <table className="min-w-full text-xs divide-y divide-gray-100">
-                  <thead className="sticky top-0 bg-white shadow-sm z-10">
-                    <tr className="text-gray-500 uppercase">
+                <table className="min-w-full text-xs divide-y divide-border">
+                  <thead className="sticky top-0 bg-card shadow-sm z-10">
+                    <tr className="text-muted-foreground uppercase">
                       <th className="pb-2 px-2 text-left">#</th>
                       <th className="pb-2 px-2 text-left">Date</th>
                       <th className="pb-2 px-2 text-left">Account</th>
@@ -1269,16 +1269,16 @@ export default function Import() {
                     {rows.map(row => {
                       const isDuplicate = row.status === 'PENDING' && row.error_message === 'Duplicate transaction'
                       return (
-                        <tr key={row.id} className={`${getRowBg(row)} border-b border-gray-100`}>
-                          <td className="px-2 py-1.5 text-gray-400">{row.row_number}</td>
+                        <tr key={row.id} className={`${getRowBg(row)} border-b border-border`}>
+                          <td className="px-2 py-1.5 text-muted-foreground">{row.row_number}</td>
                           <td className="px-2 py-1.5">{(row.raw_data.transaction_date as string) || row.parsed_date || '—'}</td>
                           <td className="px-2 py-1.5 max-w-[10rem]">
                             {row.resolved_account_name ? (
-                              <span className="text-gray-800 truncate block" title={row.resolved_account_name}>
+                              <span className="text-foreground truncate block" title={row.resolved_account_name}>
                                 {row.resolved_account_name}
                               </span>
                             ) : (row.raw_data.account_name as string) ? (
-                              <span className="text-gray-500 truncate block" title={(row.raw_data.account_name as string)}>
+                              <span className="text-muted-foreground truncate block" title={(row.raw_data.account_name as string)}>
                                 {row.raw_data.account_name as string}
                               </span>
                             ) : '—'}
@@ -1295,12 +1295,12 @@ export default function Import() {
                                 DUPLICATE
                               </span>
                             ) : (
-                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ROW_STATUS_BADGE[row.status] || 'bg-gray-200 text-gray-600'}`}>
+                              <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${ROW_STATUS_BADGE[row.status] || 'bg-accent text-muted-foreground'}`}>
                                 {row.status}
                               </span>
                             )}
                           </td>
-                          <td className="px-2 py-1.5 text-red-600 max-w-xs truncate">
+                          <td className="px-2 py-1.5 text-red-600 dark:text-red-400 max-w-xs truncate">
                             {isDuplicate ? '' : (row.error_message || '')}
                           </td>
                           {preview.status === 'PENDING' && (
@@ -1308,7 +1308,7 @@ export default function Import() {
                               <div className="flex items-center justify-center gap-1.5">
                                 {row.status !== 'IMPORTED' && (
                                   <button onClick={() => openEdit(row)}
-                                    className="text-gray-400 hover:text-blue-600" title="Edit row">
+                                    className="text-muted-foreground hover:text-primary" title="Edit row">
                                     <Edit2 className="h-3.5 w-3.5" />
                                   </button>
                                 )}
@@ -1320,12 +1320,12 @@ export default function Import() {
                                   </button>
                                 ) : row.status === 'SKIPPED' ? (
                                   <button onClick={() => restoreRow(row)}
-                                    className="text-gray-400 hover:text-green-600" title="Restore to pending">
+                                    className="text-muted-foreground hover:text-green-600" title="Restore to pending">
                                     <RotateCcw className="h-3.5 w-3.5" />
                                   </button>
                                 ) : row.status !== 'IMPORTED' ? (
                                   <button onClick={() => skipRow(row)}
-                                    className="text-gray-400 hover:text-orange-500" title="Skip this row">
+                                    className="text-muted-foreground hover:text-orange-500" title="Skip this row">
                                     <SkipForward className="h-3.5 w-3.5" />
                                   </button>
                                 ) : null}
@@ -1356,21 +1356,21 @@ export default function Import() {
       {/* ── Row Edit Modal ── */}
       {editRow && editFields && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
-            <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
+          <div className="bg-card rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-border">
               <div>
-                <h3 className="font-semibold text-gray-900">Edit Row #{editRow.row_number}</h3>
-                <p className="text-xs text-gray-500 mt-0.5">Changes will be applied before committing the import</p>
+                <h3 className="font-semibold text-foreground">Edit Row #{editRow.row_number}</h3>
+                <p className="text-xs text-muted-foreground mt-0.5">Changes will be applied before committing the import</p>
               </div>
               <button onClick={() => { setEditRow(null); setEditFields(null); setEditError(null) }}
-                className="text-gray-400 hover:text-gray-600">
+                className="text-muted-foreground hover:text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
 
             <div className="flex gap-0 flex-1 min-h-0 overflow-hidden">
-              <div className="w-2/5 border-r border-gray-200 overflow-y-auto p-5 bg-gray-50">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+              <div className="w-2/5 border-r border-border overflow-y-auto p-5 bg-muted/50">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-3">
                   Original CSV Data
                 </h4>
                 <dl className="space-y-1.5">
@@ -1378,31 +1378,31 @@ export default function Import() {
                     .filter(([, v]) => v !== null && v !== undefined && v !== '')
                     .map(([k, v]) => (
                       <div key={k} className="flex gap-2 text-xs">
-                        <dt className={`shrink-0 font-medium w-36 truncate ${EDIT_KEYS.has(k) ? 'text-blue-600' : 'text-gray-500'}`}
+                        <dt className={`shrink-0 font-medium w-36 truncate ${EDIT_KEYS.has(k) ? 'text-primary' : 'text-muted-foreground'}`}
                           title={k}>{k}</dt>
-                        <dd className="text-gray-700 break-all">{fmtRawValue(v)}</dd>
+                        <dd className="text-foreground break-all">{fmtRawValue(v)}</dd>
                       </div>
                     ))}
                 </dl>
-                <p className="text-xs text-blue-600 mt-4">
+                <p className="text-xs text-primary mt-4">
                   <span className="font-medium">Blue fields</span> are editable on the right.
                 </p>
               </div>
 
               <div className="flex-1 overflow-y-auto p-5 space-y-4">
-                <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                <h4 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                   Edit Mapped Fields
                 </h4>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Transaction Date</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Transaction Date</label>
                     <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
                       value={editFields.transaction_date || ''}
                       onChange={v => setEditFields(f => f && ({ ...f, transaction_date: v }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Transaction Type</label>
-                    <select className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Transaction Type</label>
+                    <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.transaction_type}
                       onChange={e => setEditFields(f => f && ({ ...f, transaction_type: e.target.value }))}>
                       <option value="">— select —</option>
@@ -1410,10 +1410,10 @@ export default function Import() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Ticker / Security</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Ticker / Security</label>
                     <input
                       list="ticker-list"
-                      className="border rounded px-3 py-1.5 text-sm w-full uppercase"
+                      className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full uppercase"
                       value={editFields.ticker}
                       onChange={e => setEditFields(f => f && ({ ...f, ticker: e.target.value.toUpperCase() }))}
                       placeholder="e.g. AAPL"
@@ -1425,8 +1425,8 @@ export default function Import() {
                     </datalist>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Account Override</label>
-                    <select className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Account Override</label>
+                    <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.account_id}
                       onChange={e => setEditFields(f => f && ({ ...f, account_id: e.target.value }))}>
                       <option value="">— use batch default —</option>
@@ -1436,38 +1436,38 @@ export default function Import() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Quantity</label>
-                    <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+                    <input type="number" step="any" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.quantity}
                       onChange={e => setEditFields(f => f && ({ ...f, quantity: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Price per Unit</label>
-                    <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Price per Unit</label>
+                    <input type="number" step="any" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.price}
                       onChange={e => setEditFields(f => f && ({ ...f, price: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Settlement Amount (iTrade)</label>
-                    <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Settlement Amount (iTrade)</label>
+                    <input type="number" step="any" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.settlement_amount}
                       onChange={e => setEditFields(f => f && ({ ...f, settlement_amount: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Net Amount (IBKR)</label>
-                    <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Net Amount (IBKR)</label>
+                    <input type="number" step="any" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.net_amount}
                       onChange={e => setEditFields(f => f && ({ ...f, net_amount: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Commission</label>
-                    <input type="number" step="any" className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Commission</label>
+                    <input type="number" step="any" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.commission}
                       onChange={e => setEditFields(f => f && ({ ...f, commission: e.target.value }))} />
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Transaction Currency</label>
-                    <select className="border rounded px-3 py-1.5 text-sm w-full"
+                    <label className="block text-xs text-muted-foreground mb-1">Transaction Currency</label>
+                    <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                       value={editFields.transaction_currency}
                       onChange={e => setEditFields(f => f && ({ ...f, transaction_currency: e.target.value }))}>
                       <option>CAD</option>
@@ -1483,16 +1483,16 @@ export default function Import() {
               </div>
             </div>
 
-            <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-200 bg-gray-50">
+            <div className="flex justify-end gap-3 px-6 py-4 border-t border-border bg-muted/50">
               <button
                 onClick={() => { setEditRow(null); setEditFields(null); setEditError(null) }}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-100">
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-accent">
                 Cancel
               </button>
               <button
                 onClick={saveEdit}
                 disabled={rowMutation.isPending}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
                 {rowMutation.isPending ? 'Saving…' : 'Save Changes'}
               </button>
             </div>
@@ -1503,17 +1503,17 @@ export default function Import() {
       {/* ── Batch Confirm Modal ── */}
       {dialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-6 w-6 text-red-500 mt-0.5 shrink-0" />
+              <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
               <div className="flex-1 space-y-2">
-                <h3 className="font-semibold text-gray-900">
+                <h3 className="font-semibold text-foreground">
                   {dialog.type === 'delete-all' ? 'Delete All Import History' :
                    dialog.type === 'reject-batch' ? 'Reject Import' : 'Delete Import Batch'}
                 </h3>
                 {dialog.type === 'delete-all' ? (
                   <div className="space-y-2">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       Permanently deletes all import batches and raw rows. Committed transactions are not affected.
                     </p>
                     <div className="bg-red-50 border border-red-200 rounded p-3 text-sm text-red-700 font-medium">
@@ -1521,9 +1521,9 @@ export default function Import() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600">
+                  <p className="text-sm text-muted-foreground">
                     {dialog.type === 'reject-batch' ? 'Mark' : 'Permanently delete'} import batch:{' '}
-                    <span className="font-medium text-gray-800">{dialog.label}</span>?
+                    <span className="font-medium text-foreground">{dialog.label}</span>?
                     {dialog.type === 'delete-batch' && ' This cannot be undone.'}
                   </p>
                 )}
@@ -1536,7 +1536,7 @@ export default function Import() {
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button onClick={() => { setDialog(null); setDialogError(null) }}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50">
                 Cancel
               </button>
               <button

@@ -80,11 +80,11 @@ export default function ReturnDetailReport() {
   }
 
   function rPctCls(v: number | null | undefined) {
-    if (v === null || v === undefined) return 'text-gray-400'
+    if (v === null || v === undefined) return 'text-muted-foreground'
     if (v >= 10) return 'text-emerald-700 font-bold'
-    if (v >= 0)  return 'text-emerald-600 font-semibold'
-    if (v >= -10) return 'text-red-500 font-semibold'
-    return 'text-red-600 font-bold'
+    if (v >= 0)  return 'text-emerald-600 dark:text-emerald-400 font-semibold'
+    if (v >= -10) return 'text-red-500 dark:text-red-400 font-semibold'
+    return 'text-red-600 dark:text-red-400 font-bold'
   }
 
   // Annualized return from a period return % and date range
@@ -138,70 +138,70 @@ export default function ReturnDetailReport() {
       {/* Controls */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Period</label>
+          <label className="block text-xs text-muted-foreground mb-1">Period</label>
           <div className="flex gap-1">
             {(['YTD', '1Y', '3Y'] as ReturnDetailPreset[]).map(p => (
               <button key={p} onClick={() => applyPreset(p)}
-                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${preset === p ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${preset === p ? 'bg-primary text-white' : 'bg-accent text-muted-foreground hover:bg-accent'}`}>
                 {p}
               </button>
             ))}
             <button onClick={() => setPreset('custom')}
-              className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${preset === 'custom' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+              className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${preset === 'custom' ? 'bg-primary text-white' : 'bg-accent text-muted-foreground hover:bg-accent'}`}>
               Custom
             </button>
           </div>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">From</label>
+          <label className="block text-xs text-muted-foreground mb-1">From</label>
           <DatePicker value={fromDate || ''} onChange={v => { setFromDate(v); setPreset('custom') }}
             max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!fromDate} className="w-36" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">To</label>
+          <label className="block text-xs text-muted-foreground mb-1">To</label>
           <DatePicker value={toDate || ''} onChange={v => { setToDate(v); setPreset('custom') }}
             max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!toDate} className="w-36" />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Brokerage</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={brokerageFilter} onChange={e => setBrokerageFilter(e.target.value)}>
+          <label className="block text-xs text-muted-foreground mb-1">Brokerage</label>
+          <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={brokerageFilter} onChange={e => setBrokerageFilter(e.target.value)}>
             <option value="">All brokerages</option>
             {brokerages.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Type</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+          <label className="block text-xs text-muted-foreground mb-1">Type</label>
+          <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
             <option value="">All types</option>
             {types.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Search</label>
+          <label className="block text-xs text-muted-foreground mb-1">Search</label>
           <input type="text" placeholder="Account name…" value={nameFilter} onChange={e => setNameFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-36" />
+            className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm w-36" />
         </div>
       </div>
 
       {/* Formula toggle */}
       <div>
         <button onClick={() => setShowFormula(v => !v)}
-          className="text-xs text-blue-600 hover:text-blue-800 flex items-center gap-1">
+          className="text-xs text-primary hover:text-primary flex items-center gap-1">
           {showFormula ? <ChevronDown className="h-3 w-3" /> : <ChevronRight className="h-3 w-3" />}
           How is total return calculated?
         </button>
         {showFormula && (
-          <div className="mt-2 bg-blue-50 border border-blue-100 rounded-lg p-4 text-xs text-gray-700 space-y-2">
-            <p className="font-semibold text-blue-800">Modified Dietz Return (industry standard)</p>
-            <div className="font-mono bg-white border border-blue-100 rounded p-3 text-gray-800 leading-relaxed text-xs">
-              <p className="font-semibold text-gray-500 mb-1">Numerator (Total Gain):</p>
+          <div className="mt-2 bg-primary/10 border border-primary/10 rounded-lg p-4 text-xs text-foreground space-y-2">
+            <p className="font-semibold text-primary">Modified Dietz Return (industry standard)</p>
+            <div className="font-mono bg-card border border-primary/10 rounded p-3 text-foreground leading-relaxed text-xs">
+              <p className="font-semibold text-muted-foreground mb-1">Numerator (Total Gain):</p>
               <p>  (End Value − Start Value) − Net Flows + Period Income</p>
-              <p className="mt-2 font-semibold text-gray-500">Denominator (Effective Capital):</p>
+              <p className="mt-2 font-semibold text-muted-foreground">Denominator (Effective Capital):</p>
               <p>  Start Value + Σ (weight_i × flow_i)</p>
-              <p className="text-gray-400 text-xs">  where weight_i = days remaining in period / total period days</p>
-              <p className="mt-2 border-t border-gray-100 pt-2 font-semibold">Return %  =  Total Gain ÷ Effective Capital × 100</p>
+              <p className="text-muted-foreground text-xs">  where weight_i = days remaining in period / total period days</p>
+              <p className="mt-2 border-t border-border pt-2 font-semibold">Return %  =  Total Gain ÷ Effective Capital × 100</p>
             </div>
-            <p className="text-gray-500 text-xs">
+            <p className="text-muted-foreground text-xs">
               Net Flows = total contributions minus withdrawals during the period.
               By weighting flows by how long they were invested, the return correctly reflects
               performance per dollar regardless of when money was added or withdrawn.
@@ -216,13 +216,13 @@ export default function ReturnDetailReport() {
       </div>
 
       {isLoading
-        ? <div className="flex justify-center py-16"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
+        ? <div className="flex justify-center py-16"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-primary" /></div>
         : (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm divide-y divide-gray-100">
-                <thead className="bg-gray-50">
-                  <tr className="text-xs text-gray-500 uppercase">
+              <table className="min-w-full text-sm divide-y divide-border">
+                <thead className="bg-muted/50">
+                  <tr className="text-xs text-muted-foreground uppercase">
                     <SortTh label="Account"          col="account_name"       sort={sort} toggle={toggle} className="px-4 py-2.5 text-left" />
                     <SortTh label="Brokerage"        col="brokerage"          sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
                     <SortTh label="Type"             col="account_type"       sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
@@ -232,35 +232,35 @@ export default function ReturnDetailReport() {
                     <SortTh label="Income"           col="period_income"      sort={sort} toggle={toggle} className="px-3 py-2.5 text-right" />
                     <SortTh label="Gain (MD)"        col="total_gain"         sort={sort} toggle={toggle} className="px-3 py-2.5 text-right" />
                     <SortTh label="Return %"         col="return_pct"         sort={sort} toggle={toggle} className="px-3 py-2.5 text-right" />
-                    <th className="px-3 py-2.5 text-right text-xs text-gray-500 uppercase font-medium whitespace-nowrap" title="Annualized return (only shown for periods ≥ 1 year)">Ann. %</th>
-                    <th className="px-3 py-2.5 text-left text-xs text-gray-400 font-normal whitespace-nowrap">Composition</th>
+                    <th className="px-3 py-2.5 text-right text-xs text-muted-foreground uppercase font-medium whitespace-nowrap" title="Annualized return (only shown for periods ≥ 1 year)">Ann. %</th>
+                    <th className="px-3 py-2.5 text-left text-xs text-muted-foreground font-normal whitespace-nowrap">Composition</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-100">
+                <tbody className="divide-y divide-border">
                   {sorted.length === 0 && (
-                    <tr><td colSpan={12} className="px-4 py-8 text-center text-gray-400">No data for selected period.</td></tr>
+                    <tr><td colSpan={12} className="px-4 py-8 text-center text-muted-foreground">No data for selected period.</td></tr>
                   )}
                   {sorted.map(r => (
-                    <tr key={r.account_ids.join('-')} className="hover:bg-gray-50">
-                      <td className="px-4 py-2 font-medium text-gray-800 whitespace-nowrap">{r.account_name}</td>
-                      <td className="px-3 py-2 text-gray-400 text-xs whitespace-nowrap">{r.brokerage}</td>
+                    <tr key={r.account_ids.join('-')} className="hover:bg-muted/50">
+                      <td className="px-4 py-2 font-medium text-foreground whitespace-nowrap">{r.account_name}</td>
+                      <td className="px-3 py-2 text-muted-foreground text-xs whitespace-nowrap">{r.brokerage}</td>
                       <td className="px-3 py-2 whitespace-nowrap">
-                        <span className="px-1.5 py-0.5 rounded bg-gray-100 text-gray-600 text-xs">{r.account_type}</span>
+                        <span className="px-1.5 py-0.5 rounded bg-accent text-muted-foreground text-xs">{r.account_type}</span>
                       </td>
-                      <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{fmtCAD0(r.start_market_value)}</td>
-                      <td className="px-3 py-2 text-right text-gray-600 tabular-nums">{fmtCAD0(r.end_market_value)}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{fmtCAD0(r.start_market_value)}</td>
+                      <td className="px-3 py-2 text-right text-muted-foreground tabular-nums">{fmtCAD0(r.end_market_value)}</td>
                       <td className="px-3 py-2 text-right tabular-nums text-sm">
                         {Math.abs(r.net_flows) > 1
                           ? <span className={r.net_flows >= 0 ? 'text-orange-500' : 'text-purple-500'}
                               title={r.net_flows >= 0 ? 'Net contributions (new money in)' : 'Net withdrawals (money out)'}>
                               {fmtCAD0Signed(r.net_flows)}
                             </span>
-                          : <span className="text-gray-300">—</span>}
+                          : <span className="text-muted-foreground/50">—</span>}
                       </td>
-                      <td className="px-3 py-2 text-right text-blue-600 tabular-nums text-sm">
-                        {r.period_income > 0 ? fmtCAD0(r.period_income) : <span className="text-gray-300">—</span>}
+                      <td className="px-3 py-2 text-right text-primary tabular-nums text-sm">
+                        {r.period_income > 0 ? fmtCAD0(r.period_income) : <span className="text-muted-foreground/50">—</span>}
                       </td>
-                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${r.total_gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      <td className={`px-3 py-2 text-right font-semibold tabular-nums ${r.total_gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                         {fmtCAD0Signed(r.total_gain)}
                       </td>
                       <td className={`px-3 py-2 text-right tabular-nums ${rPctCls(r.return_pct)}`}>
@@ -269,7 +269,7 @@ export default function ReturnDetailReport() {
                       <td className={`px-3 py-2 text-right tabular-nums ${rPctCls(annualizedPct(r))}`}>
                         {annualizedPct(r) !== null
                           ? `${annualizedPct(r)! >= 0 ? '+' : ''}${annualizedPct(r)!.toFixed(1)}%`
-                          : <span className="text-gray-300">—</span>}
+                          : <span className="text-muted-foreground/50">—</span>}
                       </td>
                       <td className="px-3 py-2">
                         <WaterfallBar row={r} />
@@ -278,9 +278,9 @@ export default function ReturnDetailReport() {
                   ))}
                 </tbody>
                 {sorted.length > 0 && (
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
+                  <tfoot className="bg-muted/50 border-t-2 border-border font-semibold text-sm">
                     <tr>
-                      <td className="px-4 py-2.5 text-gray-500" colSpan={3}>
+                      <td className="px-4 py-2.5 text-muted-foreground" colSpan={3}>
                         {sorted.length} account{sorted.length !== 1 ? 's' : ''}
                         {(brokerageFilter || typeFilter || nameFilter) && ` (filtered from ${rows.length})`}
                       </td>
@@ -289,8 +289,8 @@ export default function ReturnDetailReport() {
                       <td className="px-3 py-2.5 text-right text-orange-500 tabular-nums">
                         {Math.abs(totals.net_flows) > 1 ? fmtCAD0Signed(totals.net_flows) : '—'}
                       </td>
-                      <td className="px-3 py-2.5 text-right text-blue-600 tabular-nums">{fmtCAD0(totals.period_income)}</td>
-                      <td className={`px-3 py-2.5 text-right tabular-nums ${totals.total_gain >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                      <td className="px-3 py-2.5 text-right text-primary tabular-nums">{fmtCAD0(totals.period_income)}</td>
+                      <td className={`px-3 py-2.5 text-right tabular-nums ${totals.total_gain >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                         {fmtCAD0Signed(totals.total_gain)}
                       </td>
                       <td className={`px-3 py-2.5 text-right tabular-nums ${rPctCls(totalReturnPct)}`}>

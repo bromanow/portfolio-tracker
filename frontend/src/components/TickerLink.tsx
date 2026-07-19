@@ -18,7 +18,7 @@ export default function TickerLink({ ticker, securityId, className }: {
   return (
     <button
       onClick={e => { e.stopPropagation(); open(resolvedId) }}
-      className={`hover:underline hover:text-blue-800 ${className || ''}`}
+      className={`hover:underline hover:text-primary ${className || ''}`}
     >
       {ticker}
     </button>

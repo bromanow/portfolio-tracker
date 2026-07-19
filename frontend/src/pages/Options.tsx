@@ -15,19 +15,19 @@ function fmtCAD(val: string | number | null | undefined) {
 }
 
 function pnlClass(val: string | number | null | undefined) {
-  if (!val) return 'text-gray-400'
+  if (!val) return 'text-muted-foreground'
   const n = typeof val === 'string' ? parseFloat(val) : val
-  if (n > 0) return 'text-emerald-600'
-  if (n < 0) return 'text-red-500'
-  return 'text-gray-500'
+  if (n > 0) return 'text-emerald-600 dark:text-emerald-400'
+  if (n < 0) return 'text-red-500 dark:text-red-400'
+  return 'text-muted-foreground'
 }
 
 function DteBadge({ dte }: { dte: number | null }) {
-  if (dte === null) return <span className="text-gray-400">—</span>
+  if (dte === null) return <span className="text-muted-foreground">—</span>
   const cls = dte < 0 ? 'bg-red-100 text-red-700'
     : dte < 14 ? 'bg-orange-100 text-orange-700'
-    : dte < 30 ? 'bg-yellow-100 text-yellow-700'
-    : 'bg-green-100 text-green-700'
+    : dte < 30 ? 'bg-yellow-100 text-yellow-700 dark:text-yellow-400'
+    : 'bg-green-100 text-green-600 dark:text-green-400'
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${cls}`}>{dte < 0 ? 'Expired' : `${dte}d`}</span>
 }
 
@@ -35,7 +35,7 @@ function TypeBadge({ type }: { type: string | null }) {
   if (!type) return null
   const isCall = type === 'CALL'
   return (
-    <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${isCall ? 'bg-blue-100 text-blue-700' : 'bg-pink-100 text-pink-700'}`}>
+    <span className={`px-1.5 py-0.5 rounded text-xs font-semibold ${isCall ? 'bg-primary/15 text-primary' : 'bg-pink-100 text-pink-700'}`}>
       {type}
     </span>
   )
@@ -52,7 +52,7 @@ function DirectionBadge({ direction }: { direction: 'LONG' | 'SHORT' }) {
 function MoneynessTag({ itm, moneyness, optionType }: { itm: boolean | null; moneyness: number | null; optionType: string | null }) {
   if (itm === null) return null
   const label = itm ? 'ITM' : 'OTM'
-  const cls = itm ? 'bg-emerald-100 text-emerald-700' : 'bg-gray-100 text-gray-500'
+  const cls = itm ? 'bg-emerald-100 text-emerald-700' : 'bg-accent text-muted-foreground'
   const delta = moneyness !== null ? ` ${moneyness >= 0 ? '+' : ''}${moneyness.toFixed(2)}` : ''
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${cls}`}>{label}{delta}</span>
 }
@@ -61,7 +61,7 @@ function CcyBadge({ currency }: { currency: string | null | undefined }) {
   if (!currency) return null
   const isUSD = currency.toUpperCase() === 'USD'
   return (
-    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${isUSD ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${isUSD ? 'bg-green-50 text-green-600 dark:text-green-400 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
       {currency.toUpperCase()}
     </span>
   )
@@ -76,10 +76,10 @@ type SortDir = 'asc' | 'desc'
 type SortState<T extends string> = { col: T; dir: SortDir }
 
 function SortIcon({ active, dir }: { active: boolean; dir: SortDir }) {
-  if (!active) return <ChevronsUpDown className="inline ml-0.5 h-3 w-3 text-gray-300" />
+  if (!active) return <ChevronsUpDown className="inline ml-0.5 h-3 w-3 text-muted-foreground/50" />
   return dir === 'asc'
-    ? <ChevronUp className="inline ml-0.5 h-3 w-3 text-blue-500" />
-    : <ChevronDown className="inline ml-0.5 h-3 w-3 text-blue-500" />
+    ? <ChevronUp className="inline ml-0.5 h-3 w-3 text-primary/70" />
+    : <ChevronDown className="inline ml-0.5 h-3 w-3 text-primary/70" />
 }
 
 function SortTh<T extends string>({
@@ -87,7 +87,7 @@ function SortTh<T extends string>({
 }: { col: T; sort: SortState<T>; onSort: (c: T) => void; children: React.ReactNode; className?: string }) {
   return (
     <th
-      className={`px-4 py-2.5 cursor-pointer select-none hover:bg-gray-100 transition-colors ${className ?? ''}`}
+      className={`px-4 py-2.5 cursor-pointer select-none hover:bg-accent transition-colors ${className ?? ''}`}
       onClick={() => onSort(col)}
     >
       {children}
@@ -140,15 +140,15 @@ function ManualPriceCell({
           <div className="text-right">
             <span className="font-semibold">{fmtCAD(position.current_price_cad)}</span>
             {isUSD && position.current_price && (
-              <span className="text-xs text-gray-400 ml-1">US${parseFloat(position.current_price).toFixed(2)}</span>
+              <span className="text-xs text-muted-foreground ml-1">US${parseFloat(position.current_price).toFixed(2)}</span>
             )}
           </div>
         ) : (
-          <span className="text-gray-300 text-xs">no price</span>
+          <span className="text-muted-foreground/50 text-xs">no price</span>
         )}
         <button
           onClick={() => { setValue(position.current_price ?? ''); setEditing(true) }}
-          className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-gray-400 hover:text-blue-500"
+          className="opacity-0 group-hover:opacity-100 transition-opacity ml-1 text-muted-foreground hover:text-primary/70"
           title="Enter price manually"
         >
           <Pencil className="h-3 w-3" />
@@ -157,7 +157,7 @@ function ManualPriceCell({
           <button
             onClick={() => clearMut.mutate()}
             disabled={clearMut.isPending}
-            className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 disabled:opacity-30"
+            className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-red-500 dark:text-red-400 disabled:opacity-30"
             title="Remove manual override — next refresh will auto-fetch price">
             <Trash2 className="h-3 w-3" />
           </button>
@@ -168,7 +168,7 @@ function ManualPriceCell({
 
   return (
     <div className="flex items-center justify-end gap-1">
-      <span className="text-xs text-gray-400">{tradingCurrency}</span>
+      <span className="text-xs text-muted-foreground">{tradingCurrency}</span>
       <input
         autoFocus
         type="number"
@@ -177,19 +177,19 @@ function ManualPriceCell({
         value={value}
         onChange={e => setValue(e.target.value)}
         onKeyDown={e => { if (e.key === 'Enter') mut.mutate(); if (e.key === 'Escape') setEditing(false) }}
-        className="w-20 border border-blue-400 rounded px-1.5 py-0.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+        className="bg-background text-foreground w-20 border border-primary/40 rounded px-1.5 py-0.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary/40"
       />
-      <button onClick={() => mut.mutate()} disabled={mut.isPending} className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50">
+      <button onClick={() => mut.mutate()} disabled={mut.isPending} className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 disabled:opacity-50">
         <Check className="h-3.5 w-3.5" />
       </button>
-      <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600">
+      <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-muted-foreground">
         <X className="h-3.5 w-3.5" />
       </button>
       {position.price_source === 'manual' && (
         <button
           onClick={() => clearMut.mutate()}
           disabled={clearMut.isPending}
-          className="text-red-400 hover:text-red-600 disabled:opacity-30 ml-1"
+          className="text-red-400 hover:text-red-600 dark:text-red-400 disabled:opacity-30 ml-1"
           title="Remove manual override">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
@@ -370,7 +370,7 @@ export default function Options() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Options</h1>
+        <h1 className="text-2xl font-bold text-foreground">Options</h1>
       </div>
 
       {/* Summary bar */}
@@ -400,7 +400,7 @@ export default function Options() {
       {/* Notice for expired positions needing a closing transaction */}
       {!isLoading && openPositions.some(p => (p.days_to_expiry ?? 0) < 0) && (
         <div className="flex items-start gap-2 bg-red-50 border border-red-200 rounded-lg px-4 py-3 text-sm text-red-800">
-          <span className="mt-0.5 text-red-500">⚠</span>
+          <span className="mt-0.5 text-red-500 dark:text-red-400">⚠</span>
           <span>
             <strong>Missing expiry transactions:</strong> The options highlighted below expired within the last 30 days but have no closing transaction on record.
             Interactive Brokers does not always provide expiry transactions. Click <strong>Expire</strong> on each row to record the transaction and move them to income history.
@@ -410,8 +410,8 @@ export default function Options() {
 
       {/* Canadian options notice */}
       {!isLoading && openPositions.some(p => (p.price_currency ?? p.currency) === 'CAD' && !p.current_price_cad) && (
-        <div className="flex items-start gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-sm text-blue-800">
-          <span className="mt-0.5 text-blue-500">ℹ</span>
+        <div className="flex items-start gap-2 bg-primary/10 border border-primary/20 rounded-lg px-4 py-3 text-sm text-primary">
+          <span className="mt-0.5 text-primary/70">ℹ</span>
           <span>
             <strong>Canadian option pricing:</strong> Prices are fetched automatically from the Montreal Exchange (m-x.ca).
             If a price is still missing, use the pencil icon to enter it manually — manual prices are preserved across auto-refreshes
@@ -425,39 +425,39 @@ export default function Options() {
       ) : (
         <>
           {/* Open Positions */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between">
-              <h2 className="font-semibold text-gray-800">Open Positions ({openPositions.length})</h2>
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-border flex items-center justify-between">
+              <h2 className="font-semibold text-foreground">Open Positions ({openPositions.length})</h2>
             </div>
             {openPositions.length === 0 ? (
-              <p className="px-5 py-8 text-center text-gray-400 text-sm">No open option positions</p>
+              <p className="px-5 py-8 text-center text-muted-foreground text-sm">No open option positions</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm divide-y divide-gray-100">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <table className="min-w-full text-sm divide-y divide-border">
+                  <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
                       <SortTh col="display" sort={posSort.sort} onSort={posSort.toggle} className="text-left">Position</SortTh>
                       <SortTh col="underlying" sort={posSort.sort} onSort={posSort.toggle} className="text-left">Underlying</SortTh>
                       <SortTh col="option_type" sort={posSort.sort} onSort={posSort.toggle} className="text-center">Type</SortTh>
                       <SortTh col="strike" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Strike</SortTh>
-                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase">Und. Price</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-muted-foreground uppercase">Und. Price</th>
                       <SortTh col="expiry_date" sort={posSort.sort} onSort={posSort.toggle} className="text-center">Expiry</SortTh>
                       <SortTh col="dte" sort={posSort.sort} onSort={posSort.toggle} className="text-center">DTE</SortTh>
                       <SortTh col="qty" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Qty</SortTh>
                       <SortTh col="currency" sort={posSort.sort} onSort={posSort.toggle} className="text-center">CCY</SortTh>
                       <SortTh col="price" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Opt Price</SortTh>
-                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Live bid / ask from IBKR (IBeam)">Bid / Ask</th>
-                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase" title="Implied volatility (IBKR)">IV</th>
-                      <th className="px-4 py-2.5 text-center text-xs text-gray-500 uppercase whitespace-nowrap" title="Greeks from IBKR: delta / gamma / theta / vega">Greeks (Δ·Γ·Θ·V)</th>
-                      <th className="px-4 py-2.5 text-right text-xs text-gray-500 uppercase whitespace-nowrap" title="Price paid per share (ACB ÷ 100), comparable to the current Opt Price">Cost/Share</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-muted-foreground uppercase whitespace-nowrap" title="Live bid / ask from IBKR (IBeam)">Bid / Ask</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-muted-foreground uppercase" title="Implied volatility (IBKR)">IV</th>
+                      <th className="px-4 py-2.5 text-center text-xs text-muted-foreground uppercase whitespace-nowrap" title="Greeks from IBKR: delta / gamma / theta / vega">Greeks (Δ·Γ·Θ·V)</th>
+                      <th className="px-4 py-2.5 text-right text-xs text-muted-foreground uppercase whitespace-nowrap" title="Price paid per share (ACB ÷ 100), comparable to the current Opt Price">Cost/Share</th>
                       <SortTh col="mkt_val" sort={posSort.sort} onSort={posSort.toggle} className="text-right">Mkt Val</SortTh>
                       <SortTh col="acb" sort={posSort.sort} onSort={posSort.toggle} className="text-right">ACB</SortTh>
                       <SortTh col="pnl" sort={posSort.sort} onSort={posSort.toggle} className="text-right">P&L</SortTh>
                       <SortTh col="account" sort={posSort.sort} onSort={posSort.toggle} className="text-left">Account</SortTh>
-                      <th className="px-4 py-2.5 text-center text-xs text-gray-500 uppercase">Action</th>
+                      <th className="px-4 py-2.5 text-center text-xs text-muted-foreground uppercase">Action</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50 bg-white">
+                  <tbody className="divide-y divide-border/60 bg-card">
                     {sortedPositions.map((p, i) => {
                       const qty = parseFloat(p.quantity)
                       const isShort = qty < 0
@@ -467,21 +467,21 @@ export default function Options() {
                       const posKey = `${p.account_id}_${p.security_id}`
                       const isConfirming = expiringKey === posKey
                       return (
-                        <tr key={i} className={`hover:bg-gray-50 ${isExpired ? 'bg-red-50/30' : ''}`}>
+                        <tr key={i} className={`hover:bg-muted/50 ${isExpired ? 'bg-red-50/30' : ''}`}>
                           <td className="px-4 py-2.5 whitespace-nowrap">
                             <div className="flex items-center gap-1.5 flex-wrap">
-                              <span className="font-medium text-gray-900">{parsed?.display ?? p.ticker}</span>
+                              <span className="font-medium text-foreground">{parsed?.display ?? p.ticker}</span>
                               <DirectionBadge direction={direction} />
                             </div>
                           </td>
                           <td className="px-4 py-2.5 whitespace-nowrap">
-                            <span className="font-medium text-gray-700">{p.underlying_ticker ?? '—'}</span>
+                            <span className="font-medium text-foreground">{p.underlying_ticker ?? '—'}</span>
                             {p.underlying_position_qty != null && (() => {
                               const uQty = parseFloat(p.underlying_position_qty)
                               const optQty = Math.abs(parseFloat(p.quantity))
                               const covered = uQty >= optQty * 100
                               return (
-                                <div className={`text-xs font-medium ${covered ? 'text-teal-600' : 'text-gray-400'}`}>
+                                <div className={`text-xs font-medium ${covered ? 'text-teal-600' : 'text-muted-foreground'}`}>
                                   {uQty.toFixed(0)} sh{covered ? ' ✓' : ''}
                                 </div>
                               )
@@ -494,14 +494,14 @@ export default function Options() {
                           </td>
                           <td className="px-4 py-2.5 text-right">
                             {p.underlying_price ? (
-                              <span className="font-mono text-sm text-gray-800">
+                              <span className="font-mono text-sm text-foreground">
                                 {p.underlying_price_currency === 'USD' ? 'US$' : '$'}{parseFloat(p.underlying_price).toFixed(2)}
                               </span>
                             ) : (
-                              <span className="text-gray-300 text-xs">—</span>
+                              <span className="text-muted-foreground/50 text-xs">—</span>
                             )}
                           </td>
-                          <td className="px-4 py-2.5 text-center text-xs text-gray-600">{p.expiry_date ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-center text-xs text-muted-foreground">{p.expiry_date ?? '—'}</td>
                           <td className="px-4 py-2.5 text-center"><DteBadge dte={p.days_to_expiry} /></td>
                           <td className={`px-4 py-2.5 text-right font-mono ${qty < 0 ? 'text-orange-600' : 'text-teal-600'}`}>{qty}</td>
                           <td className="px-4 py-2.5 text-center"><CcyBadge currency={p.price_currency ?? p.currency} /></td>
@@ -510,7 +510,7 @@ export default function Options() {
                           </td>
                           {(() => {
                             const q = quotes[String(p.security_id)]
-                            const g = (v: number | null | undefined, d = 2) => (v == null ? <span className="text-gray-300">—</span> : v.toFixed(d))
+                            const g = (v: number | null | undefined, d = 2) => (v == null ? <span className="text-muted-foreground/50">—</span> : v.toFixed(d))
                             // Price paid per SHARE = |total ACB| / (contracts × 100), so it lines
                             // up with the per-share Opt Price column.
                             const costPerShare = Math.abs(parseFloat(p.quantity)) > 0
@@ -520,27 +520,27 @@ export default function Options() {
                               <>
                                 <td className="px-4 py-2.5 text-right font-mono text-xs whitespace-nowrap">
                                   {q && (q.bid != null || q.ask != null)
-                                    ? <span className="text-gray-700">{q.bid != null ? q.bid.toFixed(2) : '—'} / {q.ask != null ? q.ask.toFixed(2) : '—'}</span>
-                                    : <span className="text-gray-300">{liveFetching ? '…' : '—'}</span>}
+                                    ? <span className="text-foreground">{q.bid != null ? q.bid.toFixed(2) : '—'} / {q.ask != null ? q.ask.toFixed(2) : '—'}</span>
+                                    : <span className="text-muted-foreground/50">{liveFetching ? '…' : '—'}</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-right text-xs text-gray-600">{q?.iv_pct != null ? `${q.iv_pct.toFixed(1)}%` : <span className="text-gray-300">—</span>}</td>
-                                <td className="px-4 py-2.5 text-center font-mono text-xs text-gray-600 whitespace-nowrap">
-                                  {q ? <span>{g(q.delta)}·{g(q.gamma, 3)}·{g(q.theta)}·{g(q.vega)}</span> : <span className="text-gray-300">{liveFetching ? '…' : '—'}</span>}
+                                <td className="px-4 py-2.5 text-right text-xs text-muted-foreground">{q?.iv_pct != null ? `${q.iv_pct.toFixed(1)}%` : <span className="text-muted-foreground/50">—</span>}</td>
+                                <td className="px-4 py-2.5 text-center font-mono text-xs text-muted-foreground whitespace-nowrap">
+                                  {q ? <span>{g(q.delta)}·{g(q.gamma, 3)}·{g(q.theta)}·{g(q.vega)}</span> : <span className="text-muted-foreground/50">{liveFetching ? '…' : '—'}</span>}
                                 </td>
-                                <td className="px-4 py-2.5 text-right font-mono text-xs text-gray-600">{costPerShare != null ? fmtCAD(costPerShare) : <span className="text-gray-300">—</span>}</td>
+                                <td className="px-4 py-2.5 text-right font-mono text-xs text-muted-foreground">{costPerShare != null ? fmtCAD(costPerShare) : <span className="text-muted-foreground/50">—</span>}</td>
                               </>
                             )
                           })()}
                           <td className="px-4 py-2.5 text-right font-semibold">{fmtCAD(p.market_value_cad)}</td>
-                          <td className="px-4 py-2.5 text-right text-gray-600">{fmtCAD(p.total_acb_cad)}</td>
+                          <td className="px-4 py-2.5 text-right text-muted-foreground">{fmtCAD(p.total_acb_cad)}</td>
                           <td className="px-4 py-2.5 text-right">
                             {p.unrealized_pnl_cad ? (
                               <span className={`font-medium ${pnlClass(p.unrealized_pnl_cad)}`}>
                                 {fmtCAD(p.unrealized_pnl_cad)}
                               </span>
-                            ) : <span className="text-gray-300">—</span>}
+                            ) : <span className="text-muted-foreground/50">—</span>}
                           </td>
-                          <td className="px-4 py-2.5 text-xs text-gray-500">{p.account_name}</td>
+                          <td className="px-4 py-2.5 text-xs text-muted-foreground">{p.account_name}</td>
                           <td className="px-4 py-2.5 text-center">
                             {isConfirming ? (
                               <div className="flex items-center gap-1 justify-center">
@@ -551,7 +551,7 @@ export default function Options() {
                                 >
                                   Confirm
                                 </button>
-                                <button onClick={() => setExpiringKey(null)} className="text-gray-400 hover:text-gray-600">
+                                <button onClick={() => setExpiringKey(null)} className="text-muted-foreground hover:text-muted-foreground">
                                   <X className="h-3.5 w-3.5" />
                                 </button>
                               </div>
@@ -560,8 +560,8 @@ export default function Options() {
                                 onClick={() => setExpiringKey(posKey)}
                                 className={`text-xs px-2 py-0.5 rounded border whitespace-nowrap ${
                                   isExpired
-                                    ? 'border-red-300 text-red-600 hover:bg-red-50 font-medium'
-                                    : 'border-gray-200 text-gray-400 hover:border-gray-300 hover:text-gray-600'
+                                    ? 'border-red-300 text-red-600 dark:text-red-400 hover:bg-red-50 font-medium'
+                                    : 'border-border text-muted-foreground hover:border-border hover:text-muted-foreground'
                                 }`}
                               >
                                 Expire
@@ -580,14 +580,14 @@ export default function Options() {
           {/* Income by Year chips */}
           {incomeByYear.length > 0 && (
             <div className="flex flex-wrap gap-2 items-center">
-              <span className="text-xs text-gray-500 font-medium">Option Income:</span>
+              <span className="text-xs text-muted-foreground font-medium">Option Income:</span>
               <button onClick={() => setIncomeYear('')}
-                className={`px-3 py-1 rounded-full text-xs font-medium border ${!incomeYear ? 'bg-purple-600 text-white border-purple-600' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                className={`px-3 py-1 rounded-full text-xs font-medium border ${!incomeYear ? 'bg-purple-600 text-white border-purple-600' : 'border-border text-muted-foreground hover:bg-accent'}`}>
                 All ({incomeRows.length})
               </button>
               {incomeByYear.map(({ year, total, count }) => (
                 <button key={year} onClick={() => setIncomeYear(year)}
-                  className={`px-3 py-1 rounded-full text-xs font-medium border ${incomeYear === year ? 'bg-purple-600 text-white border-purple-600' : 'border-gray-300 text-gray-600 hover:bg-gray-100'}`}>
+                  className={`px-3 py-1 rounded-full text-xs font-medium border ${incomeYear === year ? 'bg-purple-600 text-white border-purple-600' : 'border-border text-muted-foreground hover:bg-accent'}`}>
                   {year} · {fmtCAD(total)} ({count})
                 </button>
               ))}
@@ -595,10 +595,10 @@ export default function Options() {
           )}
 
           {/* Income History */}
-          <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-            <div className="px-5 py-3 border-b border-gray-100">
+          <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+            <div className="px-5 py-3 border-b border-border">
               <div className="flex items-center justify-between flex-wrap gap-3">
-                <h2 className="font-semibold text-gray-800">Option Income History ({filteredIncome.length} events)</h2>
+                <h2 className="font-semibold text-foreground">Option Income History ({filteredIncome.length} events)</h2>
                 <div className="flex items-center gap-2 flex-wrap">
                   <MultiSelectDropdown
                     placeholder="Underlying"
@@ -633,7 +633,7 @@ export default function Options() {
                   {hasIncomeFilters && (
                     <button
                       onClick={clearIncomeFilters}
-                      className="text-xs text-gray-400 hover:text-gray-600 px-1"
+                      className="text-xs text-muted-foreground hover:text-muted-foreground px-1"
                     >
                       Clear
                     </button>
@@ -642,11 +642,11 @@ export default function Options() {
               </div>
             </div>
             {filteredIncome.length === 0 ? (
-              <p className="px-5 py-8 text-center text-gray-400 text-sm">No option income events</p>
+              <p className="px-5 py-8 text-center text-muted-foreground text-sm">No option income events</p>
             ) : (
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm divide-y divide-gray-100">
-                  <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+                <table className="min-w-full text-sm divide-y divide-border">
+                  <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                     <tr>
                       <SortTh col="date" sort={incSort.sort} onSort={incSort.toggle} className="text-left">Date</SortTh>
                       <SortTh col="display" sort={incSort.sort} onSort={incSort.toggle} className="text-left">Position</SortTh>
@@ -661,34 +661,34 @@ export default function Options() {
                       <SortTh col="gain" sort={incSort.sort} onSort={incSort.toggle} className="text-right">Gain/Loss</SortTh>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-50 bg-white">
+                  <tbody className="divide-y divide-border/60 bg-card">
                     {sortedIncome.map((r, i) => {
                       const parsed = parseOptionTicker(r.ticker)
                       const qty = parseFloat(r.quantity)
                       return (
-                        <tr key={i} className="hover:bg-gray-50">
-                          <td className="px-4 py-2.5 text-gray-500 whitespace-nowrap">{r.date}</td>
+                        <tr key={i} className="hover:bg-muted/50">
+                          <td className="px-4 py-2.5 text-muted-foreground whitespace-nowrap">{r.date}</td>
                           <td className="px-4 py-2.5 font-medium whitespace-nowrap">{parsed?.display ?? r.ticker}</td>
-                          <td className="px-4 py-2.5 text-gray-700 font-medium whitespace-nowrap">{r.underlying_ticker ?? '—'}</td>
+                          <td className="px-4 py-2.5 text-foreground font-medium whitespace-nowrap">{r.underlying_ticker ?? '—'}</td>
                           <td className="px-4 py-2.5 text-center"><TypeBadge type={r.option_type} /></td>
                           <td className="px-4 py-2.5 text-center"><DirectionBadge direction={r.direction ?? (qty < 0 ? 'SHORT' : 'LONG')} /></td>
                           <td className="px-4 py-2.5 text-center"><CcyBadge currency={r.currency} /></td>
                           <td className="px-4 py-2.5 text-center">
-                            <span className="text-xs bg-gray-100 text-gray-600 px-1.5 py-0.5 rounded">{closeTypeLabel(r.close_type)}</span>
+                            <span className="text-xs bg-accent text-muted-foreground px-1.5 py-0.5 rounded">{closeTypeLabel(r.close_type)}</span>
                           </td>
                           <td className="px-4 py-2.5 text-right font-mono">{Math.abs(qty)}</td>
                           <td className="px-4 py-2.5 text-right">{fmtCAD(r.proceeds_cad)}</td>
-                          <td className="px-4 py-2.5 text-right text-gray-500">{fmtCAD(r.acb_cad)}</td>
+                          <td className="px-4 py-2.5 text-right text-muted-foreground">{fmtCAD(r.acb_cad)}</td>
                           <td className={`px-4 py-2.5 text-right font-semibold ${pnlClass(r.gain_cad)}`}>{fmtCAD(r.gain_cad)}</td>
                         </tr>
                       )
                     })}
                   </tbody>
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tfoot className="bg-muted/50 border-t-2 border-border">
                     <tr className="font-semibold text-sm">
-                      <td colSpan={8} className="px-4 py-2.5 text-gray-500">Total ({filteredIncome.length})</td>
+                      <td colSpan={8} className="px-4 py-2.5 text-muted-foreground">Total ({filteredIncome.length})</td>
                       <td className="px-4 py-2.5 text-right">{fmtCAD(totalProceeds)}</td>
-                      <td className="px-4 py-2.5 text-right text-gray-500">{fmtCAD(totalCost)}</td>
+                      <td className="px-4 py-2.5 text-right text-muted-foreground">{fmtCAD(totalCost)}</td>
                       <td className={`px-4 py-2.5 text-right ${pnlClass(totalGain)}`}>{fmtCAD(totalGain)}</td>
                     </tr>
                   </tfoot>

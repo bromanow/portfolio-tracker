@@ -14,13 +14,13 @@ function PrefToggle({ prefKey, label, hint }: { prefKey: Parameters<typeof usePr
         role="switch"
         aria-checked={on}
         onClick={() => setOn(!on)}
-        className={`mt-0.5 relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-blue-600' : 'bg-gray-300'}`}
+        className={`mt-0.5 relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-primary' : 'bg-muted-foreground/30'}`}
       >
-        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white transition-transform ${on ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: on ? 'translateX(18px)' : 'translateX(3px)' }} />
+        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-card transition-transform ${on ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: on ? 'translateX(18px)' : 'translateX(3px)' }} />
       </button>
       <span>
-        <span className="text-sm font-medium text-gray-800">{label}</span>
-        <span className="block text-xs text-gray-500">{hint}</span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
       </span>
     </label>
   )
@@ -58,25 +58,25 @@ export default function MyAccountTab() {
   return (
     <div className="space-y-6 max-w-md">
       {/* User info */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-2">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Account Info</h2>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-2">
+        <h2 className="text-sm font-semibold text-foreground mb-3">Account Info</h2>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Name</span>
-          <span className="font-medium text-gray-900">{user?.name}</span>
+          <span className="text-muted-foreground">Name</span>
+          <span className="font-medium text-foreground">{user?.name}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Email</span>
-          <span className="font-medium text-gray-900">{user?.email}</span>
+          <span className="text-muted-foreground">Email</span>
+          <span className="font-medium text-foreground">{user?.email}</span>
         </div>
         <div className="flex justify-between text-sm">
-          <span className="text-gray-500">Role</span>
-          <span className="font-medium text-gray-900 capitalize">{user?.role}</span>
+          <span className="text-muted-foreground">Role</span>
+          <span className="font-medium text-foreground capitalize">{user?.role}</span>
         </div>
       </div>
 
       {/* Preferences */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-        <h2 className="text-sm font-semibold text-gray-700">Preferences</h2>
+      <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+        <h2 className="text-sm font-semibold text-foreground">Preferences</h2>
         <PrefToggle prefKey="idleLogout"
           label="Log out after 10 minutes of inactivity"
           hint="Automatically signs you out if there's no mouse or keyboard activity." />
@@ -86,60 +86,60 @@ export default function MyAccountTab() {
       </div>
 
       {/* Change password */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-4">Change Password</h2>
+      <div className="bg-card border border-border rounded-xl p-5">
+        <h2 className="text-sm font-semibold text-foreground mb-4">Change Password</h2>
         <form onSubmit={handleChangePassword} className="space-y-3">
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Current Password</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Current Password</label>
             <div className="relative">
               <input
                 type={showCurrent ? 'text' : 'password'}
                 value={pwCurrent}
                 onChange={e => setPwCurrent(e.target.value)}
                 required
-                className="w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-blue-400"
+                className="bg-background text-foreground w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-primary/40"
                 placeholder="Enter current password"
               />
               <button type="button" onClick={() => setShowCurrent(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground">
                 {showCurrent ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">New Password</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">New Password</label>
             <div className="relative">
               <input
                 type={showNew ? 'text' : 'password'}
                 value={pwNew}
                 onChange={e => setPwNew(e.target.value)}
                 required
-                className="w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-blue-400"
+                className="bg-background text-foreground w-full border rounded px-3 py-2 text-sm pr-9 focus:outline-none focus:border-primary/40"
                 placeholder="Min 8 characters"
               />
               <button type="button" onClick={() => setShowNew(v => !v)}
-                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600">
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-muted-foreground">
                 {showNew ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
               </button>
             </div>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-600 mb-1">Confirm New Password</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Confirm New Password</label>
             <input
               type="password"
               value={pwConfirm}
               onChange={e => setPwConfirm(e.target.value)}
               required
-              className="w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-blue-400"
+              className="bg-background text-foreground w-full border rounded px-3 py-2 text-sm focus:outline-none focus:border-primary/40"
               placeholder="Repeat new password"
             />
           </div>
-          {pwError   && <p className="text-xs text-red-600 bg-red-50 rounded px-3 py-2">{pwError}</p>}
-          {pwSuccess && <p className="text-xs text-emerald-600 bg-emerald-50 rounded px-3 py-2">✓ Password changed successfully.</p>}
+          {pwError   && <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 rounded px-3 py-2">{pwError}</p>}
+          {pwSuccess && <p className="text-xs text-emerald-600 dark:text-emerald-400 bg-emerald-50 rounded px-3 py-2">✓ Password changed successfully.</p>}
           <button
             type="submit"
             disabled={pwLoading}
-            className="w-full py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50 font-medium"
+            className="w-full py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50 font-medium"
           >
             {pwLoading ? 'Saving…' : 'Change Password'}
           </button>

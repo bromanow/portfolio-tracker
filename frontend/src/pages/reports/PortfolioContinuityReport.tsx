@@ -40,18 +40,18 @@ export default function PortfolioContinuityReport() {
       {/* Controls */}
       <div className="flex flex-wrap items-end gap-4">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Brokerage</label>
+          <label className="block text-xs text-muted-foreground mb-1">Brokerage</label>
           <select
             value={brokerageFilter}
             onChange={e => setBrokerageFilter(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
           >
             <option value="">All brokerages</option>
             {brokerages.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Account(s)</label>
+          <label className="block text-xs text-muted-foreground mb-1">Account(s)</label>
           <MultiSelectDropdown
             placeholder="All accounts"
             options={accountOptions}
@@ -60,11 +60,11 @@ export default function PortfolioContinuityReport() {
           />
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Range</label>
+          <label className="block text-xs text-muted-foreground mb-1">Range</label>
           <div className="flex gap-1">
             {(['YTD', '1Y', '3Y', '5Y', 'ALL'] as PortfolioRange[]).map(r => (
               <button key={r} onClick={() => setRange(r)}
-                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${range === r ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded font-medium transition-colors ${range === r ? 'bg-primary text-white' : 'bg-accent text-muted-foreground hover:bg-accent'}`}>
                 {r}
               </button>
             ))}
@@ -72,7 +72,7 @@ export default function PortfolioContinuityReport() {
         </div>
         <button
           onClick={() => setCommitted({ fromDate: fromDateStr, toDate: toDate, accountIds })}
-          className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 transition-colors"
+          className="flex items-center gap-1.5 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 transition-colors"
         >
           <Play className="w-3.5 h-3.5" /> Run
         </button>
@@ -80,17 +80,17 @@ export default function PortfolioContinuityReport() {
 
       {/* Continuity table */}
       {committed === null ? (
-        <div className="text-center py-16 text-gray-400">
-          <p className="text-sm">Configure your filters and click <strong className="text-blue-600">Run</strong> to generate this report.</p>
+        <div className="text-center py-16 text-muted-foreground">
+          <p className="text-sm">Configure your filters and click <strong className="text-primary">Run</strong> to generate this report.</p>
         </div>
       ) : isLoading ? (
         <div className="flex justify-center py-16">
-          <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" />
+          <div className="animate-spin h-8 w-8 rounded-full border-b-2 border-primary" />
         </div>
       ) : !continuity ? (
-        <div className="text-center py-16 text-gray-400">No data for selected period.</div>
+        <div className="text-center py-16 text-muted-foreground">No data for selected period.</div>
       ) : (
-        <div className="bg-white border border-gray-200 rounded-xl p-6">
+        <div className="bg-card border border-border rounded-xl p-6">
           <ContinuityTable data={continuity} />
         </div>
       )}

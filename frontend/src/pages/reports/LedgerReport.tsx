@@ -45,9 +45,9 @@ export default function LedgerReport() {
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600 whitespace-nowrap">Brokerage:</label>
+          <label className="text-sm text-muted-foreground whitespace-nowrap">Brokerage:</label>
           <select
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm"
             value={brokerageFilter}
             onChange={e => handleBrokerageChange(e.target.value)}
           >
@@ -56,9 +56,9 @@ export default function LedgerReport() {
           </select>
         </div>
         <div className="flex items-center gap-2">
-          <label className="text-sm text-gray-600 whitespace-nowrap">Account:</label>
+          <label className="text-sm text-muted-foreground whitespace-nowrap">Account:</label>
           <select
-            className="border border-gray-300 rounded px-3 py-1.5 text-sm"
+            className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm"
             value={accountId}
             onChange={e => setAccountId(e.target.value)}
           >
@@ -69,7 +69,7 @@ export default function LedgerReport() {
         {(brokerageFilter || accountId) && (
           <button
             onClick={() => { setBrokerageFilter(''); setAccountId('') }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-muted-foreground hover:text-muted-foreground"
           >
             Clear
           </button>
@@ -77,7 +77,7 @@ export default function LedgerReport() {
         <button
           onClick={handleRefresh}
           disabled={refreshing}
-          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-gray-300 rounded hover:bg-gray-50 text-gray-600 disabled:opacity-50"
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-sm border border-border rounded hover:bg-muted/50 text-muted-foreground disabled:opacity-50"
         >
           <RefreshCw className={`h-3.5 w-3.5 ${refreshing ? 'animate-spin' : ''}`} />
           Refresh

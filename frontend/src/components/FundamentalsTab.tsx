@@ -103,24 +103,24 @@ interface ColDef {
 function recColor(rec: string | null): string {
   if (!rec) return ''
   const r = rec.toLowerCase()
-  if (r.includes('strong buy') || r === 'buy') return 'text-emerald-600'
-  if (r.includes('hold') || r.includes('neutral')) return 'text-amber-600'
-  if (r.includes('sell') || r.includes('underperform')) return 'text-red-500'
-  return 'text-gray-700'
+  if (r.includes('strong buy') || r === 'buy') return 'text-emerald-600 dark:text-emerald-400'
+  if (r.includes('hold') || r.includes('neutral')) return 'text-amber-600 dark:text-amber-400'
+  if (r.includes('sell') || r.includes('underperform')) return 'text-red-500 dark:text-red-400'
+  return 'text-foreground'
 }
 
 function marginColor(n: number | null): string {
   if (n == null) return ''
-  if (n > 0.15) return 'text-emerald-600'
-  if (n > 0.05) return 'text-amber-600'
-  return 'text-red-500'
+  if (n > 0.15) return 'text-emerald-600 dark:text-emerald-400'
+  if (n > 0.05) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-500 dark:text-red-400'
 }
 
 function roeColor(n: number | null): string {
   if (n == null) return ''
-  if (n > 0.15) return 'text-emerald-600'
-  if (n > 0.05) return 'text-amber-600'
-  return 'text-red-500'
+  if (n > 0.15) return 'text-emerald-600 dark:text-emerald-400'
+  if (n > 0.05) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-500 dark:text-red-400'
 }
 
 const COLUMNS: ColDef[] = [
@@ -151,7 +151,7 @@ const COLUMNS: ColDef[] = [
   { key: 'profit_margin',    group: 'Quality', label: 'Net Mgn',    render: r => fmtPct(r.profit_margin, 1),        align: 'right', colorFn: r => marginColor(r.profit_margin) },
   // Risk
   { key: 'beta',         group: 'Risk',      label: 'Beta',         render: r => fmt(r.beta, 2),                     align: 'right',
-    colorFn: r => r.beta == null ? '' : r.beta < 0.8 ? 'text-emerald-600' : r.beta < 1.3 ? 'text-blue-600' : 'text-red-500' },
+    colorFn: r => r.beta == null ? '' : r.beta < 0.8 ? 'text-emerald-600 dark:text-emerald-400' : r.beta < 1.3 ? 'text-primary' : 'text-red-500 dark:text-red-400' },
   { key: 'debt_to_equity',   group: 'Risk',  label: 'D/E',          render: r => fmt(r.debt_to_equity, 2),          align: 'right' },
   { key: 'current_ratio',    group: 'Risk',  label: 'Curr. Ratio',  render: r => fmt(r.current_ratio, 2),           align: 'right' },
   // Analyst
@@ -172,17 +172,17 @@ function SortTh({
   const active = sortCol === col
   return (
     <th
-      className={`px-3 py-2 text-xs font-semibold text-gray-500 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100 ${align === 'right' ? 'text-right' : 'text-left'}`}
+      className={`px-3 py-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none whitespace-nowrap hover:bg-accent ${align === 'right' ? 'text-right' : 'text-left'}`}
       onClick={() => onSort(col)}
     >
       <span className="inline-flex items-center gap-0.5">
         {align === 'right' && (active
-          ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-500" /> : <ChevronDown className="h-3 w-3 text-blue-500" />
-          : <ChevronsUpDown className="h-3 w-3 text-gray-300" />)}
+          ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-primary/70" /> : <ChevronDown className="h-3 w-3 text-primary/70" />
+          : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />)}
         {label}
         {align === 'left' && (active
-          ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-500" /> : <ChevronDown className="h-3 w-3 text-blue-500" />
-          : <ChevronsUpDown className="h-3 w-3 text-gray-300" />)}
+          ? sortDir === 'asc' ? <ChevronUp className="h-3 w-3 text-primary/70" /> : <ChevronDown className="h-3 w-3 text-primary/70" />
+          : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />)}
       </span>
     </th>
   )
@@ -191,8 +191,8 @@ function SortTh({
 // ─── Column group header spans & colours ─────────────────────────────────────
 
 const GROUP_STYLE: Record<string, { bg: string; text: string }> = {
-  'Valuation': { bg: 'bg-blue-100',   text: 'text-blue-700'   },
-  'Per-Share': { bg: 'bg-indigo-100', text: 'text-indigo-700' },
+  'Valuation': { bg: 'bg-primary/15',   text: 'text-primary'   },
+  'Per-Share': { bg: 'bg-primary/15', text: 'text-primary' },
   'Income':    { bg: 'bg-emerald-100',text: 'text-emerald-700'},
   'Quality':   { bg: 'bg-amber-100',  text: 'text-amber-700'  },
   'Risk':      { bg: 'bg-rose-100',   text: 'text-rose-700'   },
@@ -307,35 +307,35 @@ export default function FundamentalsTab({ accountIds, asOf }: Props) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-40">
-        <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-primary" />
       </div>
     )
   }
 
   if (rows.length === 0) {
-    return <p className="text-gray-400 text-sm py-8 text-center">No positions found.</p>
+    return <p className="text-muted-foreground text-sm py-8 text-center">No positions found.</p>
   }
 
   const coverageCount = rows.filter(r => r.pe_ratio != null || r.dividend_yield != null || r.beta != null).length
 
   return (
     <div className="space-y-3">
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Fundamentals available for {coverageCount} of {rows.length} positions.
         Use <strong>Refresh Fundamentals</strong> in the Risk Scoring panel to update.
       </p>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 sticky top-0 z-10">
+          <thead className="bg-muted/50 sticky top-0 z-10">
             {/* Group header row */}
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-border">
               {spans.map((g, i) => {
                 const style = GROUP_STYLE[g.label]
                 return (
                   <th
                     key={i}
                     colSpan={g.span}
-                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-center border-r border-gray-100 last:border-r-0 ${style ? `${style.bg} ${style.text}` : 'bg-gray-50 text-gray-300'}`}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-center border-r border-border last:border-r-0 ${style ? `${style.bg} ${style.text}` : 'bg-muted/50 text-muted-foreground/50'}`}
                   >
                     {g.label}
                   </th>
@@ -343,7 +343,7 @@ export default function FundamentalsTab({ accountIds, asOf }: Props) {
               })}
             </tr>
             {/* Sort header row */}
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-border">
               {COLUMNS.map(col => (
                 <SortTh
                   key={String(col.key)}
@@ -357,19 +357,19 @@ export default function FundamentalsTab({ accountIds, asOf }: Props) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-border/60">
             {sorted.map(row => (
-              <tr key={row.security_id} className="hover:bg-blue-50/30 transition-colors">
+              <tr key={row.security_id} className="hover:bg-primary/30 transition-colors">
                 {COLUMNS.map(col => {
                   const val = col.render(row)
                   const color = col.colorFn ? col.colorFn(row) : ''
                   return (
                     <td
                       key={String(col.key)}
-                      className={`px-3 py-2 whitespace-nowrap ${col.align === 'left' ? 'text-left' : 'text-right tabular-nums'} ${color || (val === '—' ? 'text-gray-300' : 'text-gray-800')}`}
+                      className={`px-3 py-2 whitespace-nowrap ${col.align === 'left' ? 'text-left' : 'text-right tabular-nums'} ${color || (val === '—' ? 'text-muted-foreground/50' : 'text-foreground')}`}
                     >
                       {col.key === 'ticker'
-                        ? <span className="font-semibold text-gray-900">{val}</span>
+                        ? <span className="font-semibold text-foreground">{val}</span>
                         : val}
                     </td>
                   )
@@ -379,7 +379,7 @@ export default function FundamentalsTab({ accountIds, asOf }: Props) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-300 text-right">
+      <p className="text-xs text-muted-foreground/50 text-right">
         Large cap/financials: D/E &gt; 100 is normal. Options excluded from fundamental data.
       </p>
     </div>

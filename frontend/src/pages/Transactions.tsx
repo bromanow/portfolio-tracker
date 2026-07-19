@@ -14,19 +14,19 @@ import {
 import type { EditState } from '../components/TransactionEditModal'
 
 const TYPE_COLORS: Record<string, string> = {
-  BUY: 'bg-blue-100 text-blue-800',
+  BUY: 'bg-primary/15 text-primary',
   SELL: 'bg-orange-100 text-orange-800',
   DIVIDEND: 'bg-green-100 text-green-800',
   DRIP: 'bg-teal-100 text-teal-800',
   OPTION_BUY: 'bg-purple-100 text-purple-800',
   OPTION_SELL: 'bg-pink-100 text-pink-800',
-  OPTION_EXPIRY: 'bg-gray-100 text-gray-600',
+  OPTION_EXPIRY: 'bg-accent text-muted-foreground',
   OPTION_ASSIGNMENT: 'bg-violet-100 text-violet-800',
   FX_CONVERSION: 'bg-cyan-100 text-cyan-800',
-  JOURNAL: 'bg-slate-100 text-slate-700',
-  TRANSFER_IN: 'bg-sky-100 text-sky-800',
-  TRANSFER_OUT: 'bg-sky-100 text-sky-700',
-  TRANSFER: 'bg-sky-100 text-sky-800',
+  JOURNAL: 'bg-accent text-foreground',
+  TRANSFER_IN: 'bg-primary/15 text-primary',
+  TRANSFER_OUT: 'bg-primary/15 text-primary',
+  TRANSFER: 'bg-primary/15 text-primary',
   FEE: 'bg-red-100 text-red-700',
   INTEREST: 'bg-lime-100 text-lime-800',
   DEPOSIT: 'bg-emerald-100 text-emerald-800',
@@ -35,7 +35,7 @@ const TYPE_COLORS: Record<string, string> = {
 }
 
 export function TxTypeBadge({ type }: { type: string }) {
-  const cls = TYPE_COLORS[type] || 'bg-gray-100 text-gray-600'
+  const cls = TYPE_COLORS[type] || 'bg-accent text-muted-foreground'
   return (
     <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${cls}`}>
       {type.replace(/_/g, ' ')}
@@ -64,13 +64,13 @@ function SortTh({ label, col, sortBy, sortDir, onSort, className = '' }: {
 }) {
   const active = sortBy === col
   return (
-    <th className={`cursor-pointer select-none hover:bg-gray-100 ${className}`} onClick={() => onSort(col)}>
+    <th className={`cursor-pointer select-none hover:bg-accent ${className}`} onClick={() => onSort(col)}>
       <div className="flex items-center gap-1">
         {label}
         {active
           ? sortDir === 'asc'
-            ? <ChevronUp className="h-3 w-3 text-blue-600" />
-            : <ChevronDown className="h-3 w-3 text-blue-600" />
+            ? <ChevronUp className="h-3 w-3 text-primary" />
+            : <ChevronDown className="h-3 w-3 text-primary" />
           : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
       </div>
     </th>
@@ -419,7 +419,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        {showHeader && <h1 className="text-2xl font-bold text-gray-900">Transactions</h1>}
+        {showHeader && <h1 className="text-2xl font-bold text-foreground">Transactions</h1>}
         <div className="flex items-center gap-2">
           <button
             onClick={async () => {
@@ -439,21 +439,21 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
               }
             }}
             disabled={isExporting}
-            className="flex items-center gap-2 text-sm text-green-700 border border-green-300 rounded px-3 py-1.5 hover:bg-green-50 disabled:opacity-50"
+            className="flex items-center gap-2 text-sm text-green-600 dark:text-green-400 border border-green-300 rounded px-3 py-1.5 hover:bg-green-50 disabled:opacity-50"
           >
             <Download className="h-4 w-4" />
             {isExporting ? 'Exporting…' : 'Export CSV'}
           </button>
           <button
             onClick={() => { setCreateError(null); setCreateTickerInput(''); setLinkedAccountId(''); setLinkedTransferType('JOURNAL'); setNewTxn({ transaction_date: new Date().toISOString().slice(0, 10), transaction_type: 'BUY', transaction_currency: 'CAD' }); setCreating(true) }}
-            className="flex items-center gap-2 text-sm text-blue-600 border border-blue-300 rounded px-3 py-1.5 hover:bg-blue-50"
+            className="flex items-center gap-2 text-sm text-primary border border-primary/30 rounded px-3 py-1.5 hover:bg-primary/10"
           >
             <Plus className="h-4 w-4" />
             New Transaction
           </button>
           <button
             onClick={() => { setDialogError(null); setDialog({ type: 'delete-all' }) }}
-            className="flex items-center gap-2 text-sm text-red-600 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
+            className="flex items-center gap-2 text-sm text-red-600 dark:text-red-400 border border-red-300 rounded px-3 py-1.5 hover:bg-red-50"
           >
             <Trash2 className="h-4 w-4" />
             Delete All
@@ -472,16 +472,16 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
         <input
           type="text"
-          className="border border-gray-200 rounded px-2 py-1 text-xs text-gray-600 w-24"
+          className="bg-background text-foreground border border-border rounded px-2 py-1 text-xs text-muted-foreground w-24"
           placeholder="Ticker…"
           value={ticker}
           onChange={e => { setTicker(e.target.value.toUpperCase()); setPage(1) }}
         />
 
-        <div className="flex items-center gap-1 text-xs text-gray-500">
+        <div className="flex items-center gap-1 text-xs text-muted-foreground">
           <DatePicker value={dateFrom || ''} onChange={v => { setDateFrom(v); setPage(1) }}
             max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} />
-          <span className="text-gray-400">→</span>
+          <span className="text-muted-foreground">→</span>
           <DatePicker value={dateTo || ''} onChange={v => { setDateTo(v); setPage(1) }}
             max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} />
         </div>
@@ -492,7 +492,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
               setTxTypes([]); setTicker(''); setDateFrom(''); setDateTo('')
               setPage(1); setSortBy('transaction_date'); setSortDir('desc')
             }}
-            className="text-xs text-gray-400 hover:text-gray-600"
+            className="text-xs text-muted-foreground hover:text-muted-foreground"
           >
             Clear
           </button>
@@ -500,15 +500,15 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
       </div>
 
       {/* Results */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
-          <span className="text-sm text-gray-600 font-medium">
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="px-5 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
+          <span className="text-sm text-muted-foreground font-medium">
             {data ? (
               <>
-                <span className="text-gray-900 font-semibold">{data.total.toLocaleString()}</span>
+                <span className="text-foreground font-semibold">{data.total.toLocaleString()}</span>
                 {' '}transaction{data.total !== 1 ? 's' : ''}
                 {data.total > pageSize && (
-                  <span className="text-gray-400 ml-1">
+                  <span className="text-muted-foreground ml-1">
                     — showing {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, data.total)}
                   </span>
                 )}
@@ -517,9 +517,9 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
           </span>
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 text-sm">
-              <label className="text-xs text-gray-500">Rows:</label>
+              <label className="text-xs text-muted-foreground">Rows:</label>
               <select
-                className="border border-gray-300 rounded px-2 py-1 text-sm"
+                className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm"
                 value={pageSize}
                 onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
               >
@@ -531,15 +531,15 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                 <button
                   disabled={page === 1}
                   onClick={() => setPage(p => p - 1)}
-                  className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+                  className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50"
                 >
                   Prev
                 </button>
-                <span className="text-gray-600">{page} / {totalPages}</span>
+                <span className="text-muted-foreground">{page} / {totalPages}</span>
                 <button
                   disabled={page >= totalPages}
                   onClick={() => setPage(p => p + 1)}
-                  className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+                  className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50"
                 >
                   Next
                 </button>
@@ -549,16 +549,16 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
         </div>
         {/* ── Bulk action bar ── */}
         {selectedIds.size > 0 && (
-          <div className="px-5 py-2.5 bg-blue-50 border-b border-blue-200 flex items-center gap-3 flex-wrap">
-            <span className="text-sm font-medium text-blue-800">
+          <div className="px-5 py-2.5 bg-primary/10 border-b border-primary/20 flex items-center gap-3 flex-wrap">
+            <span className="text-sm font-medium text-primary">
               {selectedIds.size.toLocaleString()} transaction{selectedIds.size !== 1 ? 's' : ''} selected
               {selectAllMatching && data && selectedIds.size === data.total && (
-                <span className="ml-1 text-blue-600">(all matching filter)</span>
+                <span className="ml-1 text-primary">(all matching filter)</span>
               )}
             </span>
             <button
               onClick={() => { setSelectedIds(new Set()); setSelectAllMatching(false) }}
-              className="text-xs text-blue-500 hover:text-blue-700 underline"
+              className="text-xs text-primary/70 hover:text-primary underline"
             >
               Clear selection
             </button>
@@ -571,10 +571,10 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                 <Trash2 className="h-3.5 w-3.5" />
                 Delete Selected
               </button>
-              <span className="text-gray-300">|</span>
-              <span className="text-xs text-blue-700 font-medium">Change type to:</span>
+              <span className="text-muted-foreground/50">|</span>
+              <span className="text-xs text-primary font-medium">Change type to:</span>
               <select
-                className="border border-blue-300 rounded px-2 py-1 text-sm bg-white"
+                className="border border-primary/30 rounded px-2 py-1 text-sm bg-card"
                 value={bulkType}
                 onChange={e => setBulkType(e.target.value)}
               >
@@ -583,7 +583,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
               <button
                 onClick={handleBulkApply}
                 disabled={bulkUpdateMutation.isPending}
-                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-blue-600 text-white rounded hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-sm bg-primary text-white rounded hover:bg-primary/90 disabled:opacity-50"
               >
                 {bulkUpdateMutation.isPending
                   ? <><RefreshCw className="h-3.5 w-3.5 animate-spin" /> Updating…</>
@@ -596,12 +596,12 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
         {/* ── Select all matching banner ── */}
         {allPageSelected && !selectAllMatching && data && data.total > pageSize && (
-          <div className="px-5 py-2 bg-blue-50 border-b border-blue-100 text-center text-sm text-blue-700">
+          <div className="px-5 py-2 bg-primary/10 border-b border-primary/10 text-center text-sm text-primary">
             All {pageIds.length} on this page selected.{' '}
             <button
               onClick={handleSelectAllMatching}
               disabled={selectAllLoading}
-              className="font-semibold underline hover:text-blue-900 disabled:opacity-50"
+              className="font-semibold underline hover:text-foreground disabled:opacity-50"
             >
               {selectAllLoading
                 ? 'Loading…'
@@ -612,14 +612,14 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
         ) : (
           <>
           {/* ── Mobile card list ── */}
-          <div className="md:hidden divide-y divide-gray-100">
+          <div className="md:hidden divide-y divide-border">
             {data?.items.length === 0 ? (
-              <div className="p-8 text-center text-gray-400 text-sm">No transactions found</div>
+              <div className="p-8 text-center text-muted-foreground text-sm">No transactions found</div>
             ) : (
               data?.items.map((t: Transaction) => {
                 const cadAmt = t.cad_amount != null ? parseFloat(t.cad_amount) : null
@@ -631,26 +631,26 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                       <div className="flex items-center gap-2 flex-wrap">
                         <TxTypeBadge type={t.transaction_type} />
                         {t.security_ticker && (
-                          <span className="font-mono text-xs font-semibold text-blue-700">{t.security_ticker}</span>
+                          <span className="font-mono text-xs font-semibold text-primary">{t.security_ticker}</span>
                         )}
-                        <span className="text-xs text-gray-400">{t.transaction_date}</span>
+                        <span className="text-xs text-muted-foreground">{t.transaction_date}</span>
                       </div>
-                      <div className="text-xs text-gray-400 mt-0.5 truncate">
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
                         {t.account_name}
                         {t.quantity && <span className="ml-1.5">· {fmtNum(t.quantity, 4)} @ {fmtNum(t.price)}</span>}
                       </div>
                       {(t.raw_description || t.notes) && (
-                        <div className="text-xs text-gray-300 truncate mt-0.5">{t.raw_description || t.notes}</div>
+                        <div className="text-xs text-muted-foreground/50 truncate mt-0.5">{t.raw_description || t.notes}</div>
                       )}
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <div className={`text-sm font-semibold ${isBuy ? 'text-emerald-600' : isSell ? 'text-red-500' : 'text-gray-700'}`}>
+                      <div className={`text-sm font-semibold ${isBuy ? 'text-emerald-600 dark:text-emerald-400' : isSell ? 'text-red-500 dark:text-red-400' : 'text-foreground'}`}>
                         {cadAmt != null
                           ? (cadAmt >= 0 ? '+' : '') + cadAmt.toLocaleString('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 2 })
                           : '—'}
                       </div>
                       {t.transaction_currency && t.transaction_currency !== 'CAD' && (
-                        <div className="text-xs text-gray-400">{t.transaction_currency} {fmtNum(t.transaction_amount)}</div>
+                        <div className="text-xs text-muted-foreground">{t.transaction_currency} {fmtNum(t.transaction_amount)}</div>
                       )}
                     </div>
                   </div>
@@ -661,13 +661,13 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
           {/* ── Desktop table ── */}
           <div className="hidden md:block overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-100">
-              <thead className="bg-gray-50">
-                <tr className="text-xs text-gray-500 uppercase">
+            <table className="min-w-full text-sm divide-y divide-border">
+              <thead className="bg-muted/50">
+                <tr className="text-xs text-muted-foreground uppercase">
                   <th className="pl-3 pr-1 py-3 w-8">
                     <input
                       type="checkbox"
-                      className="rounded border-gray-300 text-blue-600"
+                      className="bg-background text-foreground rounded border-border text-primary"
                       checked={allPageSelected}
                       ref={el => { if (el) el.indeterminate = somePageSelected && !allPageSelected }}
                       onChange={togglePageSelect}
@@ -687,44 +687,44 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   <th className="px-3 py-3 text-center">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100 bg-white">
+              <tbody className="divide-y divide-border bg-card">
                 {data?.items.length === 0 ? (
                   <tr>
-                    <td colSpan={12} className="px-3 py-8 text-center text-gray-400">No transactions found</td>
+                    <td colSpan={12} className="px-3 py-8 text-center text-muted-foreground">No transactions found</td>
                   </tr>
                 ) : (
                   data?.items.map((t: Transaction) => (
-                    <tr key={t.id} className={`hover:bg-gray-50 ${selectedIds.has(t.id) ? 'bg-blue-50' : ''}`}>
+                    <tr key={t.id} className={`hover:bg-muted/50 ${selectedIds.has(t.id) ? 'bg-primary/10' : ''}`}>
                       <td className="pl-3 pr-1 py-2.5">
                         <input
                           type="checkbox"
-                          className="rounded border-gray-300 text-blue-600"
+                          className="bg-background text-foreground rounded border-border text-primary"
                           checked={selectedIds.has(t.id)}
                           onChange={() => toggleRow(t.id)}
                         />
                       </td>
-                      <td className="px-3 py-2.5 whitespace-nowrap text-gray-600">{t.transaction_date}</td>
+                      <td className="px-3 py-2.5 whitespace-nowrap text-muted-foreground">{t.transaction_date}</td>
                       <td className="px-3 py-2.5"><TxTypeBadge type={t.transaction_type} /></td>
                       <td className="px-3 py-2.5 font-mono text-xs font-medium">{t.security_ticker || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-gray-500 whitespace-nowrap">{t.account_name}</td>
-                      <td className="px-3 py-2.5 text-right text-gray-700">{fmtNum(t.quantity, 4)}</td>
-                      <td className="px-3 py-2.5 text-right text-gray-700">{fmtNum(t.price)}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{t.account_name}</td>
+                      <td className="px-3 py-2.5 text-right text-foreground">{fmtNum(t.quantity, 4)}</td>
+                      <td className="px-3 py-2.5 text-right text-foreground">{fmtNum(t.price)}</td>
                       <td className="px-3 py-2.5 text-right font-medium">{fmtNum(t.transaction_amount)}</td>
                       <td className="px-3 py-2.5 text-right font-medium">{fmtNum(t.cad_amount)}</td>
-                      <td className="px-3 py-2.5 text-center text-xs text-gray-500">{t.transaction_currency || '—'}</td>
-                      <td className="px-3 py-2.5 text-xs text-gray-400 max-w-xs truncate">{t.raw_description || t.notes || '—'}</td>
+                      <td className="px-3 py-2.5 text-center text-xs text-muted-foreground">{t.transaction_currency || '—'}</td>
+                      <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-xs truncate">{t.raw_description || t.notes || '—'}</td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center justify-center gap-2">
                           <button
                             onClick={() => handleEdit(t)}
-                            className="text-gray-400 hover:text-blue-600 transition-colors"
+                            className="text-muted-foreground hover:text-primary transition-colors"
                             title="Edit"
                           >
                             <Edit2 className="h-3.5 w-3.5" />
                           </button>
                           <button
                             onClick={() => handleDelete(t)}
-                            className="text-gray-400 hover:text-red-600 transition-colors"
+                            className="text-muted-foreground hover:text-red-600 dark:text-red-400 transition-colors"
                             title="Delete"
                           >
                             <Trash2 className="h-3.5 w-3.5" />
@@ -745,16 +745,16 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   return sum + (isNaN(v) ? 0 : v)
                 }, 0)
                 return (
-                  <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+                  <tfoot className="bg-muted/50 border-t-2 border-border">
                     <tr>
-                      <td colSpan={5} className="px-3 py-2 text-right text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      <td colSpan={5} className="px-3 py-2 text-right text-xs font-semibold text-muted-foreground uppercase tracking-wide">
                         Page Total
                       </td>
-                      <td className="px-3 py-2 text-right font-semibold text-gray-800">
+                      <td className="px-3 py-2 text-right font-semibold text-foreground">
                         {qtyTotal.toLocaleString('en-CA', { minimumFractionDigits: 0, maximumFractionDigits: 4 })}
                       </td>
                       <td colSpan={2} />
-                      <td className="px-3 py-2 text-right font-semibold text-gray-800">
+                      <td className="px-3 py-2 text-right font-semibold text-foreground">
                         {pageTotal.toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                       </td>
                       <td colSpan={3} />
@@ -769,23 +769,23 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
         {/* Bottom pagination — mirrors top */}
         {data && data.total > pageSize && (
-          <div className="px-5 py-3 border-t border-gray-100 flex items-center justify-between flex-wrap gap-3">
-            <span className="text-sm text-gray-400">
+          <div className="px-5 py-3 border-t border-border flex items-center justify-between flex-wrap gap-3">
+            <span className="text-sm text-muted-foreground">
               {((page - 1) * pageSize) + 1}–{Math.min(page * pageSize, data.total)} of {data.total.toLocaleString()}
             </span>
             <div className="flex items-center gap-2 text-sm">
               <button
                 disabled={page === 1}
                 onClick={() => { setPage(p => p - 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+                className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50"
               >
                 Prev
               </button>
-              <span className="text-gray-600">{page} / {totalPages}</span>
+              <span className="text-muted-foreground">{page} / {totalPages}</span>
               <button
                 disabled={page >= totalPages}
                 onClick={() => { setPage(p => p + 1); window.scrollTo({ top: 0, behavior: 'smooth' }) }}
-                className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-gray-50"
+                className="px-3 py-1 border rounded disabled:opacity-40 hover:bg-muted/50"
               >
                 Next
               </button>
@@ -797,22 +797,22 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
       {/* ── Confirm Delete Modal ── */}
       {dialog && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-6 w-6 text-red-500 mt-0.5 shrink-0" />
+              <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
               <div className="flex-1">
-                <h3 className="font-semibold text-gray-900">
+                <h3 className="font-semibold text-foreground">
                   {dialog.type === 'delete-all' ? 'Delete All Transactions' : 'Delete Transaction'}
                 </h3>
                 {dialog.type === 'delete-all' ? (
                   <div className="space-y-3 mt-2">
-                    <p className="text-sm text-gray-600">
+                    <p className="text-sm text-muted-foreground">
                       This will permanently delete transactions and cannot be undone.
                     </p>
                     <div>
-                      <label className="block text-xs text-gray-500 mb-1">Scope (leave blank to delete ALL)</label>
+                      <label className="block text-xs text-muted-foreground mb-1">Scope (leave blank to delete ALL)</label>
                       <select
-                        className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                        className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                         value={deleteAllAccountId}
                         onChange={e => setDeleteAllAccountId(e.target.value)}
                       >
@@ -827,8 +827,8 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                     </div>
                   </div>
                 ) : (
-                  <p className="text-sm text-gray-600 mt-1">
-                    Delete: <span className="font-mono text-xs bg-gray-100 px-1.5 py-0.5 rounded">{dialog.label}</span>
+                  <p className="text-sm text-muted-foreground mt-1">
+                    Delete: <span className="font-mono text-xs bg-accent px-1.5 py-0.5 rounded">{dialog.label}</span>
                   </p>
                 )}
                 {dialogError && (
@@ -841,7 +841,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => { setDialog(null); setDialogError(null) }}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50"
               >
                 Cancel
               </button>
@@ -866,10 +866,10 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
       {/* ── Create Transaction Modal ── */}
       {creating && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-2xl w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">New Transaction</h3>
-              <button onClick={() => setCreating(false)} className="text-gray-400 hover:text-gray-600">
+              <h3 className="font-semibold text-foreground">New Transaction</h3>
+              <button onClick={() => setCreating(false)} className="text-muted-foreground hover:text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
@@ -890,15 +890,15 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
 
             {/* ── Transfer counterpart panel ── */}
             {(['JOURNAL', 'TRANSFER_OUT', 'TRANSFER_IN'] as string[]).includes(newTxn.transaction_type as string) && (
-              <div className="border border-sky-200 bg-sky-50 rounded-lg p-3 space-y-3">
-                <p className="text-xs font-medium text-sky-800">
+              <div className="border border-primary/20 bg-primary/10 rounded-lg p-3 space-y-3">
+                <p className="text-xs font-medium text-primary">
                   Auto-create counterpart transaction
                 </p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Transfer to / from account</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Transfer to / from account</label>
                     <select
-                      className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                      className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                       value={linkedAccountId}
                       onChange={e => setLinkedAccountId(e.target.value)}
                     >
@@ -910,9 +910,9 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                     </select>
                   </div>
                   <div>
-                    <label className="block text-xs text-gray-500 mb-1">Transfer style</label>
+                    <label className="block text-xs text-muted-foreground mb-1">Transfer style</label>
                     <select
-                      className="border border-gray-300 rounded px-3 py-1.5 text-sm w-full"
+                      className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-full"
                       value={linkedTransferType}
                       onChange={e => setLinkedTransferType(e.target.value as 'JOURNAL' | 'TRANSFER')}
                     >
@@ -922,7 +922,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   </div>
                 </div>
                 {linkedAccountId && (
-                  <p className="text-xs text-sky-700">
+                  <p className="text-xs text-primary">
                     Will create: <strong>{linkedTransferType === 'JOURNAL' ? 'JOURNAL −qty' : 'TRANSFER_OUT'}</strong> in source account
                     + <strong>{linkedTransferType === 'JOURNAL' ? 'JOURNAL +qty' : 'TRANSFER_IN'}</strong> in counterpart.
                     Quantity entered above is used as-is for the receiving leg; source leg is automatically negated.
@@ -936,10 +936,10 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                 Error: {createError}
               </div>
             )}
-            <div className="flex justify-end gap-3 pt-2 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-2 border-t border-border">
               <button
                 onClick={() => { setCreating(false); setCreateError(null); resetCreateForm() }}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50"
               >
                 Cancel
               </button>
@@ -977,7 +977,7 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
                   createMutation.mutate(payload)
                 }}
                 disabled={createMutation.isPending || createPairMutation.isPending || !newTxn.account_id || !newTxn.transaction_date || !newTxn.transaction_type}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 <Plus className="h-4 w-4" />
                 {(createMutation.isPending || createPairMutation.isPending)
@@ -992,29 +992,29 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
       {/* ── Bulk Change Type Confirm Modal ── */}
       {bulkConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-6 w-6 text-amber-500 mt-0.5 shrink-0" />
+              <AlertTriangle className="h-6 w-6 text-amber-500 dark:text-amber-400 mt-0.5 shrink-0" />
               <div>
-                <h3 className="font-semibold text-gray-900">Confirm Bulk Type Change</h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <h3 className="font-semibold text-foreground">Confirm Bulk Type Change</h3>
+                <p className="text-sm text-muted-foreground mt-1">
                   Change <strong>{selectedIds.size.toLocaleString()}</strong> transactions to type{' '}
                   <strong className="font-mono">{bulkType}</strong>?
                 </p>
-                <p className="text-xs text-gray-400 mt-1">This cannot be undone in bulk.</p>
+                <p className="text-xs text-muted-foreground mt-1">This cannot be undone in bulk.</p>
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setBulkConfirm(false)}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50"
               >
                 Cancel
               </button>
               <button
                 onClick={() => bulkUpdateMutation.mutate({ ids: Array.from(selectedIds), type: bulkType })}
                 disabled={bulkUpdateMutation.isPending}
-                className="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
+                className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50"
               >
                 {bulkUpdateMutation.isPending ? 'Updating…' : `Change ${selectedIds.size.toLocaleString()} transactions`}
               </button>
@@ -1026,21 +1026,21 @@ export default function Transactions({ showHeader = true, accountIds: accountIds
       {/* ── Bulk Delete Confirm Modal ── */}
       {bulkDeleteConfirm && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-sm w-full p-6 space-y-4">
             <div className="flex items-start gap-3">
-              <AlertTriangle className="h-6 w-6 text-red-500 mt-0.5 shrink-0" />
+              <AlertTriangle className="h-6 w-6 text-red-500 dark:text-red-400 mt-0.5 shrink-0" />
               <div>
-                <h3 className="font-semibold text-gray-900">Delete Selected Transactions</h3>
-                <p className="text-sm text-gray-600 mt-1">
+                <h3 className="font-semibold text-foreground">Delete Selected Transactions</h3>
+                <p className="text-sm text-muted-foreground mt-1">
                   Permanently delete <strong>{selectedIds.size.toLocaleString()}</strong> selected transaction{selectedIds.size !== 1 ? 's' : ''}?
                 </p>
-                <p className="text-xs text-red-600 mt-2 font-medium">⚠️ This action cannot be undone.</p>
+                <p className="text-xs text-red-600 dark:text-red-400 mt-2 font-medium">⚠️ This action cannot be undone.</p>
               </div>
             </div>
             <div className="flex justify-end gap-3 pt-2">
               <button
                 onClick={() => setBulkDeleteConfirm(false)}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50"
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50"
               >
                 Cancel
               </button>

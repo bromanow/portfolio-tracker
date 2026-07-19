@@ -56,18 +56,18 @@ export const COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#
 // Matches PositionsPanel.tsx's ACCOUNT_TYPE_COLORS — same badge styling everywhere account
 // type shows up, so RRSP/TFSA/etc. read consistently across Holdings and this report.
 const ACCOUNT_TYPE_COLORS: Record<string, string> = {
-  RRSP: 'bg-blue-100 text-blue-700',
-  TFSA: 'bg-green-100 text-green-700',
-  RESP: 'bg-yellow-100 text-yellow-700',
-  NON_REG: 'bg-gray-100 text-gray-600',
+  RRSP: 'bg-primary/15 text-primary',
+  TFSA: 'bg-green-100 text-green-600 dark:text-green-400',
+  RESP: 'bg-yellow-100 text-yellow-700 dark:text-yellow-400',
+  NON_REG: 'bg-accent text-muted-foreground',
   '401K': 'bg-purple-100 text-purple-700',
-  IRA: 'bg-indigo-100 text-indigo-700',
+  IRA: 'bg-primary/15 text-primary',
   ROTH: 'bg-pink-100 text-pink-700',
 }
 export function AccountTypeBadge({ type }: { type: string | null | undefined }) {
-  if (!type) return <span className="text-gray-300">—</span>
+  if (!type) return <span className="text-muted-foreground/50">—</span>
   return (
-    <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${ACCOUNT_TYPE_COLORS[type] || 'bg-gray-100 text-gray-600'}`}>
+    <span className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${ACCOUNT_TYPE_COLORS[type] || 'bg-accent text-muted-foreground'}`}>
       {type}
     </span>
   )
@@ -86,11 +86,11 @@ export function SortTh({ label, col, sort, toggle, className = '' }: {
 }) {
   const active = sort.col === col
   return (
-    <th className={`cursor-pointer select-none hover:bg-gray-100 ${className}`} onClick={() => toggle(col)}>
+    <th className={`cursor-pointer select-none hover:bg-accent ${className}`} onClick={() => toggle(col)}>
       <div className="flex items-center gap-1">
         {label}
         {active
-          ? sort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-blue-600" /> : <ChevronDown className="h-3 w-3 text-blue-600" />
+          ? sort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-primary" /> : <ChevronDown className="h-3 w-3 text-primary" />
           : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
       </div>
     </th>
@@ -120,33 +120,33 @@ export function PaginationBar({ page, totalPages, pageSize, totalRows, setPage, 
   const start = totalRows === 0 ? 0 : (page - 1) * pageSize + 1
   const end   = Math.min(page * pageSize, totalRows)
   return (
-    <div className="flex items-center justify-between px-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-600 select-none">
+    <div className="flex items-center justify-between px-4 py-2 bg-muted/50 border border-border rounded-lg text-sm text-muted-foreground select-none">
       <div className="flex items-center gap-2">
-        <span className="text-xs text-gray-500">Rows per page:</span>
+        <span className="text-xs text-muted-foreground">Rows per page:</span>
         <select
           value={pageSize}
           onChange={e => { setPageSize(Number(e.target.value)); setPage(1) }}
-          className="border border-gray-300 rounded px-1.5 py-0.5 text-xs"
+          className="bg-background text-foreground border border-border rounded px-1.5 py-0.5 text-xs"
         >
           {[25, 50, 100, 250].map(n => <option key={n} value={n}>{n}</option>)}
         </select>
       </div>
       <div className="flex items-center gap-3">
-        <span className="text-xs text-gray-500">
+        <span className="text-xs text-muted-foreground">
           {totalRows === 0 ? 'No rows' : `${start}–${end} of ${totalRows}`}
         </span>
         <div className="flex gap-1">
           <button
             disabled={page <= 1}
             onClick={() => setPage(p => p - 1)}
-            className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1 rounded hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronLeft className="h-4 w-4" />
           </button>
           <button
             disabled={page >= totalPages}
             onClick={() => setPage(p => p + 1)}
-            className="p-1 rounded hover:bg-gray-200 disabled:opacity-40 disabled:cursor-not-allowed"
+            className="p-1 rounded hover:bg-accent disabled:opacity-40 disabled:cursor-not-allowed"
           >
             <ChevronRight className="h-4 w-4" />
           </button>
@@ -222,10 +222,10 @@ export function ContinuityTable({ data }: { data: ContinuityReport }) {
   const maxAbs = Math.max(Math.abs(open), ...CONT_ROWS.map(r => Math.abs(parseFloat(data[r.key] as string) || 0)))
 
   function rowColor(val: number, sign: 1 | -1 | 0) {
-    if (sign === 0) return val >= 0 ? 'text-emerald-600' : 'text-red-500'
-    if (val > 0) return sign === 1 ? 'text-emerald-600' : 'text-red-500'
-    if (val < 0) return sign === -1 ? 'text-emerald-600' : 'text-red-500'
-    return 'text-gray-400'
+    if (sign === 0) return val >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+    if (val > 0) return sign === 1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+    if (val < 0) return sign === -1 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
+    return 'text-muted-foreground'
   }
   function barWidth(val: number) {
     if (maxAbs === 0) return '0%'
@@ -236,19 +236,19 @@ export function ContinuityTable({ data }: { data: ContinuityReport }) {
     <div className="overflow-x-auto">
       <table className="min-w-full text-sm">
         <tbody>
-          <tr className="border-b border-gray-200">
-            <td className="py-2.5 pr-4 text-gray-500 w-8 text-xs font-mono" />
-            <td className="py-2.5 pr-4 font-semibold text-gray-800 w-56">Opening Balance</td>
-            <td className="py-2.5 text-right font-bold text-gray-900 w-36 tabular-nums">{fmtCAD0(data.opening_balance)}</td>
-            <td className="py-2.5 pl-4 w-48 hidden sm:table-cell"><div className="h-2 bg-blue-200 rounded" style={{ width: barWidth(open) }} /></td>
+          <tr className="border-b border-border">
+            <td className="py-2.5 pr-4 text-muted-foreground w-8 text-xs font-mono" />
+            <td className="py-2.5 pr-4 font-semibold text-foreground w-56">Opening Balance</td>
+            <td className="py-2.5 text-right font-bold text-foreground w-36 tabular-nums">{fmtCAD0(data.opening_balance)}</td>
+            <td className="py-2.5 pl-4 w-48 hidden sm:table-cell"><div className="h-2 bg-primary/20 rounded" style={{ width: barWidth(open) }} /></td>
           </tr>
           {CONT_ROWS.map(({ key, label, sign, prefix }) => {
             const val = parseFloat(data[key] as string) || 0
             if (val === 0 && key === 'transfers') return null
             return (
-              <tr key={key} className="border-b border-gray-100 hover:bg-gray-50">
-                <td className="py-2 pr-4 text-gray-400 text-xs font-mono w-8">{prefix}</td>
-                <td className="py-2 pr-4 text-gray-700 w-56">{label}</td>
+              <tr key={key} className="border-b border-border hover:bg-muted/50">
+                <td className="py-2 pr-4 text-muted-foreground text-xs font-mono w-8">{prefix}</td>
+                <td className="py-2 pr-4 text-foreground w-56">{label}</td>
                 <td className={`py-2 text-right font-medium w-36 tabular-nums ${rowColor(val, sign)}`}>{fmtCAD0Signed(val)}</td>
                 <td className="py-2 pl-4 w-48 hidden sm:table-cell">
                   <div className={`h-2 rounded ${val >= 0 ? 'bg-emerald-200' : 'bg-red-200'}`} style={{ width: barWidth(val) }} />
@@ -256,12 +256,12 @@ export function ContinuityTable({ data }: { data: ContinuityReport }) {
               </tr>
             )
           })}
-          <tr className="border-t-2 border-gray-300">
-            <td className="py-3 pr-4 text-gray-500 w-8 text-xs font-mono">=</td>
-            <td className="py-3 pr-4 font-bold text-gray-900 w-56">Closing Balance</td>
+          <tr className="border-t-2 border-border">
+            <td className="py-3 pr-4 text-muted-foreground w-8 text-xs font-mono">=</td>
+            <td className="py-3 pr-4 font-bold text-foreground w-56">Closing Balance</td>
             <td className="py-3 text-right w-36 tabular-nums">
-              <span className="font-bold text-gray-900">{fmtCAD0(data.closing_balance)}</span>
-              <span className={`ml-2 text-xs font-medium ${netChange >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+              <span className="font-bold text-foreground">{fmtCAD0(data.closing_balance)}</span>
+              <span className={`ml-2 text-xs font-medium ${netChange >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                 {netChange >= 0 ? '▲' : '▼'} {fmtCAD0(Math.abs(netChange))}
               </span>
             </td>
@@ -270,12 +270,12 @@ export function ContinuityTable({ data }: { data: ContinuityReport }) {
         </tbody>
       </table>
       {data.period_start && (
-        <p className="mt-3 text-xs text-gray-400">
+        <p className="mt-3 text-xs text-muted-foreground">
           Period: {data.period_start} → {data.period_end}
         </p>
       )}
       {!data.has_market_prices && (
-        <p className="mt-2 text-xs text-amber-600 bg-amber-50 px-3 py-2 rounded">
+        <p className="mt-2 text-xs text-amber-600 dark:text-amber-400 bg-amber-50 px-3 py-2 rounded">
           Note: Market prices not available for this period — balances reflect book value.
         </p>
       )}
@@ -399,23 +399,23 @@ export function ImpactCells({ row }: { row: CashStatementRow }) {
   if (row.transaction_type === 'CASH_OPENING') {
     return (
       <>
-        <td className="px-4 py-2.5 text-right text-gray-400 font-mono text-sm">—</td>
-        <td className="px-4 py-2.5 text-right font-mono text-sm text-emerald-600">{fmtAmt(row.impact)}</td>
+        <td className="px-4 py-2.5 text-right text-muted-foreground font-mono text-sm">—</td>
+        <td className="px-4 py-2.5 text-right font-mono text-sm text-emerald-600 dark:text-emerald-400">{fmtAmt(row.impact)}</td>
       </>
     )
   }
   if (n < 0) {
     return (
       <>
-        <td className="px-4 py-2.5 text-right font-mono text-sm text-red-600">{fmtAmt(row.impact)}</td>
-        <td className="px-4 py-2.5 text-right text-gray-400 font-mono text-sm">—</td>
+        <td className="px-4 py-2.5 text-right font-mono text-sm text-red-600 dark:text-red-400">{fmtAmt(row.impact)}</td>
+        <td className="px-4 py-2.5 text-right text-muted-foreground font-mono text-sm">—</td>
       </>
     )
   }
   return (
     <>
-      <td className="px-4 py-2.5 text-right text-gray-400 font-mono text-sm">—</td>
-      <td className="px-4 py-2.5 text-right font-mono text-sm text-emerald-600">{fmtAmt(row.impact)}</td>
+      <td className="px-4 py-2.5 text-right text-muted-foreground font-mono text-sm">—</td>
+      <td className="px-4 py-2.5 text-right font-mono text-sm text-emerald-600 dark:text-emerald-400">{fmtAmt(row.impact)}</td>
     </>
   )
 }

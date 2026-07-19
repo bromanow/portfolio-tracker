@@ -49,11 +49,11 @@ function fmtDatetime(s: string | null | undefined) {
 }
 
 function SourceBadge({ source }: { source: string | null }) {
-  if (!source) return <span className="text-xs text-gray-300 italic">none</span>
+  if (!source) return <span className="text-xs text-muted-foreground/50 italic">none</span>
   const cls =
     source === 'manual' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
-    source === 'yahoo' || source === 'yahoo_chain' || source === 'mx_chain' ? 'bg-green-50 text-green-700 border border-green-200' :
-    'bg-gray-100 text-gray-500'
+    source === 'yahoo' || source === 'yahoo_chain' || source === 'mx_chain' ? 'bg-green-50 text-green-600 dark:text-green-400 border border-green-200' :
+    'bg-accent text-muted-foreground'
   const label = source === 'yahoo_chain' ? 'Yahoo chain' : source === 'mx_chain' ? 'MX chain' : source
   return <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${cls}`}>{label}</span>
 }
@@ -62,16 +62,16 @@ function CcyBadge({ currency }: { currency: string | null | undefined }) {
   if (!currency) return null
   const isUSD = currency.toUpperCase() === 'USD'
   return (
-    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${isUSD ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+    <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${isUSD ? 'bg-green-50 text-green-600 dark:text-green-400' : 'bg-red-50 text-red-700'}`}>
       {currency.toUpperCase()}
     </span>
   )
 }
 
 function pnlClass(val: string | null | undefined) {
-  if (!val) return 'text-gray-400'
+  if (!val) return 'text-muted-foreground'
   const n = parseFloat(val)
-  return n > 0 ? 'text-emerald-600' : n < 0 ? 'text-red-500' : 'text-gray-500'
+  return n > 0 ? 'text-emerald-600 dark:text-emerald-400' : n < 0 ? 'text-red-500 dark:text-red-400' : 'text-muted-foreground'
 }
 
 // ─── Manual price inline editor ──────────────────────────────────────────────
@@ -101,7 +101,7 @@ function ManualEditor({
 
   return (
     <div className="flex items-center gap-1">
-      <span className="text-xs text-gray-400">{row.currency ?? 'CAD'}</span>
+      <span className="text-xs text-muted-foreground">{row.currency ?? 'CAD'}</span>
       <input
         autoFocus
         type="number"
@@ -113,18 +113,18 @@ function ManualEditor({
           if (e.key === 'Enter') saveMut.mutate()
           if (e.key === 'Escape') onDone()
         }}
-        className="w-24 border border-blue-400 rounded px-1.5 py-0.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-blue-400"
+        className="bg-background text-foreground w-24 border border-primary/40 rounded px-1.5 py-0.5 text-sm text-right focus:outline-none focus:ring-1 focus:ring-primary/40"
       />
       <button onClick={() => saveMut.mutate()} disabled={saveMut.isPending}
-        className="text-emerald-600 hover:text-emerald-700 disabled:opacity-50" title="Save">
+        className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 disabled:opacity-50" title="Save">
         <Check className="h-3.5 w-3.5" />
       </button>
-      <button onClick={onDone} className="text-gray-400 hover:text-gray-600" title="Cancel">
+      <button onClick={onDone} className="text-muted-foreground hover:text-muted-foreground" title="Cancel">
         <X className="h-3.5 w-3.5" />
       </button>
       {row.source === 'manual' && (
         <button onClick={() => delMut.mutate()} disabled={delMut.isPending}
-          className="text-red-400 hover:text-red-600 disabled:opacity-50 ml-1" title="Clear manual price">
+          className="text-red-400 hover:text-red-600 dark:text-red-400 disabled:opacity-50 ml-1" title="Clear manual price">
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       )}
@@ -155,12 +155,12 @@ function HistoryRow({ r, securityId, onChanged }: { r: PriceRecord; securityId: 
 
   if (editing) {
     return (
-      <tr className="bg-blue-50">
-        <td className="py-0.5 pr-4 pl-2 text-gray-600 font-medium">{r.price_date}</td>
+      <tr className="bg-primary/10">
+        <td className="py-0.5 pr-4 pl-2 text-muted-foreground font-medium">{r.price_date}</td>
         <td className="py-0.5 pr-1 text-right" colSpan={2}>
           <div className="flex items-center justify-end gap-1">
             <select value={editCcy} onChange={e => setEditCcy(e.target.value)}
-              className="border border-gray-300 rounded px-1 py-0.5 text-xs">
+              className="bg-background text-foreground border border-border rounded px-1 py-0.5 text-xs">
               <option>CAD</option><option>USD</option>
             </select>
             <input
@@ -169,7 +169,7 @@ function HistoryRow({ r, securityId, onChanged }: { r: PriceRecord; securityId: 
               value={editVal}
               onChange={e => setEditVal(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') updateMut.mutate(); if (e.key === 'Escape') setEditing(false) }}
-              className="w-24 border border-blue-400 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none"
+              className="bg-background text-foreground w-24 border border-primary/40 rounded px-1.5 py-0.5 text-xs text-right focus:outline-none"
             />
           </div>
         </td>
@@ -177,10 +177,10 @@ function HistoryRow({ r, securityId, onChanged }: { r: PriceRecord; securityId: 
         <td className="py-0.5">
           <div className="flex items-center gap-1">
             <button onClick={() => updateMut.mutate()} disabled={updateMut.isPending || !editVal}
-              className="text-emerald-600 hover:text-emerald-700 disabled:opacity-40" title="Save">
+              className="text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 disabled:opacity-40" title="Save">
               <Check className="h-3 w-3" />
             </button>
-            <button onClick={() => setEditing(false)} className="text-gray-400 hover:text-gray-600" title="Cancel">
+            <button onClick={() => setEditing(false)} className="text-muted-foreground hover:text-muted-foreground" title="Cancel">
               <X className="h-3 w-3" />
             </button>
           </div>
@@ -190,8 +190,8 @@ function HistoryRow({ r, securityId, onChanged }: { r: PriceRecord; securityId: 
   }
 
   return (
-    <tr className="hover:bg-gray-50 group">
-      <td className="py-0.5 pr-4 pl-2 text-gray-600">{r.price_date}</td>
+    <tr className="hover:bg-muted/50 group">
+      <td className="py-0.5 pr-4 pl-2 text-muted-foreground">{r.price_date}</td>
       <td className="py-0.5 pr-4 text-right font-mono">{fmtNative(r.close_price, r.currency)}</td>
       <td className="py-0.5 pr-4 text-right font-mono">{fmtCAD(r.close_price_cad)}</td>
       <td className="py-0.5 pr-2"><SourceBadge source={r.source} /></td>
@@ -199,13 +199,13 @@ function HistoryRow({ r, securityId, onChanged }: { r: PriceRecord; securityId: 
         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
           <button
             onClick={() => { setEditVal(r.close_price ?? ''); setEditCcy(r.currency ?? 'CAD'); setEditing(true) }}
-            className="text-gray-400 hover:text-blue-500" title="Edit price">
+            className="text-muted-foreground hover:text-primary/70" title="Edit price">
             <Pencil className="h-3 w-3" />
           </button>
           <button
             onClick={() => { if (window.confirm(`Delete price for ${r.price_date}?`)) deleteMut.mutate() }}
             disabled={deleteMut.isPending}
-            className="text-gray-400 hover:text-red-500 disabled:opacity-40" title="Delete">
+            className="text-muted-foreground hover:text-red-500 dark:text-red-400 disabled:opacity-40" title="Delete">
             <Trash2 className="h-3 w-3" />
           </button>
         </div>
@@ -297,16 +297,16 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
     },
   })
 
-  if (isLoading) return <div className="px-8 py-3 text-xs text-gray-400 animate-pulse">Loading history…</div>
+  if (isLoading) return <div className="px-8 py-3 text-xs text-muted-foreground animate-pulse">Loading history…</div>
 
   return (
-    <div className="px-8 py-3 bg-gray-50 border-t border-gray-100">
-      <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
-        Price History — {ticker} {data.length > 0 && <span className="font-normal normal-case text-gray-400">({data.length} entries)</span>}
+    <div className="px-8 py-3 bg-muted/50 border-t border-border">
+      <div className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">
+        Price History — {ticker} {data.length > 0 && <span className="font-normal normal-case text-muted-foreground">({data.length} entries)</span>}
       </div>
 
       {data.length === 0 ? (
-        <div className="text-xs text-gray-400 italic mb-2">No price history recorded yet.</div>
+        <div className="text-xs text-muted-foreground italic mb-2">No price history recorded yet.</div>
       ) : (
         <div className="mb-2 space-y-0.5">
           {years.map(year => {
@@ -314,34 +314,34 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
             const months = Object.keys(byYear[year]).sort((a, b) => +b - +a)
             const yearCount = months.reduce((s, m) => s + byYear[year][m].length, 0)
             return (
-              <div key={year} className="rounded border border-gray-200 bg-white overflow-hidden">
+              <div key={year} className="rounded border border-border bg-card overflow-hidden">
                 {/* Year header */}
                 <button
                   onClick={() => toggleYear(year)}
-                  className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-gray-50 text-xs"
+                  className="w-full flex items-center justify-between px-3 py-1.5 hover:bg-muted/50 text-xs"
                 >
-                  <span className="font-semibold text-gray-700">{year}</span>
-                  <span className="flex items-center gap-2 text-gray-400">
+                  <span className="font-semibold text-foreground">{year}</span>
+                  <span className="flex items-center gap-2 text-muted-foreground">
                     <span>{yearCount} entries</span>
                     <ChevronDown className={`h-3.5 w-3.5 transition-transform ${yearOpen ? 'rotate-180' : ''}`} />
                   </span>
                 </button>
                 {yearOpen && (
-                  <div className="border-t border-gray-100">
+                  <div className="border-t border-border">
                     {months.map(month => {
                       const monthKey = `${year}-${month}`
                       const monthOpen = !!openMonths[monthKey]
                       const rows = byYear[year][month]
                       const monthName = MONTH_NAMES[+month - 1]
                       return (
-                        <div key={month} className="border-b border-gray-100 last:border-0">
+                        <div key={month} className="border-b border-border last:border-0">
                           {/* Month header */}
                           <button
                             onClick={() => toggleMonth(monthKey)}
-                            className="w-full flex items-center justify-between px-4 py-1 hover:bg-gray-50 text-xs"
+                            className="w-full flex items-center justify-between px-4 py-1 hover:bg-muted/50 text-xs"
                           >
-                            <span className="text-gray-600">{monthName} {year}</span>
-                            <span className="flex items-center gap-2 text-gray-400">
+                            <span className="text-muted-foreground">{monthName} {year}</span>
+                            <span className="flex items-center gap-2 text-muted-foreground">
                               <span>{rows.length} entries</span>
                               <ChevronDown className={`h-3 w-3 transition-transform ${monthOpen ? 'rotate-180' : ''}`} />
                             </span>
@@ -349,7 +349,7 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
                           {monthOpen && (
                             <table className="text-xs w-full max-w-2xl ml-4 mb-1">
                               <thead>
-                                <tr className="text-gray-400 uppercase">
+                                <tr className="text-muted-foreground uppercase">
                                   <th className="text-left pb-1 pr-4 pl-2 font-medium">Date</th>
                                   <th className="text-right pb-1 pr-4 font-medium">Price</th>
                                   <th className="text-right pb-1 pr-4 font-medium">Price (CAD)</th>
@@ -357,7 +357,7 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
                                   <th className="pb-1 w-14"></th>
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-gray-50">
+                              <tbody className="divide-y divide-border/60">
                                 {rows.map((r, i) => (
                                   <HistoryRow
                                     key={`${r.price_date}-${i}`}
@@ -383,7 +383,7 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
       {/* Toolbar */}
       <div className="flex flex-wrap items-center gap-3 mt-1">
         {!showAddForm ? (
-          <button onClick={() => setShowAddForm(true)} className="text-xs text-blue-500 hover:text-blue-700">
+          <button onClick={() => setShowAddForm(true)} className="text-xs text-primary/70 hover:text-primary">
             + Add row
           </button>
         ) : (
@@ -392,34 +392,34 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
               max={new Date().toISOString().slice(0, 10)} placeholder="Date" />
             <input type="number" step="0.0001" min="0" placeholder="Price" value={addPrice}
               onChange={e => setAddPrice(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-0.5 text-xs w-24" />
+              className="bg-background text-foreground border border-border rounded px-2 py-0.5 text-xs w-24" />
             <select value={addCurrency} onChange={e => setAddCurrency(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-0.5 text-xs">
+              className="bg-background text-foreground border border-border rounded px-2 py-0.5 text-xs">
               <option>CAD</option><option>USD</option>
             </select>
             <button onClick={() => addMut.mutate()} disabled={addMut.isPending || !addPrice || !addDate}
-              className="text-xs bg-blue-600 text-white rounded px-2 py-0.5 disabled:opacity-50">
+              className="text-xs bg-primary text-white rounded px-2 py-0.5 disabled:opacity-50">
               {addMut.isPending ? 'Saving…' : 'Save'}
             </button>
             <button onClick={() => { setShowAddForm(false); setAddPrice('') }}
-              className="text-xs text-gray-400 hover:text-gray-600">Cancel</button>
+              className="text-xs text-muted-foreground hover:text-muted-foreground">Cancel</button>
           </div>
         )}
 
         <button onClick={() => setShowTools(t => !t)}
-          className="text-xs text-gray-400 hover:text-gray-600 border border-dashed border-gray-300 rounded px-2 py-0.5">
+          className="text-xs text-muted-foreground hover:text-muted-foreground border border-dashed border-border rounded px-2 py-0.5">
           {showTools ? 'Hide tools' : 'More tools…'}
         </button>
       </div>
 
       {showTools && (
-        <div className="mt-2 space-y-2 border border-gray-200 rounded-lg p-3 bg-white text-xs">
+        <div className="mt-2 space-y-2 border border-border rounded-lg p-3 bg-card text-xs">
           {/* Delete all */}
           <div className="flex items-center gap-2">
             <button
               onClick={() => { if (window.confirm(`Delete ALL ${data.length} price history rows for ${ticker}?`)) deleteAllMut.mutate() }}
               disabled={deleteAllMut.isPending || data.length === 0}
-              className="flex items-center gap-1 text-xs border border-red-200 text-red-600 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-40"
+              className="flex items-center gap-1 text-xs border border-red-200 text-red-600 dark:text-red-400 rounded px-2 py-0.5 hover:bg-red-50 disabled:opacity-40"
             >
               <Trash2 className="h-3 w-3" />
               {deleteAllMut.isPending ? 'Deleting…' : `Delete all history (${data.length} rows)`}
@@ -429,34 +429,34 @@ function PriceHistory({ securityId, ticker }: { securityId: number; ticker: stri
 
           {/* CSV import */}
           <div className="flex items-center gap-2">
-            <label className="flex items-center gap-1 border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50 cursor-pointer">
-              <RefreshCw className="h-3 w-3 text-gray-400" />
+            <label className="flex items-center gap-1 border border-border rounded px-2 py-0.5 hover:bg-muted/50 cursor-pointer">
+              <RefreshCw className="h-3 w-3 text-muted-foreground" />
               {importCsvMut.isPending ? 'Importing…' : 'Import CSV'}
-              <input type="file" accept=".csv,.txt" className="hidden"
+              <input type="file" accept=".csv,.txt" className="bg-background text-foreground hidden"
                 onChange={e => { const f = e.target.files?.[0]; if (f) { setCsvStatus(null); importCsvMut.mutate(f) } e.target.value = '' }} />
             </label>
-            <span className="text-gray-400">date, price [, currency] columns</span>
+            <span className="text-muted-foreground">date, price [, currency] columns</span>
           </div>
 
           {/* Copy from another security */}
           <div className="flex items-center gap-2">
-            <span className="text-gray-500">Copy history from security ID:</span>
+            <span className="text-muted-foreground">Copy history from security ID:</span>
             <input type="number" placeholder="Security ID" value={copyFromId}
               onChange={e => setCopyFromId(e.target.value)}
-              className="border border-gray-300 rounded px-2 py-0.5 w-24" />
+              className="bg-background text-foreground border border-border rounded px-2 py-0.5 w-24" />
             <button
               onClick={() => copyFromMut.mutate()}
               disabled={copyFromMut.isPending || !copyFromId}
-              className="border border-gray-300 rounded px-2 py-0.5 hover:bg-gray-50 disabled:opacity-40"
+              className="border border-border rounded px-2 py-0.5 hover:bg-muted/50 disabled:opacity-40"
             >
               {copyFromMut.isPending ? 'Copying…' : 'Copy'}
             </button>
-            <span className="text-gray-400">(for ticker renames — copies all rows, overwrites conflicts)</span>
+            <span className="text-muted-foreground">(for ticker renames — copies all rows, overwrites conflicts)</span>
           </div>
 
           {csvStatus && <div className="text-green-600">{csvStatus}</div>}
-          {importCsvMut.isError && <div className="text-red-500">Import failed — check CSV format</div>}
-          {copyFromMut.isError && <div className="text-red-500">Copy failed — check security ID</div>}
+          {importCsvMut.isError && <div className="text-red-500 dark:text-red-400">Import failed — check CSV format</div>}
+          {copyFromMut.isError && <div className="text-red-500 dark:text-red-400">Copy failed — check security ID</div>}
         </div>
       )}
     </div>
@@ -501,11 +501,11 @@ function PriceRow({ row }: { row: PriceReportRow }) {
 
   return (
     <>
-      <tr className={`hover:bg-gray-50 transition-colors ${!row.has_price ? 'bg-amber-50/40' : ''}`}>
+      <tr className={`hover:bg-muted/50 transition-colors ${!row.has_price ? 'bg-amber-50/40' : ''}`}>
         {/* Expand toggle */}
         <td className="px-2 py-2.5 w-6">
           <button onClick={() => setExpanded(e => !e)}
-            className="text-gray-300 hover:text-gray-500 transition-colors">
+            className="text-muted-foreground/50 hover:text-muted-foreground transition-colors">
             {expanded
               ? <ChevronUp className="h-3.5 w-3.5" />
               : <ChevronDown className="h-3.5 w-3.5" />}
@@ -514,20 +514,20 @@ function PriceRow({ row }: { row: PriceReportRow }) {
 
         {/* Ticker / Name */}
         <td className="px-3 py-2.5">
-          <div className="font-medium text-gray-900 text-sm">{displayTicker}</div>
+          <div className="font-medium text-foreground text-sm">{displayTicker}</div>
           {row.name && !row.is_option && (
-            <div className="text-xs text-gray-400 truncate max-w-[180px]">{row.name}</div>
+            <div className="text-xs text-muted-foreground truncate max-w-[180px]">{row.name}</div>
           )}
         </td>
 
         {/* Asset class */}
-        <td className="px-3 py-2.5 text-xs text-gray-500">{row.asset_class}</td>
+        <td className="px-3 py-2.5 text-xs text-muted-foreground">{row.asset_class}</td>
 
         {/* Currency */}
         <td className="px-3 py-2.5 text-center"><CcyBadge currency={row.currency} /></td>
 
         {/* Exchange */}
-        <td className="px-3 py-2.5 text-xs text-gray-400">{row.exchange ?? '—'}</td>
+        <td className="px-3 py-2.5 text-xs text-muted-foreground">{row.exchange ?? '—'}</td>
 
         {/* Price (native) */}
         <td className="px-3 py-2.5 text-right">
@@ -544,11 +544,11 @@ function PriceRow({ row }: { row: PriceReportRow }) {
                     )}
                   </>
                 ) : (
-                  <span className="text-xs text-amber-500 italic">no price</span>
+                  <span className="text-xs text-amber-500 dark:text-amber-400 italic">no price</span>
                 )}
               </div>
               <button onClick={() => setEditing(true)}
-                className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-blue-500"
+                className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-primary/70"
                 title="Set price manually">
                 <Pencil className="h-3 w-3" />
               </button>
@@ -556,7 +556,7 @@ function PriceRow({ row }: { row: PriceReportRow }) {
                 <button
                   onClick={() => clearMut.mutate()}
                   disabled={clearMut.isPending}
-                  className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-300 hover:text-red-500 disabled:opacity-30"
+                  className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground/50 hover:text-red-500 dark:text-red-400 disabled:opacity-30"
                   title="Remove manual override — next refresh will auto-fetch price">
                   <Trash2 className="h-3 w-3" />
                 </button>
@@ -566,7 +566,7 @@ function PriceRow({ row }: { row: PriceReportRow }) {
         </td>
 
         {/* Price CAD */}
-        <td className="px-3 py-2.5 text-right text-sm text-gray-600">
+        <td className="px-3 py-2.5 text-right text-sm text-muted-foreground">
           {row.price_cad ? fmtCAD(row.price_cad) : '—'}
         </td>
 
@@ -574,10 +574,10 @@ function PriceRow({ row }: { row: PriceReportRow }) {
         <td className="px-3 py-2.5 text-center"><SourceBadge source={row.source} /></td>
 
         {/* Price date */}
-        <td className="px-3 py-2.5 text-xs text-gray-400 whitespace-nowrap">{fmtDate(row.price_date)}</td>
+        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{fmtDate(row.price_date)}</td>
 
         {/* Last fetched */}
-        <td className="px-3 py-2.5 text-xs text-gray-400 whitespace-nowrap">{fmtDatetime(row.fetched_at)}</td>
+        <td className="px-3 py-2.5 text-xs text-muted-foreground whitespace-nowrap">{fmtDatetime(row.fetched_at)}</td>
       </tr>
 
       {expanded && (
@@ -587,7 +587,7 @@ function PriceRow({ row }: { row: PriceReportRow }) {
               <button
                 onClick={() => fetchHistMut.mutate()}
                 disabled={rowBusy}
-                className="flex items-center gap-1.5 text-xs border border-gray-300 rounded px-2.5 py-1 hover:bg-gray-50 disabled:opacity-50"
+                className="flex items-center gap-1.5 text-xs border border-border rounded px-2.5 py-1 hover:bg-muted/50 disabled:opacity-50"
                 title="Re-download price history for this security from Yahoo Finance"
               >
                 <RefreshCw className={`h-3 w-3 ${rowBusy ? 'animate-spin' : ''}`} />
@@ -597,7 +597,7 @@ function PriceRow({ row }: { row: PriceReportRow }) {
                 <span className="text-xs text-green-600">✓ History refreshed</span>
               )}
               {rowJob?.status === 'error' && (
-                <span className="text-xs text-red-500">Failed — check ticker/exchange</span>
+                <span className="text-xs text-red-500 dark:text-red-400">Failed — check ticker/exchange</span>
               )}
             </div>
             <PriceHistory securityId={row.security_id} ticker={displayTicker} />
@@ -626,19 +626,19 @@ function Pagination({ page, totalPages, onPrev, onNext, pageSize, onPageSize }: 
   pageSize: number; onPageSize: (n: number) => void
 }) {
   return (
-    <div className="flex items-center gap-3 text-xs text-gray-500">
+    <div className="flex items-center gap-3 text-xs text-muted-foreground">
       <select
         value={pageSize}
         onChange={e => onPageSize(Number(e.target.value))}
-        className="border border-gray-200 rounded px-2 py-1 text-xs bg-white"
+        className="border border-border rounded px-2 py-1 text-xs bg-card"
       >
         {PAGE_SIZE_OPTIONS.map(n => <option key={n} value={n}>{n} / page</option>)}
       </select>
-      <span className="text-gray-400">{page} / {totalPages}</span>
+      <span className="text-muted-foreground">{page} / {totalPages}</span>
       <button onClick={onPrev} disabled={page <= 1}
-        className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">← Prev</button>
+        className="px-2 py-1 border border-border rounded hover:bg-muted/50 disabled:opacity-40">← Prev</button>
       <button onClick={onNext} disabled={page >= totalPages}
-        className="px-2 py-1 border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40">Next →</button>
+        className="px-2 py-1 border border-border rounded hover:bg-muted/50 disabled:opacity-40">Next →</button>
     </div>
   )
 }
@@ -712,7 +712,7 @@ export default function Prices() {
     <div className="space-y-5">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Security Prices</h1>
+        <h1 className="text-2xl font-bold text-foreground">Security Prices</h1>
         <div className="flex items-center gap-2">
           <button
             onClick={() => recordHistMut.mutate()}
@@ -730,7 +730,7 @@ export default function Prices() {
             onClick={() => refreshHistMut.mutate()}
             disabled={histBusy}
             title="Download full price history from Yahoo Finance for all securities, back to each security's first transaction date. Use header 'Refresh Prices' for day-to-day updates."
-            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-gray-300 text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            className="flex items-center gap-2 px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-muted/50 disabled:opacity-50"
           >
             <RefreshCw className={`h-4 w-4 ${histBusy ? 'animate-spin' : ''}`} />
             {histBusy ? 'Fetching… (background)' : 'Re-download Full History'}
@@ -739,7 +739,7 @@ export default function Prices() {
             <span className="text-xs text-green-600">✓ History updated</span>
           )}
           {histJob?.status === 'error' && (
-            <span className="text-xs text-red-500">History fetch failed</span>
+            <span className="text-xs text-red-500 dark:text-red-400">History fetch failed</span>
           )}
         </div>
       </div>
@@ -747,10 +747,10 @@ export default function Prices() {
       {/* Summary chips */}
       <div className="flex flex-wrap gap-3 text-sm">
         {[
-          { label: 'Total securities', val: counts.total, cls: 'bg-gray-100 text-gray-700' },
-          { label: 'With price', val: counts.withPrice, cls: 'bg-green-50 text-green-700' },
+          { label: 'Total securities', val: counts.total, cls: 'bg-accent text-foreground' },
+          { label: 'With price', val: counts.withPrice, cls: 'bg-green-50 text-green-600 dark:text-green-400' },
           { label: 'Manual', val: counts.manual, cls: 'bg-amber-50 text-amber-700' },
-          { label: 'Missing', val: counts.missing, cls: counts.missing > 0 ? 'bg-red-50 text-red-600' : 'bg-gray-50 text-gray-400' },
+          { label: 'Missing', val: counts.missing, cls: counts.missing > 0 ? 'bg-red-50 text-red-600 dark:text-red-400' : 'bg-muted/50 text-muted-foreground' },
         ].map(({ label, val, cls }) => (
           <div key={label} className={`px-3 py-1.5 rounded-lg font-medium ${cls}`}>
             {val} <span className="font-normal opacity-75">{label}</span>
@@ -759,38 +759,38 @@ export default function Prices() {
       </div>
 
       {/* Filters */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm px-5 py-4">
+      <div className="bg-card rounded-xl border border-border shadow-sm px-5 py-4">
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Search</label>
+            <label className="block text-xs text-muted-foreground mb-1">Search</label>
             <input
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
               placeholder="Ticker or name…"
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm w-48 focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Asset Class</label>
+            <label className="block text-xs text-muted-foreground mb-1">Asset Class</label>
             <select value={assetClass} onChange={e => setAssetClass(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm">
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm">
               <option value="">All</option>
               {ASSET_CLASSES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Currency</label>
+            <label className="block text-xs text-muted-foreground mb-1">Currency</label>
             <select value={currency} onChange={e => setCurrency(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm">
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm">
               <option value="">All</option>
               {CURRENCIES.map(c => <option key={c} value={c}>{c}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Source</label>
+            <label className="block text-xs text-muted-foreground mb-1">Source</label>
             <select value={source} onChange={e => setSource(e.target.value)}
-              className="border border-gray-300 rounded px-3 py-1.5 text-sm">
+              className="bg-background text-foreground border border-border rounded px-3 py-1.5 text-sm">
               <option value="">All</option>
               {SOURCES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
             </select>
@@ -798,7 +798,7 @@ export default function Prices() {
           {(assetClass || currency || source || search) && (
             <button
               onClick={() => { setAssetClass(''); setCurrency(''); setSource(''); setSearch('') }}
-              className="text-xs text-blue-600 hover:text-blue-800 underline pb-1.5"
+              className="text-xs text-primary hover:text-primary underline pb-1.5"
             >
               Clear filters
             </button>
@@ -807,21 +807,21 @@ export default function Prices() {
       </div>
 
       {/* Table */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
         {isLoading ? (
           <div className="flex items-center justify-center h-32">
-            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+            <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
           </div>
         ) : data.length === 0 ? (
-          <p className="px-5 py-10 text-center text-gray-400 text-sm">No securities match the current filters.</p>
+          <p className="px-5 py-10 text-center text-muted-foreground text-sm">No securities match the current filters.</p>
         ) : (
           <>
-            <div className="flex justify-end px-4 py-2 border-b border-gray-100">
+            <div className="flex justify-end px-4 py-2 border-b border-border">
               <Pagination {...paginationProps} />
             </div>
             <div className="overflow-x-auto">
-              <table className="min-w-full text-sm divide-y divide-gray-100">
-                <thead className="bg-gray-50 text-xs text-gray-500 uppercase">
+              <table className="min-w-full text-sm divide-y divide-border">
+                <thead className="bg-muted/50 text-xs text-muted-foreground uppercase">
                   <tr>
                     <th className="px-2 py-2.5 w-6" />
                     <th className="px-3 py-2.5 text-left">Security</th>
@@ -835,12 +835,12 @@ export default function Prices() {
                     <th className="px-3 py-2.5 text-left">Last Fetched</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-gray-50 bg-white">
+                <tbody className="divide-y divide-border/60 bg-card">
                   {pageRows.map(row => <PriceRow key={row.security_id} row={row} />)}
                 </tbody>
               </table>
             </div>
-            <div className="flex justify-end px-4 py-2 border-t border-gray-100">
+            <div className="flex justify-end px-4 py-2 border-t border-border">
               <Pagination {...paginationProps} />
             </div>
           </>

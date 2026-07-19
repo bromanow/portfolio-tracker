@@ -31,49 +31,49 @@ function SchedulerSection() {
     <div className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-gray-500" />
-          <h3 className="font-semibold text-gray-800">Scheduled Jobs</h3>
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          <h3 className="font-semibold text-foreground">Scheduled Jobs</h3>
         </div>
         <button
           onClick={runNow}
           disabled={running}
-          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-xs font-medium hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-primary text-white text-xs font-medium hover:bg-primary/90 disabled:opacity-50"
         >
           {running ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
           Run nightly jobs now
         </button>
       </div>
-      <p className="text-xs text-gray-500">Nightly: Bank of Canada FX → Plaid → IBKR Flex → snapshot recompute → view refresh.</p>
+      <p className="text-xs text-muted-foreground">Nightly: Bank of Canada FX → Plaid → IBKR Flex → snapshot recompute → view refresh.</p>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
-        <div className="px-4 py-2 bg-gray-50 text-xs uppercase tracking-wide text-gray-400 font-medium">Next runs</div>
-        <div className="divide-y divide-gray-50">
+      <div className="bg-card border border-border rounded-xl overflow-hidden">
+        <div className="px-4 py-2 bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground font-medium">Next runs</div>
+        <div className="divide-y divide-border/60">
           {(data?.jobs ?? []).map(j => (
             <div key={j.id} className="flex items-center justify-between px-4 py-2 text-sm">
-              <span className="text-gray-700">{j.name}</span>
-              <span className="text-xs text-gray-500">{fmtTime(j.next_run)}</span>
+              <span className="text-foreground">{j.name}</span>
+              <span className="text-xs text-muted-foreground">{fmtTime(j.next_run)}</span>
             </div>
           ))}
-          {(data?.jobs ?? []).length === 0 && <div className="px-4 py-2 text-sm text-gray-400">No jobs scheduled.</div>}
+          {(data?.jobs ?? []).length === 0 && <div className="px-4 py-2 text-sm text-muted-foreground">No jobs scheduled.</div>}
         </div>
-        <div className="px-4 py-2 bg-gray-50 text-xs uppercase tracking-wide text-gray-400 font-medium border-t border-gray-100 flex items-center justify-between">
+        <div className="px-4 py-2 bg-muted/50 text-xs uppercase tracking-wide text-muted-foreground font-medium border-t border-border flex items-center justify-between">
           <span>Recent runs</span>
-          {isFetching && <Loader2 className="h-3 w-3 animate-spin text-gray-400" />}
+          {isFetching && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
         </div>
-        <div className="divide-y divide-gray-50 max-h-72 overflow-y-auto">
+        <div className="divide-y divide-border/60 max-h-72 overflow-y-auto">
           {(data?.log ?? []).map((r, i) => (
             <div key={i} className="flex items-start gap-2 px-4 py-2 text-sm">
               <span className={`mt-1 h-2 w-2 rounded-full flex-shrink-0 ${r.status === 'ok' ? 'bg-emerald-500' : 'bg-red-500'}`} />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center justify-between gap-2">
-                  <span className="font-medium text-gray-700">{r.name}</span>
-                  <span className="text-xs text-gray-400 whitespace-nowrap">{fmtTime(r.at)}</span>
+                  <span className="font-medium text-foreground">{r.name}</span>
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">{fmtTime(r.at)}</span>
                 </div>
-                <div className="text-xs text-gray-500 break-words">{r.detail}</div>
+                <div className="text-xs text-muted-foreground break-words">{r.detail}</div>
               </div>
             </div>
           ))}
-          {(data?.log ?? []).length === 0 && <div className="px-4 py-3 text-sm text-gray-400">No runs recorded yet (since last restart).</div>}
+          {(data?.log ?? []).length === 0 && <div className="px-4 py-3 text-sm text-muted-foreground">No runs recorded yet (since last restart).</div>}
         </div>
       </div>
     </div>
@@ -180,34 +180,34 @@ export default function SystemTab() {
   return (
     <div className="p-6 space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-lg font-semibold text-gray-800">System Controls</h2>
-        <p className="text-sm text-gray-500 mt-1">Restart the backend server after updates, or reload the page to clear cached data.</p>
+        <h2 className="text-lg font-semibold text-foreground">System Controls</h2>
+        <p className="text-sm text-muted-foreground mt-1">Restart the backend server after updates, or reload the page to clear cached data.</p>
       </div>
 
       {/* Status card */}
-      <div className="bg-white border border-gray-200 rounded-xl p-5 flex items-center gap-4">
+      <div className="bg-card border border-border rounded-xl p-5 flex items-center gap-4">
         <div className={`h-3 w-3 rounded-full flex-shrink-0 ${
           restartStatus === 'restarting' ? 'bg-yellow-400 animate-pulse' :
           restartStatus === 'error'      ? 'bg-red-500' :
-          health                         ? 'bg-emerald-500' : 'bg-gray-300'
+          health                         ? 'bg-emerald-500' : 'bg-muted-foreground/30'
         }`} />
         <div>
-          <p className="font-medium text-gray-800">
+          <p className="font-medium text-foreground">
             {restartStatus === 'restarting' ? 'Restarting backend…' :
              restartStatus === 'error'      ? 'Backend did not come back — check the terminal' :
              restartStatus === 'online'     ? `Backend restarted successfully` :
              health                         ? 'Backend is running' : 'Checking…'}
           </p>
           {restartStatus === 'online' && lastChecked && (
-            <p className="text-xs text-gray-400">Came back online at {lastChecked}</p>
+            <p className="text-xs text-muted-foreground">Came back online at {lastChecked}</p>
           )}
           {health && restartStatus === 'idle' && (
-            <p className="text-xs text-gray-400">Last checked {new Date(health.timestamp).toLocaleTimeString()}</p>
+            <p className="text-xs text-muted-foreground">Last checked {new Date(health.timestamp).toLocaleTimeString()}</p>
           )}
         </div>
         <button
           onClick={() => { recheckHealth(); setRestartStatus('idle') }}
-          className="ml-auto text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+          className="ml-auto text-xs text-muted-foreground hover:text-muted-foreground flex items-center gap-1"
         >
           <RefreshCw className="h-3.5 w-3.5" /> Refresh status
         </button>
@@ -217,12 +217,12 @@ export default function SystemTab() {
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
 
         {/* Restart backend */}
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <Power className="h-5 w-5 text-gray-400" />
-            <h3 className="font-semibold text-gray-800">Restart Backend</h3>
+            <Power className="h-5 w-5 text-muted-foreground" />
+            <h3 className="font-semibold text-foreground">Restart Backend</h3>
           </div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Restart the backend service — it will be back online in a few seconds. Useful
             after changing environment variables or if the server is misbehaving.
           </p>
@@ -238,12 +238,12 @@ export default function SystemTab() {
         </div>
 
         {/* Reload page */}
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
           <div className="flex items-center gap-2">
-            <RotateCcw className="h-5 w-5 text-gray-600" />
-            <h3 className="font-semibold text-gray-800">Reload Page</h3>
+            <RotateCcw className="h-5 w-5 text-muted-foreground" />
+            <h3 className="font-semibold text-foreground">Reload Page</h3>
           </div>
-          <p className="text-sm text-gray-500">
+          <p className="text-sm text-muted-foreground">
             Clear all cached data and reload the app — useful if charts or tables look out of date.
           </p>
           <button
@@ -259,31 +259,31 @@ export default function SystemTab() {
       {/* Portfolio snapshots section */}
       <div className="space-y-3">
         <div className="flex items-center gap-2">
-          <RefreshCw className="h-4 w-4 text-gray-500" />
-          <h3 className="font-semibold text-gray-800">Portfolio Snapshots</h3>
+          <RefreshCw className="h-4 w-4 text-muted-foreground" />
+          <h3 className="font-semibold text-foreground">Portfolio Snapshots</h3>
         </div>
-        <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-3">
-          <p className="text-sm text-gray-500">
+        <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+          <p className="text-sm text-muted-foreground">
             Snapshots rebuild automatically — nightly, and on-demand when the Performance page
             detects new data. Use this only to force a full rebuild after a code change that
             alters snapshot output without new transactions or prices.
           </p>
           {freshness && (
-            <div className="text-xs text-gray-500 flex flex-wrap gap-x-4 gap-y-1">
-              <span>Latest snapshot: <strong className="text-gray-700">{freshness.latest_snapshot_date ?? '—'}</strong></span>
-              <span>Latest price: <strong className="text-gray-700">{freshness.latest_price_date ?? '—'}</strong></span>
-              <span className={freshness.stale ? 'text-amber-600' : 'text-emerald-600'}>
+            <div className="text-xs text-muted-foreground flex flex-wrap gap-x-4 gap-y-1">
+              <span>Latest snapshot: <strong className="text-foreground">{freshness.latest_snapshot_date ?? '—'}</strong></span>
+              <span>Latest price: <strong className="text-foreground">{freshness.latest_price_date ?? '—'}</strong></span>
+              <span className={freshness.stale ? 'text-amber-600 dark:text-amber-400' : 'text-emerald-600 dark:text-emerald-400'}>
                 {freshness.stale ? 'Stale — rebuild recommended' : 'Up to date'}
               </span>
             </div>
           )}
           {recomputeMsg && (
-            <p className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">{recomputeMsg}</p>
+            <p className="text-xs text-foreground bg-muted/50 border border-border rounded-lg px-3 py-2">{recomputeMsg}</p>
           )}
           <button
             onClick={handleRecomputeSnapshots}
             disabled={recomputing}
-            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="flex items-center gap-2 px-4 py-2 rounded-lg bg-primary text-white text-sm font-medium hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <RefreshCw className={`h-4 w-4 ${recomputing ? 'animate-spin' : ''}`} />
             {recomputing ? 'Recomputing…' : 'Recompute All Snapshots'}
@@ -298,13 +298,13 @@ export default function SystemTab() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <Database className="h-4 w-4 text-gray-500" />
-            <h3 className="font-semibold text-gray-800">Database</h3>
+            <Database className="h-4 w-4 text-muted-foreground" />
+            <h3 className="font-semibold text-foreground">Database</h3>
           </div>
           <div className="flex items-center gap-2">
             <button
               onClick={() => refetchDbStats()}
-              className="text-xs text-gray-400 hover:text-gray-600 flex items-center gap-1"
+              className="text-xs text-muted-foreground hover:text-muted-foreground flex items-center gap-1"
             >
               <RefreshCw className="h-3.5 w-3.5" /> Refresh
             </button>
@@ -326,37 +326,37 @@ export default function SystemTab() {
         )}
 
         {dbStats && (
-          <div className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+          <div className="bg-card border border-border rounded-xl overflow-hidden">
             {/* Row counts */}
-            <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Table Row Counts</p>
+            <div className="px-4 py-2.5 border-b border-border bg-muted/50">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Table Row Counts</p>
             </div>
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-border/60">
               {Object.entries(dbStats.row_counts).map(([table, count]) => (
                 <div key={table} className="flex items-center justify-between px-4 py-2 text-sm">
-                  <span className="text-gray-600 font-mono text-xs">{table}</span>
-                  <span className="font-medium text-gray-800">{count?.toLocaleString() ?? '—'}</span>
+                  <span className="text-muted-foreground font-mono text-xs">{table}</span>
+                  <span className="font-medium text-foreground">{count?.toLocaleString() ?? '—'}</span>
                 </div>
               ))}
             </div>
 
             {/* DB size */}
-            <div className="px-4 py-2.5 border-t border-gray-100 bg-gray-50 flex items-center justify-between text-xs text-gray-500">
-              <span>DB size: <strong className="text-gray-700">{dbStats.db_size_mb} MB</strong></span>
-              <span>Page: <strong className="text-gray-700">{(dbStats.page_size / 1024).toFixed(0)} KB</strong></span>
-              <span>Freelist: <strong className="text-gray-700">{dbStats.freelist_count}</strong></span>
+            <div className="px-4 py-2.5 border-t border-border bg-muted/50 flex items-center justify-between text-xs text-muted-foreground">
+              <span>DB size: <strong className="text-foreground">{dbStats.db_size_mb} MB</strong></span>
+              <span>Page: <strong className="text-foreground">{(dbStats.page_size / 1024).toFixed(0)} KB</strong></span>
+              <span>Freelist: <strong className="text-foreground">{dbStats.freelist_count}</strong></span>
             </div>
 
             {/* Index status */}
-            <div className="px-4 py-2.5 border-t border-gray-200 bg-gray-50">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Index Status</p>
+            <div className="px-4 py-2.5 border-t border-border bg-muted/50">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Index Status</p>
             </div>
-            <div className="divide-y divide-gray-50">
+            <div className="divide-y divide-border/60">
               {dbStats.index_status.map(idx => (
                 <div key={idx.name} className="flex items-center gap-2 px-4 py-2 text-sm">
                   <span className={`h-2 w-2 rounded-full flex-shrink-0 ${idx.present ? 'bg-emerald-500' : 'bg-red-400'}`} />
-                  <span className="font-mono text-xs text-gray-600 flex-1">{idx.name}</span>
-                  <span className={`text-xs font-medium ${idx.present ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <span className="font-mono text-xs text-muted-foreground flex-1">{idx.name}</span>
+                  <span className={`text-xs font-medium ${idx.present ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                     {idx.present ? 'OK' : 'Missing'}
                   </span>
                 </div>

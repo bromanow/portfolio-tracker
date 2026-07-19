@@ -894,7 +894,7 @@ export default function Dashboard() {
                 key={c}
                 onClick={() => setIndicatorCountry(c)}
                 className={`px-2 py-1 text-xs font-medium rounded whitespace-nowrap transition-colors ${
-                  indicatorCountry === c ? 'bg-gray-600 text-white' : 'text-muted-foreground hover:text-gray-200'
+                  indicatorCountry === c ? 'bg-gray-600 text-white' : 'text-muted-foreground hover:text-muted-foreground/30'
                 }`}
               >
                 {c === 'CA' ? 'Canada' : 'US Markets'}
@@ -917,7 +917,7 @@ export default function Dashboard() {
                     : ind.price.toFixed(2)
               : '—'
             return (
-              <div key={ind.symbol} className="flex items-center gap-2 px-3 py-1 border-r border-gray-700 last:border-0">
+              <div key={ind.symbol} className="flex items-center gap-2 px-3 py-1 border-r border-border last:border-0">
                 <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">{ind.label}</span>
                 <span className="text-xs font-semibold text-white whitespace-nowrap">{priceStr}</span>
                 <span className={`text-xs font-medium whitespace-nowrap ${isUp ? 'text-emerald-400' : isDown ? 'text-red-400' : 'text-muted-foreground'}`}>

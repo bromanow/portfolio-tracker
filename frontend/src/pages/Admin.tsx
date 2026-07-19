@@ -74,21 +74,21 @@ export default function Admin() {
 
   return (
     <div className="space-y-4">
-      <h1 className="text-2xl font-bold text-gray-900">Admin</h1>
+      <h1 className="text-2xl font-bold text-foreground">Admin</h1>
       <div className="flex flex-col md:flex-row gap-5 items-start">
         {/* Left sub-page nav */}
         <aside className="w-full md:w-52 flex-shrink-0">
           <nav className="md:sticky md:top-4 space-y-3">
             {groups.map(g => (
               <div key={g.heading}>
-                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400">{g.heading}</div>
+                <div className="px-3 mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">{g.heading}</div>
                 <div className="space-y-0.5">
                   {g.tabs.map(t => (
                     <button
                       key={t.id}
                       onClick={() => selectTab(t.id)}
                       className={`w-full text-left px-3 py-2 rounded-md text-sm font-medium transition-colors ${
-                        tab === t.id ? 'bg-blue-50 text-blue-700' : 'text-gray-600 hover:bg-gray-100 hover:text-gray-900'
+                        tab === t.id ? 'bg-primary/10 text-primary' : 'text-muted-foreground hover:bg-accent hover:text-foreground'
                       }`}
                     >
                       {t.label}

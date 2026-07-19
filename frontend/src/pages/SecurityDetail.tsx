@@ -67,7 +67,7 @@ export default function SecurityDetail() {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-64">
-        <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     )
   }
@@ -75,10 +75,10 @@ export default function SecurityDetail() {
   if (!position) {
     return (
       <div className="p-4 space-y-4">
-        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm text-blue-600">
+        <button onClick={() => navigate(-1)} className="flex items-center gap-2 text-sm text-primary">
           <ArrowLeft className="h-4 w-4" /> Back
         </button>
-        <p className="text-gray-500 text-sm">Security not found.</p>
+        <p className="text-muted-foreground text-sm">Security not found.</p>
       </div>
     )
   }
@@ -104,40 +104,40 @@ export default function SecurityDetail() {
       {/* Back nav */}
       <button
         onClick={() => navigate(-1)}
-        className="flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-800"
+        className="flex items-center gap-1.5 text-sm font-medium text-primary hover:text-primary"
       >
         <ArrowLeft className="h-4 w-4" />
         Holdings
       </button>
 
       {/* Header card */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex items-start justify-between">
           <div className="flex-1 min-w-0">
             <div className="flex items-center gap-2">
-              <h1 className="text-lg font-bold text-gray-900 truncate">
+              <h1 className="text-lg font-bold text-foreground truncate">
                 {position.security_name || position.ticker}
               </h1>
               {yahoo?.website && (
                 <a href={yahoo.website} target="_blank" rel="noopener noreferrer">
-                  <ExternalLink className="h-3.5 w-3.5 text-gray-400" />
+                  <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
                 </a>
               )}
             </div>
             <div className="flex items-center gap-2 flex-wrap mt-0.5">
-              <span className="font-mono text-sm font-semibold text-blue-700">{position.ticker}</span>
-              {position.exchange && <span className="text-xs text-gray-400">{position.exchange}</span>}
-              {position.currency && <span className="text-xs text-gray-400">· {position.currency}</span>}
-              {yahoo?.sector && <span className="text-xs text-gray-400">· {yahoo.sector}</span>}
+              <span className="font-mono text-sm font-semibold text-primary">{position.ticker}</span>
+              {position.exchange && <span className="text-xs text-muted-foreground">{position.exchange}</span>}
+              {position.currency && <span className="text-xs text-muted-foreground">· {position.currency}</span>}
+              {yahoo?.sector && <span className="text-xs text-muted-foreground">· {yahoo.sector}</span>}
             </div>
           </div>
         </div>
 
         {/* Price strip */}
         <div className="flex items-baseline gap-3 mt-3">
-          {price != null && <span className="text-2xl font-bold text-gray-900">{fmtCAD(price)}</span>}
+          {price != null && <span className="text-2xl font-bold text-foreground">{fmtCAD(price)}</span>}
           {dayChg != null && (
-            <span className={`text-sm font-medium flex items-center gap-0.5 ${dayChg >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+            <span className={`text-sm font-medium flex items-center gap-0.5 ${dayChg >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
               {dayChg >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}
               {fmtPct(dayChg)} today
             </span>
@@ -151,28 +151,28 @@ export default function SecurityDetail() {
             { label: 'Market Value', value: fmtCAD(mktVal) },
             { label: 'ACB / Share', value: fmtCAD(acbShare) },
             { label: 'Total ACB', value: fmtCAD(acb) },
-            { label: 'Unrealized P&L', value: fmtCAD(pnl), color: pnl != null ? (pnl >= 0 ? 'text-emerald-600' : 'text-red-500') : '' },
-            { label: 'Return', value: fmtPct(pnlPct), color: pnlPct != null ? (pnlPct >= 0 ? 'text-emerald-600' : 'text-red-500') : '' },
+            { label: 'Unrealized P&L', value: fmtCAD(pnl), color: pnl != null ? (pnl >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400') : '' },
+            { label: 'Return', value: fmtPct(pnlPct), color: pnlPct != null ? (pnlPct >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400') : '' },
           ].map(({ label, value, color }) => (
-            <div key={label} className="bg-gray-50 rounded-lg p-3">
-              <div className="text-xs text-gray-400 mb-0.5">{label}</div>
-              <div className={`text-sm font-semibold ${color ?? 'text-gray-900'}`}>{value}</div>
+            <div key={label} className="bg-muted/50 rounded-lg p-3">
+              <div className="text-xs text-muted-foreground mb-0.5">{label}</div>
+              <div className={`text-sm font-semibold ${color ?? 'text-foreground'}`}>{value}</div>
             </div>
           ))}
         </div>
       </div>
 
       {/* Price chart */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="bg-card rounded-xl border border-border p-4">
         <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-700">Price History (CAD)</h2>
+          <h2 className="text-sm font-semibold text-foreground">Price History (CAD)</h2>
           <div className="flex gap-1">
             {PERIODS.map(p => (
               <button
                 key={p}
                 onClick={() => setPeriod(p)}
                 className={`px-2 py-0.5 rounded text-xs font-medium transition-colors ${
-                  period === p ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-100'
+                  period === p ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-accent'
                 }`}
               >
                 {p.toUpperCase()}
@@ -182,10 +182,10 @@ export default function SecurityDetail() {
         </div>
         {histQ.isLoading ? (
           <div className="flex items-center justify-center h-40">
-            <Loader2 className="h-5 w-5 animate-spin text-gray-300" />
+            <Loader2 className="h-5 w-5 animate-spin text-muted-foreground/50" />
           </div>
         ) : chartData.length === 0 ? (
-          <div className="flex items-center justify-center h-40 text-xs text-gray-400">No price data</div>
+          <div className="flex items-center justify-center h-40 text-xs text-muted-foreground">No price data</div>
         ) : (
           <TechnicalChart data={chartData} costBasis={acbShare} currency="CAD" height={200} />
         )}
@@ -193,16 +193,16 @@ export default function SecurityDetail() {
 
       {/* Recent transactions */}
       {transactions.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Recent Transactions</h2>
+        <div className="bg-card rounded-xl border border-border p-4">
+          <h2 className="text-sm font-semibold text-foreground mb-3">Recent Transactions</h2>
           <div className="space-y-2">
             {(transactions as Record<string, unknown>[]).slice(0, 10).map((tx, i) => (
-              <div key={i} className="flex items-center justify-between py-1.5 border-b border-gray-50 last:border-0">
+              <div key={i} className="flex items-center justify-between py-1.5 border-b border-border last:border-0">
                 <div>
-                  <div className="text-xs font-medium text-gray-800">{String(tx.transaction_type ?? '')} · {String(tx.transaction_date ?? '').slice(0, 10)}</div>
-                  <div className="text-xs text-gray-400">{String(tx.account_name ?? '')} · {Number(tx.quantity ?? 0).toFixed(2)} shares @ {fmtCAD(Number(tx.price ?? 0))}</div>
+                  <div className="text-xs font-medium text-foreground">{String(tx.transaction_type ?? '')} · {String(tx.transaction_date ?? '').slice(0, 10)}</div>
+                  <div className="text-xs text-muted-foreground">{String(tx.account_name ?? '')} · {Number(tx.quantity ?? 0).toFixed(2)} shares @ {fmtCAD(Number(tx.price ?? 0))}</div>
                 </div>
-                <div className={`text-xs font-semibold ${Number(tx.total_amount_cad ?? 0) >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                <div className={`text-xs font-semibold ${Number(tx.total_amount_cad ?? 0) >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                   {fmtCAD(Number(tx.total_amount_cad ?? 0))}
                 </div>
               </div>

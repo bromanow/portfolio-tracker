@@ -163,8 +163,8 @@ export default function TechnicalChart({ data, costBasis, currency = 'CAD', heig
             onClick={() => toggle(t.key)}
             className={`px-2.5 py-1 text-xs rounded-md font-medium border transition-colors ${
               active.has(t.key)
-                ? 'bg-blue-50 border-blue-200 text-blue-700'
-                : 'bg-white border-gray-200 text-gray-500 hover:bg-gray-50'
+                ? 'bg-primary/10 border-primary/20 text-primary'
+                : 'bg-card border-border text-muted-foreground hover:bg-muted/50'
             }`}
           >
             {t.label}

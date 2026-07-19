@@ -108,7 +108,7 @@ const fmtPct = (n: number | null | undefined) => {
   return (n >= 0 ? '+' : '') + n.toFixed(2) + '%'
 }
 const pctClass = (n: number | null | undefined) =>
-  n == null ? 'text-gray-400' : n >= 0 ? 'text-emerald-600' : 'text-red-500'
+  n == null ? 'text-muted-foreground' : n >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 
 // Cash-flow event helpers: classify deposits/transfers-in as inflows (↑ green),
 // withdrawals/transfers-out as outflows (↓ red); JOURNAL by amount sign.
@@ -153,8 +153,8 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
   const valueRows = portfolioRows.filter(p => !p.name.endsWith(' (invested)'))
   const total = valueRows.reduce((s, p) => s + (p.value ?? 0), 0)
   return (
-    <div className="bg-white border border-gray-200 rounded-lg shadow-lg px-3 py-2 text-xs min-w-[180px]">
-      <div className="text-gray-500 font-medium mb-1.5 border-b border-gray-100 pb-1">{label}</div>
+    <div className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-xs min-w-[180px]">
+      <div className="text-muted-foreground font-medium mb-1.5 border-b border-border pb-1">{label}</div>
       {portfolioRows.map(p => (
         <div key={p.name} className="flex justify-between gap-4 py-0.5">
           <span className="flex items-center gap-1">
@@ -165,14 +165,14 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
         </div>
       ))}
       {!isIdx && valueRows.length > 1 && (
-        <div className="flex justify-between gap-4 py-0.5 mt-1 pt-1 border-t border-gray-100">
-          <span className="font-bold text-gray-700">Total</span>
-          <span className="font-bold text-gray-900">{fmtCAD(total)}</span>
+        <div className="flex justify-between gap-4 py-0.5 mt-1 pt-1 border-t border-border">
+          <span className="font-bold text-foreground">Total</span>
+          <span className="font-bold text-foreground">{fmtCAD(total)}</span>
         </div>
       )}
       {indexRows.length > 0 && (
-        <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-          <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Benchmarks (if invested at start)</div>
+        <div className="mt-2 pt-2 border-t border-border space-y-1">
+          <div className="text-muted-foreground text-[10px] uppercase tracking-wide mb-0.5">Benchmarks (if invested at start)</div>
           {indexRows.map(p => (
             <div key={p.name} className="flex justify-between gap-4 py-0.5">
               <span className="flex items-center gap-1">
@@ -200,17 +200,17 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
             .sort((a, b) => b.sum - a.sum)
           : []
         return (
-          <div className="mt-2 pt-2 border-t border-gray-100 space-y-1">
-            <div className="text-gray-400 text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
+          <div className="mt-2 pt-2 border-t border-border space-y-1">
+            <div className="text-muted-foreground text-[10px] uppercase tracking-wide mb-0.5">Cash flows</div>
             {rollup
               ? groups.map(g => (
-                  <div key={g.type} className={`flex justify-between gap-3 font-medium ${g.sum >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <div key={g.type} className={`flex justify-between gap-3 font-medium ${g.sum >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                     <span>{g.sum >= 0 ? '↑' : '↓'} {g.count}× {g.label}</span>
                     <span className="whitespace-nowrap">{fmtCAD(g.sum)}</span>
                   </div>
                 ))
               : ev.items.map((item, i) => (
-                  <div key={i} className={`flex justify-between gap-3 font-medium ${isInflowEvent(item) ? 'text-emerald-600' : 'text-red-500'}`}>
+                  <div key={i} className={`flex justify-between gap-3 font-medium ${isInflowEvent(item) ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'}`}>
                     <span className="truncate max-w-[150px]">
                       {isInflowEvent(item) ? '↑' : '↓'} {FLOW_LABEL[item.type]} · {item.account}
                     </span>
@@ -218,7 +218,7 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
                   </div>
                 ))}
             {ev.items.length > 1 && (
-              <div className={`flex justify-between gap-3 font-bold border-t border-gray-100 pt-0.5 ${ev.net_cad >= 0 ? 'text-emerald-700' : 'text-red-600'}`}>
+              <div className={`flex justify-between gap-3 font-bold border-t border-border pt-0.5 ${ev.net_cad >= 0 ? 'text-emerald-700' : 'text-red-600 dark:text-red-400'}`}>
                 <span>Net{rollup ? ` · ${ev.items.length} legs` : ''}</span>
                 <span>{fmtCAD(ev.net_cad)}</span>
               </div>
@@ -236,10 +236,10 @@ function SummaryCard({ label, value, sub, color = '' }: {
   label: string; value: string; sub?: string; color?: string
 }) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <div className="text-xs text-gray-400 mb-0.5">{label}</div>
+    <div className="bg-card rounded-xl border border-border p-4">
+      <div className="text-xs text-muted-foreground mb-0.5">{label}</div>
       <div className={`text-xl font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-xs text-gray-400 mt-0.5">{sub}</div>}
+      {sub && <div className="text-xs text-muted-foreground mt-0.5">{sub}</div>}
     </div>
   )
 }
@@ -262,11 +262,11 @@ function FilterPills<T extends string>({
   const allSelected = selected.size === 0 || selected.size === options.length
   return (
     <div className="flex items-center gap-2 flex-wrap">
-      <span className="text-xs text-gray-400 font-medium">{label}:</span>
+      <span className="text-xs text-muted-foreground font-medium">{label}:</span>
       <button
         onClick={() => onChange(new Set())}
         className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
-          allSelected ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-500 hover:border-blue-400'
+          allSelected ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:border-primary/40'
         }`}
       >All</button>
       {options.map(o => (
@@ -275,8 +275,8 @@ function FilterPills<T extends string>({
           onClick={() => toggle(o.value)}
           className={`px-2 py-0.5 rounded-full text-xs border transition-colors ${
             selected.has(o.value) && selected.size > 0
-              ? 'bg-blue-600 text-white border-blue-600'
-              : 'border-gray-300 text-gray-500 hover:border-blue-400'
+              ? 'bg-primary text-white border-primary'
+              : 'border-border text-muted-foreground hover:border-primary/40'
           }`}
         >{o.label}</button>
       ))}
@@ -324,19 +324,19 @@ function InceptionDateCell({
         <input ref={inputRef} type="date" value={value}
           onChange={e => setValue(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter') save(); if (e.key === 'Escape') cancel() }}
-          className="text-xs border border-blue-400 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-blue-500 w-32" />
-        <button onClick={save} disabled={saving} className="p-0.5 text-emerald-600 hover:text-emerald-700 disabled:opacity-50">
+          className="bg-background text-foreground text-xs border border-primary/40 rounded px-1.5 py-0.5 focus:outline-none focus:ring-1 focus:ring-primary w-32" />
+        <button onClick={save} disabled={saving} className="p-0.5 text-emerald-600 dark:text-emerald-400 hover:text-emerald-700 disabled:opacity-50">
           {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Check className="h-3.5 w-3.5" />}
         </button>
-        <button onClick={cancel} className="p-0.5 text-gray-400 hover:text-gray-600"><X className="h-3.5 w-3.5" /></button>
-        {isCustom && <button onClick={clear} disabled={saving} className="text-[10px] text-gray-400 hover:text-red-500 ml-1">reset</button>}
+        <button onClick={cancel} className="p-0.5 text-muted-foreground hover:text-muted-foreground"><X className="h-3.5 w-3.5" /></button>
+        {isCustom && <button onClick={clear} disabled={saving} className="text-[10px] text-muted-foreground hover:text-red-500 dark:text-red-400 ml-1">reset</button>}
       </div>
     )
   }
   return (
     <div className="flex items-center gap-1 group">
-      <span className={isCustom ? 'text-blue-600 font-medium' : 'text-gray-400 italic'}>{currentDate}</span>
-      <button onClick={startEdit} className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-blue-500 transition-opacity">
+      <span className={isCustom ? 'text-primary font-medium' : 'text-muted-foreground italic'}>{currentDate}</span>
+      <button onClick={startEdit} className="opacity-0 group-hover:opacity-100 p-0.5 text-muted-foreground hover:text-primary/70 transition-opacity">
         <Pencil className="h-3 w-3" />
       </button>
     </div>
@@ -352,14 +352,14 @@ function SortTh({ label, col, sortCol, sortDir, onSort, right = false }: {
   const active = sortCol === col
   return (
     <th
-      className={`px-3 py-2.5 cursor-pointer select-none hover:bg-gray-100 transition-colors ${right ? 'text-right' : 'text-left'}`}
+      className={`px-3 py-2.5 cursor-pointer select-none hover:bg-accent transition-colors ${right ? 'text-right' : 'text-left'}`}
       onClick={() => onSort(col)}
     >
       <span className="inline-flex items-center gap-0.5">
         {label}
         {active
           ? (sortDir === 'asc' ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />)
-          : <ChevronsUpDown className="h-3 w-3 text-gray-300" />}
+          : <ChevronsUpDown className="h-3 w-3 text-muted-foreground/50" />}
       </span>
     </th>
   )
@@ -842,8 +842,8 @@ function PerformanceInner() {
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl md:text-2xl font-bold text-gray-900">Performance</h1>
-          <p className="text-xs md:text-sm text-gray-400 mt-0.5">Portfolio value over time · {latestDate ?? '—'}</p>
+          <h1 className="text-xl md:text-2xl font-bold text-foreground">Performance</h1>
+          <p className="text-xs md:text-sm text-muted-foreground mt-0.5">Portfolio value over time · {latestDate ?? '—'}</p>
         </div>
         <div className="flex items-center gap-2">
           {/* Exports — disabled until there's a timeline to export */}
@@ -851,7 +851,7 @@ function PerformanceInner() {
             onClick={exportChartCsv}
             disabled={points.length === 0}
             title="Download chart data as CSV"
-            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors"
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-border text-muted-foreground text-sm rounded-lg hover:bg-muted/50 disabled:opacity-40 transition-colors"
           >
             <Download className="h-4 w-4" />
             <span className="hidden md:inline">CSV</span>
@@ -860,7 +860,7 @@ function PerformanceInner() {
             onClick={printReport}
             disabled={points.length === 0}
             title="Print / Save as PDF (chart, stats, returns)"
-            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-gray-200 text-gray-600 text-sm rounded-lg hover:bg-gray-50 disabled:opacity-40 transition-colors print:hidden"
+            className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 border border-border text-muted-foreground text-sm rounded-lg hover:bg-muted/50 disabled:opacity-40 transition-colors print:hidden"
           >
             <Printer className="h-4 w-4" />
             <span className="hidden md:inline">Print / PDF</span>
@@ -869,7 +869,7 @@ function PerformanceInner() {
               surfaces while a background rebuild is running. The manual recompute lives
               in Admin → System for post-deploy/ops use. */}
           {isComputing && (
-            <span className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 text-gray-400 text-sm" title="Refreshing portfolio snapshots in the background">
+            <span className="flex items-center gap-1.5 px-2.5 md:px-3 py-2 text-muted-foreground text-sm" title="Refreshing portfolio snapshots in the background">
               <RefreshCw className="h-4 w-4 animate-spin" />
               <span className="hidden md:inline">Updating…</span>
             </span>
@@ -884,33 +884,33 @@ function PerformanceInner() {
       </div>
 
       {/* ── Chart panel ── */}
-      <div className="bg-white rounded-xl border border-gray-200 p-3 md:p-5 space-y-3">
+      <div className="bg-card rounded-xl border border-border p-3 md:p-5 space-y-3">
         {/* Row 1: group-by + period + date range + show-invested */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-accent rounded-lg p-0.5">
             {(['total','brokerage','account_type','account'] as GroupBy[]).map(g => (
               <button key={g} onClick={() => setGroupBy(g)}
-                className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${groupBy === g ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${groupBy === g ? 'bg-card shadow text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                 {g === 'account_type' ? 'By Type' : g === 'account' ? 'By Account' : g === 'brokerage' ? 'By Brokerage' : 'Total'}
               </button>
             ))}
           </div>
           {/* Period pills */}
-          <div className="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+          <div className="flex items-center gap-1 bg-accent rounded-lg p-0.5">
             {(['1M','3M','YTD','1Y','3Y','5Y','ALL'] as Period[]).map(p => (
               <button key={p} onClick={() => { setPeriod(p); setCustomFromDate(''); setCustomToDate('') }}
-                className={`px-2.5 py-1.5 text-xs rounded-md font-medium transition-colors ${period === p && !customFromDate ? 'bg-white shadow text-blue-700' : 'text-gray-500 hover:text-gray-700'}`}>
+                className={`px-2.5 py-1.5 text-xs rounded-md font-medium transition-colors ${period === p && !customFromDate ? 'bg-card shadow text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
                 {p}
               </button>
             ))}
           </div>
           {/* Custom date range — desktop only */}
-          <div className="hidden md:flex items-center gap-1 text-xs text-gray-500">
+          <div className="hidden md:flex items-center gap-1 text-xs text-muted-foreground">
             <DatePicker
               value={customFromDate} onChange={setCustomFromDate}
               min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
               placeholder="From" highlight={!!customFromDate} />
-            <span className="text-gray-400">→</span>
+            <span className="text-muted-foreground">→</span>
             <DatePicker
               value={customToDate} onChange={setCustomToDate}
               min="2000-01-01" max={new Date().toISOString().slice(0, 10)}
@@ -918,28 +918,28 @@ function PerformanceInner() {
           </div>
           <div className="ml-auto flex items-center gap-3">
             {/* Y-axis mode: dollar value vs. indexed (% change from window start) */}
-            <div className="flex items-center rounded border border-gray-200 overflow-hidden text-xs">
+            <div className="flex items-center rounded border border-border overflow-hidden text-xs">
               <button
                 onClick={() => setAxisMode('value')}
-                className={`px-2.5 py-1 ${axisMode === 'value' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-2.5 py-1 ${axisMode === 'value' ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted/50'}`}
                 title="Dollar value (axis auto-fitted to the data)"
               >
                 $
               </button>
               <button
                 onClick={() => setAxisMode('indexed')}
-                className={`px-2.5 py-1 border-l border-gray-200 ${axisMode === 'indexed' ? 'bg-blue-600 text-white' : 'text-gray-500 hover:bg-gray-50'}`}
+                className={`px-2.5 py-1 border-l border-border ${axisMode === 'indexed' ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted/50'}`}
                 title="Indexed — each series rebased to its start as % change, for comparing differently-sized accounts"
               >
                 %
               </button>
             </div>
-            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input type="checkbox" checked={showInvested} onChange={e => setShowInvested(e.target.checked)} className="rounded" />
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={showInvested} onChange={e => setShowInvested(e.target.checked)} className="bg-background text-foreground rounded" />
               Show invested
             </label>
-            <label className="flex items-center gap-1.5 text-xs text-gray-500 cursor-pointer">
-              <input type="checkbox" checked={showFlows} onChange={e => setShowFlows(e.target.checked)} className="rounded" />
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
+              <input type="checkbox" checked={showFlows} onChange={e => setShowFlows(e.target.checked)} className="bg-background text-foreground rounded" />
               Show cash flows
             </label>
           </div>
@@ -976,31 +976,31 @@ function PerformanceInner() {
           {hasFilters && (
             <button
               onClick={() => { setFilterBrokerages([]); setFilterTypes([]); setFilterAccounts([]) }}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-600"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-muted-foreground"
             >
               <X className="h-3.5 w-3.5" /> Clear
             </button>
           )}
           {/* Benchmark index comparison — desktop only */}
           <div className="hidden md:flex items-center gap-2 ml-auto">
-            <span className="text-xs text-gray-400 font-medium whitespace-nowrap">Compare:</span>
+            <span className="text-xs text-muted-foreground font-medium whitespace-nowrap">Compare:</span>
             <MultiSelectDropdown
               placeholder="Add indices"
               options={COMPARISON_INDICES}
               selected={compareIndices}
               onChange={setCompareIndices}
             />
-            {indexQ.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin text-gray-400" />}
+            {indexQ.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
           </div>
         </div>
 
         {/* Chart */}
         {timelineQ.isLoading ? (
-          <div className="flex items-center justify-center h-72 text-gray-400">
+          <div className="flex items-center justify-center h-72 text-muted-foreground">
             <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading…
           </div>
         ) : noData ? (
-          <div className="flex flex-col items-center justify-center h-72 text-gray-400 gap-3">
+          <div className="flex flex-col items-center justify-center h-72 text-muted-foreground gap-3">
             <AlertCircle className="h-8 w-8" />
             <div className="text-center">
               <p className="font-medium">No snapshot data yet</p>
@@ -1084,30 +1084,30 @@ function PerformanceInner() {
       </div>
 
       {/* ── Returns table ── */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-5 py-3 border-b border-gray-100 space-y-2">
+      <div className="bg-card rounded-xl border border-border overflow-hidden">
+        <div className="px-5 py-3 border-b border-border space-y-2">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-gray-700">Period Returns by Account</h2>
-            {returnsQ.isLoading && <Loader2 className="h-4 w-4 animate-spin text-gray-400" />}
+            <h2 className="text-sm font-semibold text-foreground">Period Returns by Account</h2>
+            {returnsQ.isLoading && <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />}
           </div>
           {/* Table controls */}
           <div className="flex flex-wrap items-center gap-2">
             <input
               type="text" placeholder="Search account…" value={tableSearch}
               onChange={e => setTableSearch(e.target.value)}
-              className="text-xs border border-gray-200 rounded px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-blue-400"
+              className="bg-background text-foreground text-xs border border-border rounded px-2 py-1 w-40 focus:outline-none focus:ring-1 focus:ring-primary/40"
             />
             {hasFilters && (
-              <span className="text-[11px] text-blue-600 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
+              <span className="text-[11px] text-primary bg-primary/10 border border-primary/20 rounded-full px-2 py-0.5">
                 Filtered by chart controls
               </span>
             )}
             {/* Group by */}
-            <div className="ml-auto flex items-center gap-1 text-xs text-gray-500">
+            <div className="ml-auto flex items-center gap-1 text-xs text-muted-foreground">
               <span>Group:</span>
               {(['none','brokerage','account_type'] as TableGroup[]).map(g => (
                 <button key={g} onClick={() => setTableGroup(g)}
-                  className={`px-2 py-0.5 rounded border transition-colors ${tableGroup === g ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-200 hover:border-blue-300'}`}>
+                  className={`px-2 py-0.5 rounded border transition-colors ${tableGroup === g ? 'bg-primary text-white border-primary' : 'border-border hover:border-primary/30'}`}>
                   {g === 'none' ? 'None' : g === 'brokerage' ? 'Brokerage' : 'Type'}
                 </button>
               ))}
@@ -1116,8 +1116,8 @@ function PerformanceInner() {
         </div>
 
         <div className="overflow-x-auto">
-          <table className="min-w-full text-xs divide-y divide-gray-100">
-            <thead className="bg-gray-50 text-gray-500 uppercase text-[10px] tracking-wide">
+          <table className="min-w-full text-xs divide-y divide-border">
+            <thead className="bg-muted/50 text-muted-foreground uppercase text-[10px] tracking-wide">
               <tr>
                 <SortTh label="Account"  col="account_name"  sortCol={sortCol} sortDir={sortDir} onSort={onSort} />
                 <th className="px-3 py-2.5 text-left">Type</th>
@@ -1129,15 +1129,15 @@ function PerformanceInner() {
                 <th className="px-4 py-2.5 text-left" title="Click pencil to set custom start date">Since</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/60">
               {filteredReturns.length === 0 && !returnsQ.isLoading ? (
-                <tr><td colSpan={10} className="px-4 py-8 text-center text-gray-400">No data.</td></tr>
+                <tr><td colSpan={10} className="px-4 py-8 text-center text-muted-foreground">No data.</td></tr>
               ) : groupedRows.map(group => (
                 <>
                   {/* Group header */}
                   {tableGroup !== 'none' && (
-                    <tr key={`g-${group.key}`} className="bg-gray-50 cursor-pointer" onClick={() => toggleCollapse(group.key)}>
-                      <td colSpan={10} className="px-4 py-1.5 font-semibold text-gray-600 text-[11px] uppercase tracking-wide">
+                    <tr key={`g-${group.key}`} className="bg-muted/50 cursor-pointer" onClick={() => toggleCollapse(group.key)}>
+                      <td colSpan={10} className="px-4 py-1.5 font-semibold text-muted-foreground text-[11px] uppercase tracking-wide">
                         <span className="flex items-center gap-1">
                           {collapsed.has(group.key) ? <ChevronRight className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
                           {group.label} ({group.rows.length})
@@ -1147,17 +1147,17 @@ function PerformanceInner() {
                   )}
                   {/* Group rows */}
                   {!collapsed.has(group.key) && group.rows.map(r => (
-                    <tr key={r.account_ids.join('-')} className="hover:bg-gray-50">
-                      <td className="px-3 py-2.5 font-medium text-gray-800">{r.account_name}</td>
+                    <tr key={r.account_ids.join('-')} className="hover:bg-muted/50">
+                      <td className="px-3 py-2.5 font-medium text-foreground">{r.account_name}</td>
                       <td className="px-3 py-2.5">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-                          r.account_type === 'TFSA' ? 'bg-green-100 text-green-700' :
-                          r.account_type === 'RRSP' ? 'bg-blue-100 text-blue-700' :
+                          r.account_type === 'TFSA' ? 'bg-green-100 text-green-600 dark:text-green-400' :
+                          r.account_type === 'RRSP' ? 'bg-primary/15 text-primary' :
                           r.account_type === 'RESP' ? 'bg-purple-100 text-purple-700' :
-                          'bg-gray-100 text-gray-600'}`}>{r.account_type}</span>
+                          'bg-accent text-muted-foreground'}`}>{r.account_type}</span>
                       </td>
-                      {tableGroup !== 'brokerage' && <td className="px-3 py-2.5 text-gray-500">{r.brokerage}</td>}
-                      <td className="px-3 py-2.5 text-right font-semibold text-gray-800">{fmtCAD(r.current_value)}</td>
+                      {tableGroup !== 'brokerage' && <td className="px-3 py-2.5 text-muted-foreground">{r.brokerage}</td>}
+                      <td className="px-3 py-2.5 text-right font-semibold text-foreground">{fmtCAD(r.current_value)}</td>
                       {RETURN_PERIODS.map(p => {
                         const val = r.returns[p]
                         return <td key={p} className={`px-3 py-2.5 text-right font-medium ${pctClass(val)}`}>{fmtPct(val)}</td>
@@ -1170,11 +1170,11 @@ function PerformanceInner() {
                   ))}
                   {/* Group subtotal */}
                   {tableGroup !== 'none' && !collapsed.has(group.key) && group.rows.length > 1 && (
-                    <tr key={`gt-${group.key}`} className="bg-gray-50/80 border-t border-gray-200">
-                      <td className="px-3 py-1.5 text-[10px] font-bold text-gray-500 italic" colSpan={tableGroup === 'brokerage' ? 2 : 3}>
+                    <tr key={`gt-${group.key}`} className="bg-muted/80 border-t border-border">
+                      <td className="px-3 py-1.5 text-[10px] font-bold text-muted-foreground italic" colSpan={tableGroup === 'brokerage' ? 2 : 3}>
                         {group.label} subtotal
                       </td>
-                      <td className="px-3 py-1.5 text-right text-[10px] font-bold text-gray-700">
+                      <td className="px-3 py-1.5 text-right text-[10px] font-bold text-foreground">
                         {fmtCAD(group.rows.reduce((s, r) => s + r.current_value, 0))}
                       </td>
                       {RETURN_PERIODS.map(p => {
@@ -1194,10 +1194,10 @@ function PerformanceInner() {
 
             {/* Grand total footer */}
             {filteredReturns.length > 1 && (
-              <tfoot className="bg-gray-50 border-t-2 border-gray-200">
+              <tfoot className="bg-muted/50 border-t-2 border-border">
                 <tr>
-                  <td className="px-3 py-2.5 font-bold text-gray-800" colSpan={tableGroup === 'brokerage' ? 2 : 3}>Total Portfolio</td>
-                  <td className="px-3 py-2.5 text-right font-bold text-gray-800">{fmtCAD(filteredReturns.reduce((s, r) => s + r.current_value, 0))}</td>
+                  <td className="px-3 py-2.5 font-bold text-foreground" colSpan={tableGroup === 'brokerage' ? 2 : 3}>Total Portfolio</td>
+                  <td className="px-3 py-2.5 text-right font-bold text-foreground">{fmtCAD(filteredReturns.reduce((s, r) => s + r.current_value, 0))}</td>
                   {RETURN_PERIODS.map(p => {
                     const weighted = filteredReturns.reduce((s, r) => { const v = r.returns[p]; return v != null ? s + v * r.current_value : s }, 0)
                     const tw = filteredReturns.filter(r => r.returns[p] != null).reduce((s, r) => s + r.current_value, 0)
@@ -1223,7 +1223,7 @@ export default function Performance() {
 
   return (
     <div className="space-y-4">
-      <div className="border-b border-gray-200">
+      <div className="border-b border-border">
         <nav className="-mb-px flex gap-1">
           {(['performance', 'reports'] as PageTab[]).map(t => (
             <button
@@ -1231,8 +1231,8 @@ export default function Performance() {
               onClick={() => setTab(t)}
               className={`px-4 py-2 text-sm font-medium border-b-2 capitalize transition-colors ${
                 tab === t
-                  ? 'border-blue-600 text-blue-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                  ? 'border-primary text-primary'
+                  : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >
               {t === 'performance' ? 'Returns' : 'Reports'}

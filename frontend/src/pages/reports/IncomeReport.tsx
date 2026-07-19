@@ -352,7 +352,7 @@ export default function IncomeReport() {
       <div className="flex gap-1">
         {(['historical', 'projected'] as const).map(m => (
           <button key={m} onClick={() => setReportMode(m)}
-            className={`px-3 py-1.5 text-sm rounded-lg border capitalize ${reportMode === m ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+            className={`px-3 py-1.5 text-sm rounded-lg border capitalize ${reportMode === m ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:bg-muted/50'}`}>
             {m === 'historical' ? 'Historical' : 'Projected'}
           </button>
         ))}
@@ -361,15 +361,15 @@ export default function IncomeReport() {
       {/* Parameters */}
       <div className="flex flex-wrap gap-4 items-end">
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Brokerage</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={brokerageFilter} onChange={e => setBrokerageFilter(e.target.value)}>
+          <label className="block text-xs text-muted-foreground mb-1">Brokerage</label>
+          <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={brokerageFilter} onChange={e => setBrokerageFilter(e.target.value)}>
             <option value="">All brokerages</option>
             {brokerages.map(b => <option key={b} value={b}>{b}</option>)}
           </select>
         </div>
         <div>
-          <label className="block text-xs text-gray-500 mb-1">Account</label>
-          <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={accountId} onChange={e => setAccountId(e.target.value)}>
+          <label className="block text-xs text-muted-foreground mb-1">Account</label>
+          <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={accountId} onChange={e => setAccountId(e.target.value)}>
             <option value="">All accounts</option>
             {allAccts.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
           </select>
@@ -377,18 +377,18 @@ export default function IncomeReport() {
         {reportMode === 'historical' && (
           <>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Year</label>
-              <select className="border border-gray-300 rounded-lg px-3 py-2 text-sm" value={year} onChange={e => setYear(e.target.value)}>
+              <label className="block text-xs text-muted-foreground mb-1">Year</label>
+              <select className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm" value={year} onChange={e => setYear(e.target.value)}>
                 <option value="">All years</option>
                 {years.map(y => <option key={y} value={y}>{y}</option>)}
               </select>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">From Date</label>
+              <label className="block text-xs text-muted-foreground mb-1">From Date</label>
               <DatePicker value={dateFrom || ''} onChange={setDateFrom} max={new Date().toISOString().slice(0, 10)} placeholder="From" highlight={!!dateFrom} className="w-36" />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">To Date</label>
+              <label className="block text-xs text-muted-foreground mb-1">To Date</label>
               <DatePicker value={dateTo || ''} onChange={setDateTo} max={new Date().toISOString().slice(0, 10)} placeholder="To" highlight={!!dateTo} className="w-36" />
             </div>
           </>
@@ -396,17 +396,17 @@ export default function IncomeReport() {
       </div>
 
       {reportMode === 'historical' && (isLoading
-        ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
+        ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-primary" /></div>
         : (
           <div className="space-y-6">
-            <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
-              <span className="text-sm font-medium text-gray-700">
-                {rows.length} income transactions · Total: <span className="font-bold text-base text-blue-700">{fmtCAD(totalAll)}</span>
+            <div className="bg-primary/10 border border-primary/20 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
+              <span className="text-sm font-medium text-foreground">
+                {rows.length} income transactions · Total: <span className="font-bold text-base text-primary">{fmtCAD(totalAll)}</span>
               </span>
               {historicalOverallYieldPct != null && (
-                <span className="text-sm text-gray-600">
-                  Overall Yield: <span className="font-semibold text-blue-700">{historicalOverallYieldPct.toFixed(2)}%</span>
-                  <span className="text-xs text-gray-400 ml-1">(vs. current portfolio value)</span>
+                <span className="text-sm text-muted-foreground">
+                  Overall Yield: <span className="font-semibold text-primary">{historicalOverallYieldPct.toFixed(2)}%</span>
+                  <span className="text-xs text-muted-foreground ml-1">(vs. current portfolio value)</span>
                 </span>
               )}
             </div>
@@ -414,8 +414,8 @@ export default function IncomeReport() {
             {byYear.length > 0 && (
               <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                 {/* Bar chart — income by year & type, with total labels */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3 text-sm">Income by Year &amp; Type</h3>
+                <div className="bg-card rounded-xl border border-border p-4">
+                  <h3 className="font-semibold text-foreground mb-3 text-sm">Income by Year &amp; Type</h3>
                   <ResponsiveContainer width="100%" height={220}>
                     <BarChart data={byYear} margin={{ top: 20, right: 8, bottom: 4, left: 8 }}>
                       <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -438,8 +438,8 @@ export default function IncomeReport() {
                 </div>
 
                 {/* Treemap — income by security */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3 text-sm">Income by Security (top 20)</h3>
+                <div className="bg-card rounded-xl border border-border p-4">
+                  <h3 className="font-semibold text-foreground mb-3 text-sm">Income by Security (top 20)</h3>
                   <ResponsiveContainer width="100%" height={220}>
                     <Treemap
                       data={treemapData}
@@ -453,8 +453,8 @@ export default function IncomeReport() {
                 </div>
 
                 {/* Pie — income by account type (tax impact) */}
-                <div className="bg-white rounded-xl border border-gray-200 p-4">
-                  <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
+                <div className="bg-card rounded-xl border border-border p-4">
+                  <h3 className="font-semibold text-foreground mb-3 text-sm">By Account Type <span className="font-normal text-muted-foreground">(tax impact)</span></h3>
                   <ResponsiveContainer width="100%" height={220}>
                     <PieChart>
                       <Pie data={historicalAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={80} label={pieCurrencyLabel as never}>
@@ -470,43 +470,43 @@ export default function IncomeReport() {
 
             {/* Filters */}
             <div className="flex flex-wrap gap-3 items-center">
-              <input className="border rounded px-3 py-1.5 text-sm w-36" placeholder="Filter ticker…"
+              <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-36" placeholder="Filter ticker…"
                 value={tickerFilter} onChange={e => setTickerFilter(e.target.value)} />
-              <select className="border rounded px-3 py-1.5 text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
+              <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={typeFilter} onChange={e => setTypeFilter(e.target.value)}>
                 <option value="">All types</option>
                 {availableTypes.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
               {(tickerFilter || typeFilter || brokerageFilter) && (
-                <span className="text-xs text-gray-400">{filtered.length} of {rows.length} rows</span>
+                <span className="text-xs text-muted-foreground">{filtered.length} of {rows.length} rows</span>
               )}
               <div className="flex gap-1 ml-auto">
                 {(['account', 'security'] as const).map(v => (
                   <button key={v} onClick={() => setViewMode(v)}
-                    className={`px-3 py-1.5 text-xs rounded border capitalize ${viewMode === v ? 'bg-blue-600 text-white border-blue-600' : 'border-gray-300 text-gray-600 hover:bg-gray-50'}`}>
+                    className={`px-3 py-1.5 text-xs rounded border capitalize ${viewMode === v ? 'bg-primary text-white border-primary' : 'border-border text-muted-foreground hover:bg-muted/50'}`}>
                     By {v}
                   </button>
                 ))}
               </div>
               {viewMode === 'account' && (
-                <div className="flex gap-2 text-xs text-gray-500">
+                <div className="flex gap-2 text-xs text-muted-foreground">
                   <button
                     onClick={() => { setExpandedBrokerages(new Set(tree.map(b => b.key))); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
-                    className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
+                    className="px-2 py-1 rounded border border-border hover:bg-muted/50"
                   >Expand all brokerages</button>
                   <button
                     onClick={() => { setExpandedBrokerages(new Set()); setExpandedAccounts(new Set()); setExpandedSecurities(new Set()) }}
-                    className="px-2 py-1 rounded border border-gray-200 hover:bg-gray-50"
+                    className="px-2 py-1 rounded border border-border hover:bg-muted/50"
                   >Collapse all</button>
                 </div>
               )}
             </div>
 
             {/* Hierarchical table */}
-            <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="bg-card rounded-xl border border-border overflow-hidden">
               <div className="overflow-x-auto">
-                <table className="min-w-full text-sm divide-y divide-gray-100">
-                  <thead className="bg-gray-50">
-                    <tr className="text-xs text-gray-500 uppercase">
+                <table className="min-w-full text-sm divide-y divide-border">
+                  <thead className="bg-muted/50">
+                    <tr className="text-xs text-muted-foreground uppercase">
                       <th className="w-10 px-2 py-2.5" />
                       <th className="px-3 py-2.5 text-left font-semibold">Name / Description</th>
                       <SortTh label="Account Type"  col="account_type"     sort={sort} toggle={toggle} className="px-3 py-2.5 text-left" />
@@ -516,47 +516,47 @@ export default function IncomeReport() {
                       <SortTh label="CAD"           col="amount_cad"       sort={sort} toggle={toggle} className="px-3 py-2.5 text-right" />
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-gray-100">
+                  <tbody className="divide-y divide-border">
                     {viewMode === 'security' ? (
                       <>
                         {incomeSecurityGroups.length === 0 && (
-                          <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No income transactions found.</td></tr>
+                          <tr><td colSpan={COLS} className="px-4 py-8 text-center text-muted-foreground">No income transactions found.</td></tr>
                         )}
                         {incomeSecurityGroups.map(sec => (
                           <Fragment key={sec.key}>
                             {/* Security header */}
-                            <tr className="bg-slate-100">
+                            <tr className="bg-accent">
                               <td className="px-3 py-2" />
-                              <td className="px-3 py-2 font-mono font-semibold text-slate-800 text-sm" colSpan={5}>
+                              <td className="px-3 py-2 font-mono font-semibold text-foreground text-sm" colSpan={5}>
                                 <TickerLink securityId={sec.security_id} ticker={sec.ticker} />
-                                <span className="ml-2 text-xs font-normal text-slate-500">
+                                <span className="ml-2 text-xs font-normal text-muted-foreground">
                                   {sec.accounts.length} account{sec.accounts.length !== 1 ? 's' : ''}
                                 </span>
                               </td>
-                              <td className="px-3 py-2 text-right font-bold text-blue-700">{fmtCAD(sec.total)}</td>
+                              <td className="px-3 py-2 text-right font-bold text-primary">{fmtCAD(sec.total)}</td>
                             </tr>
 
                             {sec.accounts.map(acct => (
                               <Fragment key={acct.key}>
                                 {acct.rows.map((item, i) => (
-                                  <tr key={i} className="hover:bg-gray-50">
-                                    <td className="px-3 py-1.5 text-gray-400 text-xs">—</td>
+                                  <tr key={i} className="hover:bg-muted/50">
+                                    <td className="px-3 py-1.5 text-muted-foreground text-xs">—</td>
                                     <td className="px-3 py-1.5 font-mono text-xs font-medium whitespace-nowrap">
-                                      <TickerLink securityId={item.security_id} ticker={item.ticker} className="text-blue-700" />
+                                      <TickerLink securityId={item.security_id} ticker={item.ticker} className="text-primary" />
                                     </td>
                                     <td className="px-3 py-1.5"><AccountTypeBadge type={item.account_type} /></td>
-                                    <td className="px-3 py-1.5 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
+                                    <td className="px-3 py-1.5 text-xs text-muted-foreground whitespace-nowrap">{item.date}</td>
                                     <td className="px-3 py-1.5">
-                                      <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
+                                      <span className="px-1.5 py-0.5 bg-green-50 text-green-600 dark:text-green-400 rounded text-xs whitespace-nowrap">{item.transaction_type}</span>
                                     </td>
-                                    <td className="px-3 py-1.5 text-right text-xs text-gray-500 whitespace-nowrap font-mono">{item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}</td>
-                                    <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
+                                    <td className="px-3 py-1.5 text-right text-xs text-muted-foreground whitespace-nowrap font-mono">{item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}</td>
+                                    <td className="px-3 py-1.5 text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmtCAD(item.amount_cad)}</td>
                                   </tr>
                                 ))}
-                                <tr className="bg-blue-50 border-t border-blue-200 text-xs font-semibold">
-                                  <td className="px-3 py-1.5 text-blue-700" colSpan={1}>{acct.rows.length} txns</td>
-                                  <td className="px-3 py-1.5 text-blue-800" colSpan={5}>{acct.account} subtotal</td>
-                                  <td className="px-3 py-1.5 text-right text-blue-700">{fmtCAD(acct.total)}</td>
+                                <tr className="bg-primary/10 border-t border-primary/20 text-xs font-semibold">
+                                  <td className="px-3 py-1.5 text-primary" colSpan={1}>{acct.rows.length} txns</td>
+                                  <td className="px-3 py-1.5 text-primary" colSpan={5}>{acct.account} subtotal</td>
+                                  <td className="px-3 py-1.5 text-right text-primary">{fmtCAD(acct.total)}</td>
                                 </tr>
                               </Fragment>
                             ))}
@@ -566,90 +566,90 @@ export default function IncomeReport() {
                     ) : (
                     <>
                     {tree.length === 0 && (
-                      <tr><td colSpan={COLS} className="px-4 py-8 text-center text-gray-400">No income transactions found.</td></tr>
+                      <tr><td colSpan={COLS} className="px-4 py-8 text-center text-muted-foreground">No income transactions found.</td></tr>
                     )}
                     {tree.map(brok => (
                       <Fragment key={brok.key}>
                         {/* Brokerage row */}
                         <tr
-                          className="bg-slate-100 hover:bg-slate-200 cursor-pointer select-none"
+                          className="bg-accent hover:bg-accent cursor-pointer select-none"
                           onClick={() => toggleBrokerage(brok.key)}
                         >
-                          <td className="px-3 py-2 text-slate-500">
+                          <td className="px-3 py-2 text-muted-foreground">
                             {expandedBrokerages.has(brok.key)
                               ? <ChevronDown className="h-4 w-4" />
                               : <ChevronRight className="h-4 w-4" />}
                           </td>
-                          <td className="px-3 py-2 font-semibold text-slate-800" colSpan={5}>
+                          <td className="px-3 py-2 font-semibold text-foreground" colSpan={5}>
                             {brok.brokerage}
-                            <span className="ml-2 text-xs font-normal text-slate-500">
+                            <span className="ml-2 text-xs font-normal text-muted-foreground">
                               {brok.accounts.length} account{brok.accounts.length !== 1 ? 's' : ''}
                             </span>
                           </td>
-                          <td className="px-3 py-2 text-right font-bold text-blue-700">{fmtCAD(brok.total)}</td>
+                          <td className="px-3 py-2 text-right font-bold text-primary">{fmtCAD(brok.total)}</td>
                         </tr>
 
                         {expandedBrokerages.has(brok.key) && brok.accounts.map(acct => (
                           <Fragment key={acct.key}>
                             {/* Account row */}
                             <tr
-                              className="bg-blue-50 hover:bg-blue-100 cursor-pointer select-none"
+                              className="bg-primary/10 hover:bg-primary/15 cursor-pointer select-none"
                               onClick={() => toggleAccount(acct.key)}
                             >
-                              <td className="pl-6 pr-2 py-1.5 text-blue-400">
+                              <td className="pl-6 pr-2 py-1.5 text-primary/60">
                                 {expandedAccounts.has(acct.key)
                                   ? <ChevronDown className="h-3.5 w-3.5" />
                                   : <ChevronRight className="h-3.5 w-3.5" />}
                               </td>
-                              <td className="pr-3 py-1.5 text-blue-800 text-sm" colSpan={5}>
+                              <td className="pr-3 py-1.5 text-primary text-sm" colSpan={5}>
                                 {acct.account}
                                 <span className="ml-2"><AccountTypeBadge type={acct.account_type} /></span>
-                                <span className="ml-2 text-xs font-normal text-blue-400">
+                                <span className="ml-2 text-xs font-normal text-primary/60">
                                   {acct.securities.length} securit{acct.securities.length !== 1 ? 'ies' : 'y'}
                                 </span>
                               </td>
-                              <td className="pr-3 py-1.5 text-right font-semibold text-blue-700 text-sm">{fmtCAD(acct.total)}</td>
+                              <td className="pr-3 py-1.5 text-right font-semibold text-primary text-sm">{fmtCAD(acct.total)}</td>
                             </tr>
 
                             {expandedAccounts.has(acct.key) && acct.securities.map(sec => (
                               <Fragment key={sec.key}>
                                 {/* Security row */}
                                 <tr
-                                  className="hover:bg-gray-50 cursor-pointer select-none"
+                                  className="hover:bg-muted/50 cursor-pointer select-none"
                                   onClick={() => toggleSecurity(sec.key)}
                                 >
-                                  <td className="pl-10 pr-2 py-1.5 text-gray-400">
+                                  <td className="pl-10 pr-2 py-1.5 text-muted-foreground">
                                     {expandedSecurities.has(sec.key)
                                       ? <ChevronDown className="h-3 w-3" />
                                       : <ChevronRight className="h-3 w-3" />}
                                   </td>
-                                  <td className="pr-3 py-1.5 font-mono font-semibold text-blue-700 text-sm">
+                                  <td className="pr-3 py-1.5 font-mono font-semibold text-primary text-sm">
                                     <TickerLink securityId={sec.security_id} ticker={sec.ticker} />
                                   </td>
-                                  <td className="pr-3 py-1.5 text-xs text-gray-400">
+                                  <td className="pr-3 py-1.5 text-xs text-muted-foreground">
                                     {sec.transactions.length} txn{sec.transactions.length !== 1 ? 's' : ''}
                                   </td>
-                                  <td className="pr-3 py-1.5 text-xs text-gray-400" colSpan={3} />
-                                  <td className="pr-3 py-1.5 text-right text-sm text-emerald-600 font-medium">{fmtCAD(sec.total)}</td>
+                                  <td className="pr-3 py-1.5 text-xs text-muted-foreground" colSpan={3} />
+                                  <td className="pr-3 py-1.5 text-right text-sm text-emerald-600 dark:text-emerald-400 font-medium">{fmtCAD(sec.total)}</td>
                                 </tr>
 
                                 {expandedSecurities.has(sec.key) && sec.transactions.map((item, i) => (
-                                  <tr key={i} className="bg-white hover:bg-gray-50">
-                                    <td className="pl-14 pr-2 py-1 text-gray-300 text-xs">—</td>
-                                    <td className="pr-3 py-1 text-xs text-gray-600 whitespace-nowrap">
+                                  <tr key={i} className="bg-card hover:bg-muted/50">
+                                    <td className="pl-14 pr-2 py-1 text-muted-foreground/50 text-xs">—</td>
+                                    <td className="pr-3 py-1 text-xs text-muted-foreground whitespace-nowrap">
                                       {item.account_name}
                                     </td>
                                     <td className="pr-3 py-1"><AccountTypeBadge type={item.account_type} /></td>
-                                    <td className="pr-3 py-1 text-xs text-gray-500 whitespace-nowrap">{item.date}</td>
+                                    <td className="pr-3 py-1 text-xs text-muted-foreground whitespace-nowrap">{item.date}</td>
                                     <td className="pr-3 py-1">
-                                      <span className="px-1.5 py-0.5 bg-green-50 text-green-700 rounded text-xs whitespace-nowrap">
+                                      <span className="px-1.5 py-0.5 bg-green-50 text-green-600 dark:text-green-400 rounded text-xs whitespace-nowrap">
                                         {item.transaction_type}
                                       </span>
                                     </td>
-                                    <td className="pr-3 py-1 text-right text-xs text-gray-500 whitespace-nowrap font-mono">
+                                    <td className="pr-3 py-1 text-right text-xs text-muted-foreground whitespace-nowrap font-mono">
                                       {item.currency} {getPref('hideValues') ? '••••••' : parseFloat(item.amount_native).toFixed(2)}
                                     </td>
-                                    <td className="pr-3 py-1 text-right text-xs font-semibold text-emerald-600">{fmtCAD(item.amount_cad)}</td>
+                                    <td className="pr-3 py-1 text-right text-xs font-semibold text-emerald-600 dark:text-emerald-400">{fmtCAD(item.amount_cad)}</td>
                                   </tr>
                                 ))}
                               </Fragment>
@@ -662,10 +662,10 @@ export default function IncomeReport() {
                     )}
                   </tbody>
                   {filtered.length > 0 && (
-                    <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
+                    <tfoot className="bg-muted/50 border-t-2 border-border font-semibold text-sm">
                       <tr>
-                        <td className="px-4 py-2.5 text-gray-500" colSpan={COLS - 1}>{filtered.length} transactions total</td>
-                        <td className="px-4 py-2.5 text-right text-blue-700">{fmtCAD(totalFiltered)}</td>
+                        <td className="px-4 py-2.5 text-muted-foreground" colSpan={COLS - 1}>{filtered.length} transactions total</td>
+                        <td className="px-4 py-2.5 text-right text-primary">{fmtCAD(totalFiltered)}</td>
                       </tr>
                     </tfoot>
                   )}
@@ -677,31 +677,31 @@ export default function IncomeReport() {
 
       {reportMode === 'projected' && (
         projectedLoading
-          ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-blue-600" /></div>
+          ? <div className="flex justify-center py-12"><div className="animate-spin h-8 w-8 rounded-full border-b-2 border-primary" /></div>
           : (
             <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
-                <span className="text-sm font-medium text-gray-700">
-                  Projected Annual Income: <span className="font-bold text-base text-blue-700">{fmtCAD(projectedSubtotals.total)}</span>
+              <div className="bg-primary/10 border border-primary/20 rounded-lg px-5 py-3 flex flex-wrap gap-x-6 gap-y-1">
+                <span className="text-sm font-medium text-foreground">
+                  Projected Annual Income: <span className="font-bold text-base text-primary">{fmtCAD(projectedSubtotals.total)}</span>
                 </span>
-                <span className="text-sm text-gray-600">
-                  Dividend: <span className="font-semibold text-emerald-600">{fmtCAD(projectedSubtotals.dividend)}</span>
+                <span className="text-sm text-muted-foreground">
+                  Dividend: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{fmtCAD(projectedSubtotals.dividend)}</span>
                 </span>
-                <span className="text-sm text-gray-600">
-                  Interest: <span className="font-semibold text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</span>
+                <span className="text-sm text-muted-foreground">
+                  Interest: <span className="font-semibold text-primary">{fmtCAD(projectedSubtotals.interest)}</span>
                 </span>
                 {projectedOverallYieldPct != null && (
-                  <span className="text-sm text-gray-600">
-                    Overall Yield: <span className="font-semibold text-blue-700">{projectedOverallYieldPct.toFixed(2)}%</span>
-                    <span className="text-xs text-gray-400 ml-1">(of current portfolio value)</span>
+                  <span className="text-sm text-muted-foreground">
+                    Overall Yield: <span className="font-semibold text-primary">{projectedOverallYieldPct.toFixed(2)}%</span>
+                    <span className="text-xs text-muted-foreground ml-1">(of current portfolio value)</span>
                   </span>
                 )}
               </div>
 
               {projectedChartData.length > 0 && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Projected Income by Security (top 15 + Other)</h3>
+                  <div className="bg-card rounded-xl border border-border p-4">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">Projected Income by Security (top 15 + Other)</h3>
                     <ResponsiveContainer width="100%" height={300}>
                       <BarChart data={projectedChartData} margin={{ top: 8, right: 8, bottom: 4, left: 8 }}>
                         <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -715,8 +715,8 @@ export default function IncomeReport() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">Dividend vs. Interest</h3>
+                  <div className="bg-card rounded-xl border border-border p-4">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">Dividend vs. Interest</h3>
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie data={projectedPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
@@ -728,8 +728,8 @@ export default function IncomeReport() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Account Type <span className="font-normal text-gray-400">(tax impact)</span></h3>
+                  <div className="bg-card rounded-xl border border-border p-4">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">By Account Type <span className="font-normal text-muted-foreground">(tax impact)</span></h3>
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie data={projectedAccountTypePieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
@@ -741,8 +741,8 @@ export default function IncomeReport() {
                     </ResponsiveContainer>
                   </div>
 
-                  <div className="bg-white rounded-xl border border-gray-200 p-4">
-                    <h3 className="font-semibold text-gray-800 mb-3 text-sm">By Security Class</h3>
+                  <div className="bg-card rounded-xl border border-border p-4">
+                    <h3 className="font-semibold text-foreground mb-3 text-sm">By Security Class</h3>
                     <ResponsiveContainer width="100%" height={300}>
                       <PieChart>
                         <Pie data={projectedClassPieData} dataKey="value" nameKey="name" cx="50%" cy="50%" outerRadius={100} label={pieCurrencyLabel as never}>
@@ -756,11 +756,11 @@ export default function IncomeReport() {
                 </div>
               )}
 
-              <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+              <div className="bg-card rounded-xl border border-border overflow-hidden">
                 <div className="overflow-x-auto">
-                  <table className="min-w-full text-sm divide-y divide-gray-100">
-                    <thead className="bg-gray-50">
-                      <tr className="text-xs text-gray-500 uppercase">
+                  <table className="min-w-full text-sm divide-y divide-border">
+                    <thead className="bg-muted/50">
+                      <tr className="text-xs text-muted-foreground uppercase">
                         <SortTh label="Symbol" col="ticker" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Name" col="security_name" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-left" />
                         <SortTh label="Qty Held" col="quantity" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
@@ -770,17 +770,17 @@ export default function IncomeReport() {
                         <SortTh label="Projected Annual Income (CAD)" col="projected_annual_income_cad" sort={projSort} toggle={projToggle} className="px-3 py-2.5 text-right" />
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-gray-100">
+                    <tbody className="divide-y divide-border">
                       {projectedSorted.length === 0 && (
-                        <tr><td colSpan={7} className="px-4 py-8 text-center text-gray-400">No current holdings found.</td></tr>
+                        <tr><td colSpan={7} className="px-4 py-8 text-center text-muted-foreground">No current holdings found.</td></tr>
                       )}
                       {projectedSorted.map((r, i) => (
-                        <tr key={`${r.security_id}-${r.account_type}-${i}`} className="hover:bg-gray-50">
+                        <tr key={`${r.security_id}-${r.account_type}-${i}`} className="hover:bg-muted/50">
                           <td className="px-3 py-2 font-mono font-semibold">
-                            <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-blue-700" />
+                            <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-primary" />
                           </td>
-                          <td className="px-3 py-2 text-gray-600 whitespace-nowrap">{r.security_name || '—'}</td>
-                          <td className="px-3 py-2 text-right text-gray-700">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
+                          <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{r.security_name || '—'}</td>
+                          <td className="px-3 py-2 text-right text-foreground">{parseFloat(r.quantity).toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
                           <td className="px-3 py-2"><AccountTypeBadge type={r.account_type} /></td>
                           <td className="px-3 py-2">
                             {r.rate_type && (() => {
@@ -791,7 +791,7 @@ export default function IncomeReport() {
                                   className={`px-1.5 py-0.5 rounded text-xs whitespace-nowrap ${
                                     estimated
                                       ? 'bg-amber-50 text-amber-700 border border-dashed border-amber-300'
-                                      : dividend ? 'bg-green-50 text-green-700' : 'bg-indigo-50 text-indigo-700'
+                                      : dividend ? 'bg-green-50 text-green-600 dark:text-green-400' : 'bg-primary/10 text-primary'
                                   }`}
                                   title={estimated ? 'No live yield or manual rate on file — estimated from actual trailing-12-month payments instead' : undefined}
                                 >
@@ -800,36 +800,36 @@ export default function IncomeReport() {
                               )
                             })()}
                           </td>
-                          <td className="px-3 py-2 text-right text-gray-500">{r.rate_pct ? `${parseFloat(r.rate_pct).toFixed(2)}%` : '—'}</td>
-                          <td className="px-3 py-2 text-right font-semibold text-emerald-600">{r.projected_annual_income_cad ? fmtCAD(r.projected_annual_income_cad) : '—'}</td>
+                          <td className="px-3 py-2 text-right text-muted-foreground">{r.rate_pct ? `${parseFloat(r.rate_pct).toFixed(2)}%` : '—'}</td>
+                          <td className="px-3 py-2 text-right font-semibold text-emerald-600 dark:text-emerald-400">{r.projected_annual_income_cad ? fmtCAD(r.projected_annual_income_cad) : '—'}</td>
                         </tr>
                       ))}
                     </tbody>
                     {projectedSorted.length > 0 && (
-                      <tfoot className="bg-gray-50 border-t-2 border-gray-300 font-semibold text-sm">
+                      <tfoot className="bg-muted/50 border-t-2 border-border font-semibold text-sm">
                         <tr>
-                          <td className="px-4 py-2.5 text-gray-500" colSpan={4}>Dividend Subtotal</td>
+                          <td className="px-4 py-2.5 text-muted-foreground" colSpan={4}>Dividend Subtotal</td>
                           <td className="px-4 py-2.5" colSpan={2} />
-                          <td className="px-4 py-2.5 text-right text-emerald-600">{fmtCAD(projectedSubtotals.dividend)}</td>
+                          <td className="px-4 py-2.5 text-right text-emerald-600 dark:text-emerald-400">{fmtCAD(projectedSubtotals.dividend)}</td>
                         </tr>
                         <tr>
-                          <td className="px-4 py-2.5 text-gray-500" colSpan={4}>Interest Subtotal</td>
+                          <td className="px-4 py-2.5 text-muted-foreground" colSpan={4}>Interest Subtotal</td>
                           <td className="px-4 py-2.5" colSpan={2} />
-                          <td className="px-4 py-2.5 text-right text-indigo-600">{fmtCAD(projectedSubtotals.interest)}</td>
+                          <td className="px-4 py-2.5 text-right text-primary">{fmtCAD(projectedSubtotals.interest)}</td>
                         </tr>
                         {projectedByAccountType.map(([type, value]) => (
-                          <tr key={type} className="border-t border-gray-100">
-                            <td className="px-4 py-2 text-gray-500 font-normal" colSpan={3}>
+                          <tr key={type} className="border-t border-border">
+                            <td className="px-4 py-2 text-muted-foreground font-normal" colSpan={3}>
                               <AccountTypeBadge type={type} /> <span className="ml-1">Subtotal</span>
                             </td>
                             <td className="px-4 py-2" colSpan={3} />
-                            <td className="px-4 py-2 text-right text-gray-700">{fmtCAD(value)}</td>
+                            <td className="px-4 py-2 text-right text-foreground">{fmtCAD(value)}</td>
                           </tr>
                         ))}
-                        <tr className="border-t border-gray-200">
-                          <td className="px-4 py-2.5 text-gray-700" colSpan={4}>Grand Total</td>
+                        <tr className="border-t border-border">
+                          <td className="px-4 py-2.5 text-foreground" colSpan={4}>Grand Total</td>
                           <td className="px-4 py-2.5" colSpan={2} />
-                          <td className="px-4 py-2.5 text-right text-blue-700">{fmtCAD(projectedSubtotals.total)}</td>
+                          <td className="px-4 py-2.5 text-right text-primary">{fmtCAD(projectedSubtotals.total)}</td>
                         </tr>
                       </tfoot>
                     )}

@@ -46,8 +46,8 @@ export default function CurrencySplitTab() {
   return (
     <div className="space-y-6 max-w-2xl">
       <div>
-        <h2 className="text-lg font-semibold text-gray-900">Currency Sub-Account Split</h2>
-        <p className="text-sm text-gray-500 mt-1">
+        <h2 className="text-lg font-semibold text-foreground">Currency Sub-Account Split</h2>
+        <p className="text-sm text-muted-foreground mt-1">
           Brokerages like iTrade and Scotia Wealth maintain separate CAD and USD ledgers.
           Use this tool to move all transactions of a given currency from one account record
           into a dedicated sub-account you've already created.
@@ -60,12 +60,12 @@ export default function CurrencySplitTab() {
         without re-importing.
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl p-5 space-y-4">
+      <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Source account (mixed CAD+USD)</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Source account (mixed CAD+USD)</label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="bg-background text-foreground w-full border border-border rounded-lg px-3 py-2 text-sm"
               value={sourceId}
               onChange={e => { setSourceId(e.target.value ? Number(e.target.value) : ''); setResult(null); setError(null) }}
             >
@@ -74,9 +74,9 @@ export default function CurrencySplitTab() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Target account (USD sub-account)</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Target account (USD sub-account)</label>
             <select
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="bg-background text-foreground w-full border border-border rounded-lg px-3 py-2 text-sm"
               value={targetId}
               onChange={e => { setTargetId(e.target.value ? Number(e.target.value) : ''); setResult(null); setError(null) }}
             >
@@ -88,9 +88,9 @@ export default function CurrencySplitTab() {
 
         <div className="flex items-end gap-3 flex-wrap">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Currency to move</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Currency to move</label>
             <input
-              className="border border-gray-300 rounded-lg px-3 py-2 text-sm w-28 font-mono uppercase"
+              className="bg-background text-foreground border border-border rounded-lg px-3 py-2 text-sm w-28 font-mono uppercase"
               value={currency}
               onChange={e => { setCurrency(e.target.value.toUpperCase()); setResult(null); setError(null) }}
               placeholder="USD"
@@ -98,13 +98,13 @@ export default function CurrencySplitTab() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">From date <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">From date <span className="text-muted-foreground font-normal">(optional)</span></label>
             <DatePicker className="w-36" max={new Date().toISOString().slice(0, 10)}
               value={fromDate || ''} placeholder="From"
               onChange={v => { setFromDate(v); setResult(null); setError(null) }} />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">To date <span className="text-gray-400 font-normal">(optional)</span></label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">To date <span className="text-muted-foreground font-normal">(optional)</span></label>
             <DatePicker className="w-36" max={new Date().toISOString().slice(0, 10)}
               value={toDate || ''} placeholder="To"
               onChange={v => { setToDate(v); setResult(null); setError(null) }}
@@ -113,40 +113,40 @@ export default function CurrencySplitTab() {
         </div>
 
         {/* Preview */}
-        {summaryLoading && <p className="text-sm text-gray-400">Loading summary…</p>}
+        {summaryLoading && <p className="text-sm text-muted-foreground">Loading summary…</p>}
         {summary && (
-          <div className="rounded-lg border border-gray-200 overflow-hidden">
-            <div className="px-4 py-2 bg-gray-50 border-b border-gray-200 text-xs font-semibold text-gray-500 uppercase tracking-wide">
+          <div className="rounded-lg border border-border overflow-hidden">
+            <div className="px-4 py-2 bg-muted/50 border-b border-border text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               Transaction breakdown for {summary.account_name}
             </div>
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-xs text-gray-500 border-b border-gray-100">
+                <tr className="text-xs text-muted-foreground border-b border-border">
                   <th className="px-4 py-2 text-left">Currency</th>
                   <th className="px-4 py-2 text-right">Count</th>
                   <th className="px-4 py-2 text-right">Earliest</th>
                   <th className="px-4 py-2 text-right">Latest</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-50">
+              <tbody className="divide-y divide-border/60">
                 {summary.by_currency.map(r => (
                   <tr key={r.currency} className={r.currency === currency ? 'bg-amber-50' : ''}>
                     <td className="px-4 py-2 font-mono font-medium">{r.currency}</td>
                     <td className="px-4 py-2 text-right">{r.count}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{r.earliest ?? '—'}</td>
-                    <td className="px-4 py-2 text-right text-gray-500">{r.latest ?? '—'}</td>
+                    <td className="px-4 py-2 text-right text-muted-foreground">{r.earliest ?? '—'}</td>
+                    <td className="px-4 py-2 text-right text-muted-foreground">{r.latest ?? '—'}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
             {foreignCurrencies.length === 0 && (
-              <p className="px-4 py-3 text-sm text-gray-400">No foreign-currency transactions found — this account may already be single-currency.</p>
+              <p className="px-4 py-3 text-sm text-muted-foreground">No foreign-currency transactions found — this account may already be single-currency.</p>
             )}
           </div>
         )}
 
         {previewRow && (
-          <div className="rounded-lg bg-blue-50 border border-blue-200 px-4 py-3 text-sm text-blue-800">
+          <div className="rounded-lg bg-primary/10 border border-primary/20 px-4 py-3 text-sm text-primary">
             {fromDate || toDate ? (
               <>This will move <strong>{currency} transactions</strong> dated{' '}
               {fromDate && <><strong>{fromDate}</strong> and after</>}
@@ -160,12 +160,12 @@ export default function CurrencySplitTab() {
           </div>
         )}
 
-        {error && <p className="text-sm text-red-600">{error}</p>}
+        {error && <p className="text-sm text-red-600 dark:text-red-400">{error}</p>}
         {result && (
           <div className="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm text-emerald-800">
             ✓ Moved <strong>{result.moved}</strong> {currency} transactions from <em>{result.from_account}</em> to <em>{result.to_account}</em>
             {(result.from_date || result.to_date) && (
-              <span className="text-emerald-600">
+              <span className="text-emerald-600 dark:text-emerald-400">
                 {' '}({result.from_date ?? '…'} → {result.to_date ?? 'now'})
               </span>
             )}.
@@ -183,7 +183,7 @@ export default function CurrencySplitTab() {
             </button>
           ) : (
             <>
-              <span className="text-sm text-gray-600">Move {previewRow?.count} transactions?</span>
+              <span className="text-sm text-muted-foreground">Move {previewRow?.count} transactions?</span>
               <button
                 onClick={() => splitMut.mutate()}
                 disabled={splitMut.isPending}
@@ -191,7 +191,7 @@ export default function CurrencySplitTab() {
               >
                 {splitMut.isPending ? 'Moving…' : 'Yes, move them'}
               </button>
-              <button onClick={() => setConfirmed(false)} className="text-sm text-gray-500 hover:text-gray-700">Cancel</button>
+              <button onClick={() => setConfirmed(false)} className="text-sm text-muted-foreground hover:text-foreground">Cancel</button>
             </>
           )}
         </div>

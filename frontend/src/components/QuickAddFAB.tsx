@@ -15,7 +15,7 @@ export default function QuickAddFAB() {
     <button
       onClick={() => navigate('/activity?new=1')}
       aria-label="Add transaction"
-      className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-blue-600 text-white shadow-lg flex items-center justify-center hover:bg-blue-700 active:scale-95 transition-transform md:hidden"
+      className="fixed bottom-20 right-4 z-40 w-14 h-14 rounded-full bg-primary text-white shadow-lg flex items-center justify-center hover:bg-primary/90 active:scale-95 transition-transform md:hidden"
     >
       <Plus className="h-6 w-6" />
     </button>

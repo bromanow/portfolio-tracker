@@ -138,12 +138,12 @@ export default function StatementImportPanel() {
   const fmtSize = (b: number) => b >= 1e6 ? `${(b / 1e6).toFixed(1)} MB` : `${Math.max(1, Math.round(b / 1e3))} KB`
 
   return (
-    <div className="bg-white rounded-lg border border-gray-200 p-4 space-y-4 max-w-2xl">
+    <div className="bg-card rounded-lg border border-border p-4 space-y-4 max-w-2xl">
       <div className="flex items-center gap-2">
-        <Sparkles className="h-4 w-4 text-blue-600" />
-        <h2 className="font-semibold text-gray-800">Statement import (AI-parsed)</h2>
+        <Sparkles className="h-4 w-4 text-primary" />
+        <h2 className="font-semibold text-foreground">Statement import (AI-parsed)</h2>
       </div>
-      <p className="text-sm text-gray-500">
+      <p className="text-sm text-muted-foreground">
         Upload any investment statement PDF (Manulife, Principal, a brokerage…). Gemini reads the
         holdings <em>and</em> the period's contributions/transfers. Each statement is recorded as of
         its own period-end, so successive statements build a real value history — and the
@@ -154,9 +154,9 @@ export default function StatementImportPanel() {
 
       <div className="flex items-end gap-3 flex-wrap">
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">Import into account</label>
+          <label className="text-xs text-muted-foreground">Import into account</label>
           <select value={accountId ?? ''} onChange={e => setAccountId(e.target.value ? Number(e.target.value) : null)}
-            className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[16rem]">
+            className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm min-w-[16rem]">
             <option value="">Auto-detect / create from statement</option>
             {accounts.map(a => (
               <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>
@@ -165,9 +165,9 @@ export default function StatementImportPanel() {
         </div>
 
         <div className="flex flex-col gap-1">
-          <label className="text-xs text-gray-500">Owner {accountId != null && <span className="text-gray-300">(ignored)</span>}</label>
+          <label className="text-xs text-muted-foreground">Owner {accountId != null && <span className="text-muted-foreground/50">(ignored)</span>}</label>
           <select value={owner} onChange={e => setOwner(e.target.value)} disabled={accountId != null}
-            className="border border-gray-200 rounded px-2 py-1 text-sm disabled:bg-gray-50 disabled:text-gray-400">
+            className="border border-border rounded px-2 py-1 text-sm disabled:bg-muted/50 disabled:text-muted-foreground">
             {(owners.length ? owners : ['Michelle Romanow', 'Brian Romanow']).map(o => (
               <option key={o} value={o}>{o}</option>
             ))}
@@ -176,7 +176,7 @@ export default function StatementImportPanel() {
 
       </div>
       {accountId != null && (
-        <p className="text-xs text-gray-400 -mt-2">
+        <p className="text-xs text-muted-foreground -mt-2">
           All statements you upload here will be merged into this one account — use this for a plan
           whose statement format changed but is really the same account (e.g. Manulife's internal move).
         </p>
@@ -185,25 +185,25 @@ export default function StatementImportPanel() {
       <div
         {...getRootProps()}
         className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-          busy ? 'opacity-60 cursor-not-allowed border-gray-200'
-          : isDragActive ? 'border-blue-400 bg-blue-50'
-          : 'border-gray-300 hover:border-blue-400 hover:bg-blue-50'
+          busy ? 'opacity-60 cursor-not-allowed border-border'
+          : isDragActive ? 'border-primary/40 bg-primary/10'
+          : 'border-border hover:border-primary/40 hover:bg-primary/10'
         }`}
       >
         <input {...getInputProps()} />
         {busy
-          ? <Loader2 className="h-9 w-9 text-blue-400 mx-auto mb-2 animate-spin" />
-          : <Upload className="h-9 w-9 text-gray-400 mx-auto mb-2" />}
-        <p className="text-gray-600 font-medium">
+          ? <Loader2 className="h-9 w-9 text-primary/60 mx-auto mb-2 animate-spin" />
+          : <Upload className="h-9 w-9 text-muted-foreground mx-auto mb-2" />}
+        <p className="text-muted-foreground font-medium">
           {busy ? 'Reading statement…'
             : isDragActive ? 'Drop the statement PDF here'
             : 'Drag & drop a statement PDF here, or click to select'}
         </p>
-        <p className="text-xs text-gray-400 mt-1">PDF only · one at a time</p>
+        <p className="text-xs text-muted-foreground mt-1">PDF only · one at a time</p>
       </div>
 
       {error && (
-        <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
+        <div className="text-sm text-red-600 dark:text-red-400 bg-red-50 border border-red-200 rounded p-2 flex items-start gap-2">
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" /> {error}
         </div>
       )}
@@ -223,26 +223,26 @@ export default function StatementImportPanel() {
       )}
 
       {stored.length > 0 && (
-        <div className="pt-2 border-t border-gray-100">
-          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Stored statements</h3>
+        <div className="pt-2 border-t border-border">
+          <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2">Stored statements</h3>
           <div className="space-y-1">
             {groupedStored.map(([account, files]) => {
               const open = !collapsed.has(account)
               return (
-                <div key={account} className="border border-gray-100 rounded">
+                <div key={account} className="border border-border rounded">
                   <div className="flex items-center">
                     <button onClick={() => toggleGroup(account)}
-                      className="flex-1 flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-gray-50 rounded">
-                      {open ? <ChevronDown className="h-4 w-4 text-gray-400 flex-shrink-0" />
-                            : <ChevronRight className="h-4 w-4 text-gray-400 flex-shrink-0" />}
-                      <span className="font-medium text-gray-700 truncate">{account}</span>
-                      <span className="text-xs text-gray-400">{files.length}</span>
+                      className="flex-1 flex items-center gap-2 px-2 py-1.5 text-sm text-left hover:bg-muted/50 rounded">
+                      {open ? <ChevronDown className="h-4 w-4 text-muted-foreground flex-shrink-0" />
+                            : <ChevronRight className="h-4 w-4 text-muted-foreground flex-shrink-0" />}
+                      <span className="font-medium text-foreground truncate">{account}</span>
+                      <span className="text-xs text-muted-foreground">{files.length}</span>
                     </button>
                     {files[0].account_id != null && (
                       <button onClick={() => onReprocessGroup(account, files)}
                         disabled={reproc != null}
                         title="Re-import all statements in this account from the stored PDFs (one at a time)"
-                        className="flex items-center gap-1 px-2 py-1 mr-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40">
+                        className="flex items-center gap-1 px-2 py-1 mr-1 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 rounded disabled:opacity-40">
                         {reproc === `g${files[0].account_id}`
                           ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                           : <RefreshCw className="h-3.5 w-3.5" />}
@@ -251,33 +251,33 @@ export default function StatementImportPanel() {
                     )}
                   </div>
                   {open && (
-                    <div className="divide-y divide-gray-50 border-t border-gray-100">
+                    <div className="divide-y divide-border/60 border-t border-border">
                       {files.map(s => (
                         <div key={s.id} className="flex items-center gap-3 py-2 pl-7 pr-2 text-sm">
-                          <FileText className="h-4 w-4 text-gray-400 flex-shrink-0" />
+                          <FileText className="h-4 w-4 text-muted-foreground flex-shrink-0" />
                           <div className="min-w-0 flex-1">
-                            <div className="truncate text-gray-800">
+                            <div className="truncate text-foreground">
                               {s.as_of || s.original_filename}
-                              {s.owner && <span className="text-gray-400"> · {s.owner}</span>}
+                              {s.owner && <span className="text-muted-foreground"> · {s.owner}</span>}
                             </div>
-                            <div className="text-xs text-gray-400 truncate">
+                            <div className="text-xs text-muted-foreground truncate">
                               {s.original_filename} · {fmtSize(s.byte_size)}
                               {s.engine && <> · {s.engine}</>}
                             </div>
                           </div>
                           <button onClick={() => onReprocess(s)} disabled={reproc != null}
                             title="Re-import this statement from the stored PDF"
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded disabled:opacity-40">
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-primary hover:bg-primary/10 rounded disabled:opacity-40">
                             {reproc === `s${s.id}`
                               ? <Loader2 className="h-3.5 w-3.5 animate-spin" />
                               : <RefreshCw className="h-3.5 w-3.5" />}
                           </button>
                           <button onClick={() => openStatementFile(s.id)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-blue-600 hover:bg-blue-50 rounded">
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-primary hover:bg-primary/10 rounded">
                             <Eye className="h-3.5 w-3.5" /> View
                           </button>
                           <button onClick={() => onDelete(s)}
-                            className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-red-600 hover:bg-red-50 rounded">
+                            className="flex items-center gap-1 px-2 py-1 text-xs text-muted-foreground hover:text-red-600 dark:text-red-400 hover:bg-red-50 rounded">
                             <Trash2 className="h-3.5 w-3.5" />
                           </button>
                         </div>
@@ -291,26 +291,26 @@ export default function StatementImportPanel() {
         </div>
       )}
 
-      <details className="pt-2 border-t border-gray-100">
-        <summary className="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">
+      <details className="pt-2 border-t border-border">
+        <summary className="text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer">
           Hand off to a live feed (Plaid)
         </summary>
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           Once a live feed (Plaid) is taking over an account, freeze its statement history as of a
           cutover date so the two don't double-count. Statements drive value/returns before the
           date; the live feed drives them after. Safe to re-run with a new date.
         </p>
         <div className="flex items-end gap-3 flex-wrap mt-2">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Account</label>
+            <label className="text-xs text-muted-foreground">Account</label>
             <select value={handoffAcct ?? ''} onChange={e => setHandoffAcct(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[16rem]">
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm min-w-[16rem]">
               <option value="">Select account…</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Cutover date</label>
+            <label className="text-xs text-muted-foreground">Cutover date</label>
             <DatePicker value={handoffDate || ''} onChange={setHandoffDate}
               max={new Date().toISOString().slice(0, 10)} placeholder="Cutover" />
           </div>
@@ -320,14 +320,14 @@ export default function StatementImportPanel() {
             Freeze &amp; hand off
           </button>
         </div>
-        {handoffMsg && <p className="text-xs text-gray-600 mt-2">{handoffMsg}</p>}
+        {handoffMsg && <p className="text-xs text-muted-foreground mt-2">{handoffMsg}</p>}
       </details>
 
-      <details className="pt-2 border-t border-gray-100">
-        <summary className="text-xs font-semibold text-gray-500 uppercase tracking-wide cursor-pointer">
+      <details className="pt-2 border-t border-border">
+        <summary className="text-xs font-semibold text-muted-foreground uppercase tracking-wide cursor-pointer">
           Record a fund switch
         </summary>
-        <p className="text-xs text-gray-400 mt-2">
+        <p className="text-xs text-muted-foreground mt-2">
           For a fund roll (e.g. a 2035 → 2040 target-date fund) that isn't a buy or sell. Moves the
           whole position and cost basis from one fund to another at book value — no cash and no
           gain/loss (the new fund keeps the old fund's price). Use this when a statement shows one
@@ -335,31 +335,31 @@ export default function StatementImportPanel() {
         </p>
         <div className="flex items-end gap-3 flex-wrap mt-2">
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Account</label>
+            <label className="text-xs text-muted-foreground">Account</label>
             <select value={swAcct ?? ''} onChange={e => setSwAcct(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[14rem]">
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm min-w-[14rem]">
               <option value="">Select account…</option>
               {accounts.map(a => <option key={a.id} value={a.id}>{a.name} · {a.owner}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">From fund</label>
+            <label className="text-xs text-muted-foreground">From fund</label>
             <select value={swFrom ?? ''} onChange={e => setSwFrom(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[12rem]">
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm min-w-[12rem]">
               <option value="">Select…</option>
               {switchSecurities.map(s => <option key={s.id} value={s.id}>{s.name || s.ticker}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">To fund</label>
+            <label className="text-xs text-muted-foreground">To fund</label>
             <select value={swTo ?? ''} onChange={e => setSwTo(e.target.value ? Number(e.target.value) : null)}
-              className="border border-gray-200 rounded px-2 py-1 text-sm min-w-[12rem]">
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-sm min-w-[12rem]">
               <option value="">Select…</option>
               {switchSecurities.map(s => <option key={s.id} value={s.id}>{s.name || s.ticker}</option>)}
             </select>
           </div>
           <div className="flex flex-col gap-1">
-            <label className="text-xs text-gray-500">Switch date</label>
+            <label className="text-xs text-muted-foreground">Switch date</label>
             <DatePicker value={swDate || ''} onChange={setSwDate}
               max={new Date().toISOString().slice(0, 10)} placeholder="Switch date" />
           </div>
@@ -369,7 +369,7 @@ export default function StatementImportPanel() {
             Record switch
           </button>
         </div>
-        {swMsg && <p className="text-xs text-gray-600 mt-2">{swMsg}</p>}
+        {swMsg && <p className="text-xs text-muted-foreground mt-2">{swMsg}</p>}
       </details>
     </div>
   )

@@ -85,90 +85,90 @@ export default function AccountsTab() {
         </div>
       )}
 
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-medium text-gray-700 mb-3">Add Account</h3>
+      <div className="bg-muted/50 rounded-lg p-4 border border-border">
+        <h3 className="font-medium text-foreground mb-3">Add Account</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <select className="border rounded px-3 py-1.5 text-sm" value={form.brokerage_id}
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.brokerage_id}
             onChange={e => setForm(f => ({ ...f, brokerage_id: e.target.value }))}>
             <option value="">Select brokerage</option>
             {brokerages.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
           </select>
-          <input className="border rounded px-3 py-1.5 text-sm" placeholder="Name" value={form.name}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Name" value={form.name}
             onChange={e => setForm(f => ({ ...f, name: e.target.value }))} />
-          <select className="border rounded px-3 py-1.5 text-sm" value={form.account_type}
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.account_type}
             onChange={e => setForm(f => ({ ...f, account_type: e.target.value }))}>
             {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH', 'OTHER'].map(t => <option key={t}>{t}</option>)}
           </select>
-          <select className="border rounded px-3 py-1.5 text-sm" value={form.base_currency}
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.base_currency}
             onChange={e => setForm(f => ({ ...f, base_currency: e.target.value }))}>
             <option>CAD</option><option>USD</option>
           </select>
-          <input className="border rounded px-3 py-1.5 text-sm" placeholder="Owner" value={form.owner}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Owner" value={form.owner}
             onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
-          <input className="border rounded px-3 py-1.5 text-sm" placeholder="Account # (optional)" value={form.account_number}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Account # (optional)" value={form.account_number}
             onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} />
-          <input className="border rounded px-3 py-1.5 text-sm" placeholder="IB Alias (e.g. Brian TFSA)" value={form.ibkr_alias}
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="IB Alias (e.g. Brian TFSA)" value={form.ibkr_alias}
             onChange={e => setForm(f => ({ ...f, ibkr_alias: e.target.value }))} />
         </div>
         <button onClick={() => createMut.mutate()} disabled={!form.brokerage_id || !form.name || !form.owner}
-          className="mt-3 bg-blue-600 text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">
+          className="mt-3 bg-primary text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">
           Add Account
         </button>
       </div>
 
       <div className="flex flex-wrap gap-3 mb-3">
-        <select className="border rounded px-3 py-1.5 text-sm" value={filterBrokerage} onChange={e => setFilterBrokerage(e.target.value)}>
+        <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={filterBrokerage} onChange={e => setFilterBrokerage(e.target.value)}>
           <option value="">All Brokerages</option>
           {brokerageOptions.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
-        <select className="border rounded px-3 py-1.5 text-sm" value={filterType} onChange={e => setFilterType(e.target.value)}>
+        <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={filterType} onChange={e => setFilterType(e.target.value)}>
           <option value="">All Types</option>
           {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH', 'OTHER'].map(t => <option key={t}>{t}</option>)}
         </select>
         {(filterBrokerage || filterType) && (
-          <button onClick={() => { setFilterBrokerage(''); setFilterType('') }} className="text-xs text-gray-500 hover:text-gray-700">Clear filters</button>
+          <button onClick={() => { setFilterBrokerage(''); setFilterType('') }} className="text-xs text-muted-foreground hover:text-foreground">Clear filters</button>
         )}
       </div>
 
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
-        <table className="min-w-full text-sm divide-y divide-gray-100">
-          <thead className="bg-gray-50">
-            <tr className="text-xs text-gray-500 uppercase">
+      <div className="overflow-x-auto rounded-lg border border-border">
+        <table className="min-w-full text-sm divide-y divide-border">
+          <thead className="bg-muted/50">
+            <tr className="text-xs text-muted-foreground uppercase">
               <SortTh label="Brokerage" col="brokerage_name" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Name" col="name" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Type" col="account_type" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Currency" col="base_currency" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Owner" col="owner" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Acct #" col="account_number" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
-              <th className="px-3 py-3 text-left text-xs text-gray-500 uppercase">IB Alias</th>
+              <th className="px-3 py-3 text-left text-xs text-muted-foreground uppercase">IB Alias</th>
               <SortTh label="Active" col="active" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-border/60">
             {sortRows(visibleAccounts, sort.col, sort.dir).map(a => (
-              <tr key={a.id} className="hover:bg-gray-50">
-                <td className="px-3 py-2.5 text-xs text-gray-500">{a.brokerage_name}</td>
+              <tr key={a.id} className="hover:bg-muted/50">
+                <td className="px-3 py-2.5 text-xs text-muted-foreground">{a.brokerage_name}</td>
                 {editing === a.id ? (
                   <>
-                    <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-36"
+                    <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-36"
                       value={editData.name ?? a.name} onChange={e => setEditData(d => ({ ...d, name: e.target.value }))} /></td>
-                    <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.account_type ?? a.account_type}
+                    <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs" value={editData.account_type ?? a.account_type}
                       onChange={e => setEditData(d => ({ ...d, account_type: e.target.value }))}>
                       {['RRSP', 'TFSA', 'RESP', 'NON_REG', '401K', 'IRA', 'ROTH', 'OTHER'].map(t => <option key={t}>{t}</option>)}
                     </select></td>
-                    <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs" value={editData.base_currency ?? a.base_currency}
+                    <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs" value={editData.base_currency ?? a.base_currency}
                       onChange={e => setEditData(d => ({ ...d, base_currency: e.target.value }))}>
                       <option>CAD</option><option>USD</option>
                     </select></td>
-                    <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-20"
+                    <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-20"
                       value={editData.owner ?? a.owner} onChange={e => setEditData(d => ({ ...d, owner: e.target.value }))} /></td>
-                    <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-28"
+                    <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
                       value={editData.account_number ?? (a.account_number || '')} onChange={e => setEditData(d => ({ ...d, account_number: e.target.value }))} /></td>
-                    <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-28"
+                    <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
                       placeholder="IB alias"
                       value={editData.ibkr_alias ?? (a.ibkr_alias || '')} onChange={e => setEditData(d => ({ ...d, ibkr_alias: e.target.value }))} /></td>
-                    <td className="px-3 py-2"><select className="border rounded px-2 py-1 text-xs"
+                    <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs"
                       value={(editData.active ?? a.active) ? 'true' : 'false'}
                       onChange={e => setEditData(d => ({ ...d, active: e.target.value === 'true' }))}>
                       <option value="true">Yes</option><option value="false">No</option>
@@ -176,24 +176,24 @@ export default function AccountsTab() {
                     <td className="px-3 py-2 text-right flex gap-2 justify-end">
                       <button onClick={() => updateMut.mutate({ id: a.id, data: editData })}
                         className="text-green-600 hover:text-green-800"><Check className="h-4 w-4" /></button>
-                      <button onClick={() => setEditing(null)} className="text-gray-400 hover:text-gray-600"><X className="h-4 w-4" /></button>
+                      <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-muted-foreground"><X className="h-4 w-4" /></button>
                     </td>
                   </>
                 ) : (
                   <>
                     <td className="px-3 py-2.5 font-medium">{a.name}</td>
-                    <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 rounded text-xs">{a.account_type}</span></td>
-                    <td className="px-3 py-2.5 text-xs text-gray-500">{a.base_currency}</td>
+                    <td className="px-3 py-2.5"><span className="px-1.5 py-0.5 bg-primary/10 text-primary rounded text-xs">{a.account_type}</span></td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground">{a.base_currency}</td>
                     <td className="px-3 py-2.5 text-xs">{a.owner}</td>
-                    <td className="px-3 py-2.5 text-xs text-gray-400 font-mono">{a.account_number || '—'}</td>
-                    <td className="px-3 py-2.5 text-xs text-blue-600 font-mono">{a.ibkr_alias || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{a.account_number || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-primary font-mono">{a.ibkr_alias || '—'}</td>
                     <td className="px-3 py-2.5"><span className={`text-xs ${a.active ? 'text-green-600' : 'text-red-400'}`}>{a.active ? 'Yes' : 'No'}</span></td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex gap-2 justify-end">
                         <button onClick={() => { setEditing(a.id); setEditData({}) }}
-                          className="text-blue-500 hover:text-blue-700"><Edit2 className="h-3.5 w-3.5" /></button>
+                          className="text-primary/70 hover:text-primary"><Edit2 className="h-3.5 w-3.5" /></button>
                         <button onClick={() => setDeleteConfirm({ id: a.id, name: a.name })}
-                          className="text-red-400 hover:text-red-600"><Trash2 className="h-3.5 w-3.5" /></button>
+                          className="text-red-400 hover:text-red-600 dark:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     </td>
                   </>

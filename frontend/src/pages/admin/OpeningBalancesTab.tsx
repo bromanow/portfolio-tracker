@@ -140,23 +140,23 @@ export default function OpeningBalancesTab() {
       {/* ── Edit Modal ── */}
       {editing && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50 p-4">
-          <div className="bg-white rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
+          <div className="bg-card rounded-xl shadow-xl max-w-lg w-full p-6 space-y-4">
             <div className="flex items-center justify-between">
-              <h3 className="font-semibold text-gray-900">Edit Opening Balance</h3>
-              <button onClick={() => setEditing(null)} className="text-gray-400 hover:text-gray-600">
+              <h3 className="font-semibold text-foreground">Edit Opening Balance</h3>
+              <button onClick={() => setEditing(null)} className="text-muted-foreground hover:text-muted-foreground">
                 <X className="h-5 w-5" />
               </button>
             </div>
             <div className="grid grid-cols-2 gap-3 text-sm">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Balance Date</label>
+                <label className="block text-xs text-muted-foreground mb-1">Balance Date</label>
                 <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)}
                   value={editing.balance_date || ''}
                   onChange={v => setEditing(p => p && ({ ...p, balance_date: v }))} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Ticker</label>
-                <input list="ob-edit-tickers" className="border rounded px-3 py-1.5 text-sm w-full uppercase"
+                <label className="block text-xs text-muted-foreground mb-1">Ticker</label>
+                <input list="ob-edit-tickers" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full uppercase"
                   value={editing.ticker}
                   onChange={e => setEditing(v => v && ({ ...v, ticker: e.target.value.toUpperCase() }))} />
                 <datalist id="ob-edit-tickers">
@@ -166,57 +166,57 @@ export default function OpeningBalancesTab() {
                 </datalist>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Quantity</label>
-                <input type="number" step="0.0001" className="border rounded px-3 py-1.5 text-sm w-full"
+                <label className="block text-xs text-muted-foreground mb-1">Quantity</label>
+                <input type="number" step="0.0001" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                   value={editing.quantity}
                   onChange={e => setEditing(v => v && ({ ...v, quantity: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">ACB per Share (CAD)</label>
-                <input type="number" step="0.0001" className="border rounded px-3 py-1.5 text-sm w-full"
+                <label className="block text-xs text-muted-foreground mb-1">ACB per Share (CAD)</label>
+                <input type="number" step="0.0001" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                   value={editing.acb_per_share_cad}
                   onChange={e => setEditing(v => v && ({ ...v, acb_per_share_cad: e.target.value }))} />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Currency</label>
-                <select className="border rounded px-3 py-1.5 text-sm w-full"
+                <label className="block text-xs text-muted-foreground mb-1">Currency</label>
+                <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                   value={editing.currency}
                   onChange={e => setEditing(v => v && ({ ...v, currency: e.target.value }))}>
                   <option>CAD</option><option>USD</option>
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Account</label>
-                <select className="border rounded px-3 py-1.5 text-sm w-full"
+                <label className="block text-xs text-muted-foreground mb-1">Account</label>
+                <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                   value={editing.account_id}
                   onChange={e => setEditing(v => v && ({ ...v, account_id: e.target.value }))}>
                   {(accounts as Account[]).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
                 </select>
               </div>
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Notes</label>
-                <input className="border rounded px-3 py-1.5 text-sm w-full"
+                <label className="block text-xs text-muted-foreground mb-1">Notes</label>
+                <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
                   value={editing.notes}
                   onChange={e => setEditing(v => v && ({ ...v, notes: e.target.value }))} />
               </div>
             </div>
             {editing.quantity && editing.acb_per_share_cad && (
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted-foreground">
                 Total ACB: <strong>{fmtCAD(String(parseFloat(editing.quantity) * parseFloat(editing.acb_per_share_cad)))}</strong>
               </p>
             )}
             {editError && (
-              <p className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">Error: {editError}</p>
+              <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 border border-red-200 rounded p-2">Error: {editError}</p>
             )}
-            <div className="flex justify-end gap-3 pt-1 border-t border-gray-100">
+            <div className="flex justify-end gap-3 pt-1 border-t border-border">
               <button onClick={() => { setEditing(null); setEditError(null) }}
-                className="px-4 py-2 text-sm border border-gray-300 rounded-lg hover:bg-gray-50">
+                className="px-4 py-2 text-sm border border-border rounded-lg hover:bg-muted/50">
                 Cancel
               </button>
               <button
                 onClick={() => updateMut.mutate(editing)}
                 disabled={updateMut.isPending || !editing.balance_date || !editing.ticker || !editing.quantity || !editing.acb_per_share_cad}
-                className="flex items-center gap-2 px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50">
+                className="flex items-center gap-2 px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary/90 disabled:opacity-50">
                 <Check className="h-4 w-4" />
                 {updateMut.isPending ? 'Saving…' : 'Save Changes'}
               </button>
@@ -225,31 +225,31 @@ export default function OpeningBalancesTab() {
         </div>
       )}
 
-      <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 text-sm text-blue-800">
+      <div className="bg-primary/10 border border-primary/20 rounded-lg p-4 text-sm text-primary">
         <strong>Opening Balances</strong> let you enter existing holdings without importing all historical transactions.
         Enter each security you hold with its current quantity and average cost per share (in CAD).
         These are treated as BUY transactions dated on the balance date.
       </div>
 
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
-        <h3 className="font-medium text-gray-700 mb-3">Add Opening Balance</h3>
+      <div className="bg-muted/50 rounded-lg p-4 border border-border">
+        <h3 className="font-medium text-foreground mb-3">Add Opening Balance</h3>
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Account</label>
-            <select className="border rounded px-3 py-1.5 text-sm w-full" value={form.account_id}
+            <label className="block text-xs text-muted-foreground mb-1">Account</label>
+            <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" value={form.account_id}
               onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}>
               <option value="">Select account</option>
               {(accounts as Account[]).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Balance Date</label>
+            <label className="block text-xs text-muted-foreground mb-1">Balance Date</label>
             <DatePicker className="w-full" max={new Date().toISOString().slice(0, 10)} value={form.balance_date || ''}
               onChange={v => setForm(f => ({ ...f, balance_date: v }))} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Ticker</label>
-            <input list="ob-add-tickers" className="border rounded px-3 py-1.5 text-sm w-full uppercase" placeholder="e.g. ENB" value={form.ticker}
+            <label className="block text-xs text-muted-foreground mb-1">Ticker</label>
+            <input list="ob-add-tickers" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full uppercase" placeholder="e.g. ENB" value={form.ticker}
               onChange={e => setForm(f => ({ ...f, ticker: e.target.value.toUpperCase() }))} />
             <datalist id="ob-add-tickers">
               {(securities as Security[]).filter(s => !s.is_option).map(s => (
@@ -258,50 +258,50 @@ export default function OpeningBalancesTab() {
             </datalist>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Quantity (shares)</label>
-            <input type="number" step="0.0001" className="border rounded px-3 py-1.5 text-sm w-full" placeholder="100" value={form.quantity}
+            <label className="block text-xs text-muted-foreground mb-1">Quantity (shares)</label>
+            <input type="number" step="0.0001" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" placeholder="100" value={form.quantity}
               onChange={e => setForm(f => ({ ...f, quantity: e.target.value }))} />
           </div>
           {/* ACB mode toggle + input */}
           <div>
             <div className="flex items-center gap-2 mb-1">
-              <label className="text-xs text-gray-500">ACB</label>
-              <div className="flex rounded border border-gray-300 text-xs overflow-hidden">
+              <label className="text-xs text-muted-foreground">ACB</label>
+              <div className="flex rounded border border-border text-xs overflow-hidden">
                 <button type="button"
-                  className={`px-2 py-0.5 ${form.acbMode === 'per_share' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  className={`px-2 py-0.5 ${form.acbMode === 'per_share' ? 'bg-primary text-white' : 'bg-card text-muted-foreground hover:bg-muted/50'}`}
                   onClick={() => setForm(f => ({ ...f, acbMode: 'per_share' }))}>
                   Per Share
                 </button>
                 <button type="button"
-                  className={`px-2 py-0.5 ${form.acbMode === 'total' ? 'bg-blue-600 text-white' : 'bg-white text-gray-600 hover:bg-gray-50'}`}
+                  className={`px-2 py-0.5 ${form.acbMode === 'total' ? 'bg-primary text-white' : 'bg-card text-muted-foreground hover:bg-muted/50'}`}
                   onClick={() => setForm(f => ({ ...f, acbMode: 'total' }))}>
                   Total
                 </button>
               </div>
             </div>
             {form.acbMode === 'per_share' ? (
-              <input type="number" step="0.0001" className="border rounded px-3 py-1.5 text-sm w-full" placeholder="45.00" value={form.acb_per_share_cad}
+              <input type="number" step="0.0001" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" placeholder="45.00" value={form.acb_per_share_cad}
                 onChange={e => setForm(f => ({ ...f, acb_per_share_cad: e.target.value }))} />
             ) : (
-              <input type="number" step="0.01" className="border rounded px-3 py-1.5 text-sm w-full" placeholder="4500.00" value={form.total_acb}
+              <input type="number" step="0.01" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" placeholder="4500.00" value={form.total_acb}
                 onChange={e => setForm(f => ({ ...f, total_acb: e.target.value }))} />
             )}
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Currency</label>
-            <select className="border rounded px-3 py-1.5 text-sm w-full" value={form.currency}
+            <label className="block text-xs text-muted-foreground mb-1">Currency</label>
+            <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" value={form.currency}
               onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
               <option>CAD</option><option>USD</option>
             </select>
           </div>
           <div className="md:col-span-3">
-            <label className="block text-xs text-gray-500 mb-1">Notes (optional)</label>
-            <input className="border rounded px-3 py-1.5 text-sm w-full" placeholder="e.g. Opening balance as of Jan 1 2024" value={form.notes}
+            <label className="block text-xs text-muted-foreground mb-1">Notes (optional)</label>
+            <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full" placeholder="e.g. Opening balance as of Jan 1 2024" value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
         </div>
         {form.quantity && (form.acb_per_share_cad || form.total_acb) && (
-          <p className="text-xs text-gray-500 mt-2">
+          <p className="text-xs text-muted-foreground mt-2">
             {form.acbMode === 'per_share'
               ? <>Per-share ACB: <strong>{fmtCAD(form.acb_per_share_cad)}</strong> · Total ACB: <strong>{fmtCAD(String(computedTotalAcb()))}</strong></>
               : <>Total ACB: <strong>{fmtCAD(form.total_acb)}</strong> · Per-share: <strong>{fmtCAD(String(computedAcbPerShare()))}</strong></>
@@ -312,28 +312,28 @@ export default function OpeningBalancesTab() {
           onClick={() => createMut.mutate()}
           disabled={!form.account_id || !form.balance_date || !form.ticker || !form.quantity ||
             (form.acbMode === 'per_share' ? !form.acb_per_share_cad : !form.total_acb)}
-          className="mt-3 bg-blue-600 text-white text-sm px-4 py-1.5 rounded disabled:opacity-40"
+          className="mt-3 bg-primary text-white text-sm px-4 py-1.5 rounded disabled:opacity-40"
         >
           {createMut.isPending ? 'Saving...' : 'Add Opening Balance'}
         </button>
         {createMut.isError && (
-          <p className="text-red-600 text-xs mt-2">Error saving — check all fields and try again</p>
+          <p className="text-red-600 dark:text-red-400 text-xs mt-2">Error saving — check all fields and try again</p>
         )}
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
-        <div className="px-4 py-3 bg-gray-50 border-b flex justify-between items-center">
-          <span className="text-sm font-medium text-gray-700">{(balances as OpeningBalance[]).length} opening balance entries</span>
-          <span className="text-sm font-semibold text-gray-700">Total: {fmtCAD(String(totalACB))}</span>
+      <div className="bg-card rounded-xl border border-border shadow-sm overflow-hidden">
+        <div className="px-4 py-3 bg-muted/50 border-b flex justify-between items-center">
+          <span className="text-sm font-medium text-foreground">{(balances as OpeningBalance[]).length} opening balance entries</span>
+          <span className="text-sm font-semibold text-foreground">Total: {fmtCAD(String(totalACB))}</span>
         </div>
         {isLoading ? (
-          <div className="p-8 text-center text-gray-400">Loading...</div>
+          <div className="p-8 text-center text-muted-foreground">Loading...</div>
         ) : (balances as OpeningBalance[]).length === 0 ? (
-          <div className="p-8 text-center text-gray-400 text-sm">No opening balances entered yet</div>
+          <div className="p-8 text-center text-muted-foreground text-sm">No opening balances entered yet</div>
         ) : (
-          <table className="min-w-full text-sm divide-y divide-gray-100">
-            <thead className="bg-gray-50">
-              <tr className="text-xs text-gray-500 uppercase">
+          <table className="min-w-full text-sm divide-y divide-border">
+            <thead className="bg-muted/50">
+              <tr className="text-xs text-muted-foreground uppercase">
                 <SortTh label="Account" col="account_name" sort={obSort} toggle={obToggle} className="px-3 py-3 text-left" />
                 <SortTh label="Date" col="balance_date" sort={obSort} toggle={obToggle} className="px-3 py-3 text-left" />
                 <SortTh label="Ticker" col="ticker" sort={obSort} toggle={obToggle} className="px-3 py-3 text-left" />
@@ -345,23 +345,23 @@ export default function OpeningBalancesTab() {
                 <th className="px-3 py-3"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/60">
               {sortRows(balances as OpeningBalance[], obSort.col, obSort.dir).map(b => (
-                <tr key={b.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2.5 text-xs text-gray-500">{b.account_name}</td>
+                <tr key={b.id} className="hover:bg-muted/50">
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{b.account_name}</td>
                   <td className="px-3 py-2.5 text-xs">{b.balance_date}</td>
-                  <td className="px-3 py-2.5 font-mono font-semibold text-blue-700">{b.ticker}</td>
+                  <td className="px-3 py-2.5 font-mono font-semibold text-primary">{b.ticker}</td>
                   <td className="px-3 py-2.5 text-right">{parseFloat(b.quantity || '0').toLocaleString('en-CA', { maximumFractionDigits: 4 })}</td>
                   <td className="px-3 py-2.5 text-right">{fmtCAD(b.acb_per_share_cad)}</td>
                   <td className="px-3 py-2.5 text-right font-semibold">{fmtCAD(b.total_acb_cad)}</td>
-                  <td className="px-3 py-2.5 text-xs text-gray-500">{b.currency}</td>
-                  <td className="px-3 py-2.5 text-xs text-gray-400 max-w-xs truncate">{b.notes || '—'}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground">{b.currency}</td>
+                  <td className="px-3 py-2.5 text-xs text-muted-foreground max-w-xs truncate">{b.notes || '—'}</td>
                   <td className="px-3 py-2.5">
                     <div className="flex items-center gap-2">
-                      <button onClick={() => startEdit(b)} className="text-gray-400 hover:text-blue-600" title="Edit">
+                      <button onClick={() => startEdit(b)} className="text-muted-foreground hover:text-primary" title="Edit">
                         <Edit2 className="h-3.5 w-3.5" />
                       </button>
-                      <button onClick={() => setDeleteId(b.id)} className="text-gray-400 hover:text-red-600" title="Delete">
+                      <button onClick={() => setDeleteId(b.id)} className="text-muted-foreground hover:text-red-600 dark:text-red-400" title="Delete">
                         <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -410,41 +410,41 @@ function CashOpeningsSection() {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-200">
-        <h3 className="font-semibold text-gray-700">Opening Cash Balances</h3>
-        <span className="text-xs text-gray-400">Enter the starting cash balance for each account. This anchors the cash calculation in Positions.</span>
+      <div className="flex items-center gap-2 pt-2 border-t border-border">
+        <h3 className="font-semibold text-foreground">Opening Cash Balances</h3>
+        <span className="text-xs text-muted-foreground">Enter the starting cash balance for each account. This anchors the cash calculation in Positions.</span>
       </div>
 
-      <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+      <div className="bg-muted/50 rounded-lg p-4 border border-border">
         <div className="flex flex-wrap gap-3 items-end">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Account</label>
-            <select className="border rounded px-3 py-1.5 text-sm" value={form.account_id}
+            <label className="block text-xs text-muted-foreground mb-1">Account</label>
+            <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.account_id}
               onChange={e => setForm(f => ({ ...f, account_id: e.target.value }))}>
               <option value="">Select account</option>
               {(accounts as Account[]).map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Date</label>
+            <label className="block text-xs text-muted-foreground mb-1">Date</label>
             <DatePicker max={new Date().toISOString().slice(0, 10)} value={form.balance_date || ''}
               onChange={v => setForm(f => ({ ...f, balance_date: v }))} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Opening Cash Balance</label>
-            <input type="number" step="0.01" className="border rounded px-3 py-1.5 text-sm w-32" placeholder="0.00" value={form.amount}
+            <label className="block text-xs text-muted-foreground mb-1">Opening Cash Balance</label>
+            <input type="number" step="0.01" className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-32" placeholder="0.00" value={form.amount}
               onChange={e => setForm(f => ({ ...f, amount: e.target.value }))} />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Currency</label>
-            <select className="border rounded px-3 py-1.5 text-sm" value={form.currency}
+            <label className="block text-xs text-muted-foreground mb-1">Currency</label>
+            <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.currency}
               onChange={e => setForm(f => ({ ...f, currency: e.target.value }))}>
               <option>CAD</option><option>USD</option>
             </select>
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Notes</label>
-            <input className="border rounded px-3 py-1.5 text-sm w-40" placeholder="Optional" value={form.notes}
+            <label className="block text-xs text-muted-foreground mb-1">Notes</label>
+            <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-40" placeholder="Optional" value={form.notes}
               onChange={e => setForm(f => ({ ...f, notes: e.target.value }))} />
           </div>
           <button onClick={() => createMut.mutate()}
@@ -456,10 +456,10 @@ function CashOpeningsSection() {
       </div>
 
       {(cashOpenings as CashOpening[]).length > 0 && (
-        <div className="overflow-x-auto rounded-lg border border-gray-200">
-          <table className="min-w-full text-sm divide-y divide-gray-100">
-            <thead className="bg-gray-50">
-              <tr className="text-xs text-gray-500 uppercase">
+        <div className="overflow-x-auto rounded-lg border border-border">
+          <table className="min-w-full text-sm divide-y divide-border">
+            <thead className="bg-muted/50">
+              <tr className="text-xs text-muted-foreground uppercase">
                 <th className="px-3 py-2.5 text-left">Account</th>
                 <th className="px-3 py-2.5 text-left">Date</th>
                 <th className="px-3 py-2.5 text-right">Amount</th>
@@ -468,18 +468,18 @@ function CashOpeningsSection() {
                 <th className="px-3 py-2.5"></th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-gray-50">
+            <tbody className="divide-y divide-border/60">
               {(cashOpenings as CashOpening[]).map(c => (
-                <tr key={c.id} className="hover:bg-gray-50">
-                  <td className="px-3 py-2 text-gray-700">{c.account_name}</td>
-                  <td className="px-3 py-2 text-gray-500 text-xs">{c.balance_date}</td>
-                  <td className="px-3 py-2 text-right font-semibold font-mono text-green-700">
+                <tr key={c.id} className="hover:bg-muted/50">
+                  <td className="px-3 py-2 text-foreground">{c.account_name}</td>
+                  <td className="px-3 py-2 text-muted-foreground text-xs">{c.balance_date}</td>
+                  <td className="px-3 py-2 text-right font-semibold font-mono text-green-600 dark:text-green-400">
                     {parseFloat(c.amount).toLocaleString('en-CA', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
                   </td>
-                  <td className="px-3 py-2 text-xs text-gray-500">{c.currency}</td>
-                  <td className="px-3 py-2 text-xs text-gray-400">{c.notes || '—'}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{c.currency}</td>
+                  <td className="px-3 py-2 text-xs text-muted-foreground">{c.notes || '—'}</td>
                   <td className="px-3 py-2 text-right">
-                    <button onClick={() => deleteMut.mutate(c.id)} className="text-red-400 hover:text-red-600">
+                    <button onClick={() => deleteMut.mutate(c.id)} className="text-red-400 hover:text-red-600 dark:text-red-400">
                       <Trash2 className="h-3.5 w-3.5" />
                     </button>
                   </td>

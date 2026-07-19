@@ -64,15 +64,15 @@ function sortRows(rows: ScannerResult[], col: SortCol, dir: SortDir): ScannerRes
 // ─── Recommendation badge ─────────────────────────────────────────────────────
 
 function RecommendationBadge({ rec }: { rec: string | null }) {
-  if (!rec) return <span className="text-gray-300">—</span>
+  if (!rec) return <span className="text-muted-foreground/50">—</span>
   const styles: Record<string, string> = {
     Best:  'bg-emerald-100 text-emerald-700 border border-emerald-200',
-    Good:  'bg-blue-100 text-blue-700 border border-blue-200',
+    Good:  'bg-primary/15 text-primary border border-primary/20',
     Fair:  'bg-amber-100 text-amber-700 border border-amber-200',
-    Avoid: 'bg-red-100 text-red-600 border border-red-200',
+    Avoid: 'bg-red-100 text-red-600 dark:text-red-400 border border-red-200',
   }
   return (
-    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${styles[rec] ?? 'bg-gray-100 text-gray-500 border border-gray-200'}`}>
+    <span className={`inline-block px-1.5 py-0.5 rounded text-xs font-semibold ${styles[rec] ?? 'bg-accent text-muted-foreground border border-border'}`}>
       {rec}
     </span>
   )
@@ -81,25 +81,25 @@ function RecommendationBadge({ rec }: { rec: string | null }) {
 // ─── Delta badge ──────────────────────────────────────────────────────────────
 
 function DeltaBadge({ delta }: { delta: number | null }) {
-  if (delta == null) return <span className="text-gray-300">—</span>
+  if (delta == null) return <span className="text-muted-foreground/50">—</span>
   const abs = Math.abs(delta)
   const color =
-    abs >= 0.20 && abs <= 0.30 ? 'text-emerald-600 font-semibold' :
-    ((abs >= 0.15 && abs < 0.20) || (abs > 0.30 && abs <= 0.35)) ? 'text-amber-600' :
-    abs > 0.45 ? 'text-red-500' :
-    'text-gray-500'
+    abs >= 0.20 && abs <= 0.30 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' :
+    ((abs >= 0.15 && abs < 0.20) || (abs > 0.30 && abs <= 0.35)) ? 'text-amber-600 dark:text-amber-400' :
+    abs > 0.45 ? 'text-red-500 dark:text-red-400' :
+    'text-muted-foreground'
   return <span className={`tabular-nums ${color}`}>{delta.toFixed(2)}</span>
 }
 
 // ─── Score badge ──────────────────────────────────────────────────────────────
 
 function ScoreBadge({ score, why }: { score: number | null; why?: string | null }) {
-  if (score == null) return <span className="text-gray-300">—</span>
+  if (score == null) return <span className="text-muted-foreground/50">—</span>
   const color =
     score >= 20 ? 'bg-emerald-100 text-emerald-700' :
-    score >= 12 ? 'bg-blue-100 text-blue-700' :
+    score >= 12 ? 'bg-primary/15 text-primary' :
     score >= 6  ? 'bg-amber-100 text-amber-700' :
-                  'bg-gray-100 text-gray-500'
+                  'bg-accent text-muted-foreground'
   return (
     <span
       className={`inline-block px-1.5 py-0.5 rounded text-xs font-bold tabular-nums ${color} ${why ? 'cursor-help' : ''}`}
@@ -113,11 +113,11 @@ function ScoreBadge({ score, why }: { score: number | null; why?: string | null 
 // ─── IV/HV badge ─────────────────────────────────────────────────────────────
 
 function IvHvBadge({ ratio }: { ratio: number | null }) {
-  if (ratio == null) return <span className="text-gray-300">—</span>
+  if (ratio == null) return <span className="text-muted-foreground/50">—</span>
   const color =
-    ratio >= 1.3 ? 'text-emerald-600 font-semibold' :
+    ratio >= 1.3 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' :
     ratio >= 1.1 ? 'text-emerald-500' :
-    ratio >= 0.9 ? 'text-gray-600' :
+    ratio >= 0.9 ? 'text-muted-foreground' :
                    'text-red-400'
   return <span className={`tabular-nums ${color}`}>{ratio.toFixed(2)}×</span>
 }
@@ -129,7 +129,7 @@ function DataSourcePill({ source }: { source: string | null }) {
   const isLive = source === 'ibkr'
   return (
     <span className={`inline-flex items-center gap-0.5 text-[10px] px-1 py-0.5 rounded font-medium ${
-      isLive ? 'bg-emerald-100 text-emerald-600' : 'bg-gray-100 text-gray-400'
+      isLive ? 'bg-emerald-100 text-emerald-600 dark:text-emerald-400' : 'bg-accent text-muted-foreground'
     }`}>
       {isLive ? <Zap className="h-2.5 w-2.5" /> : null}
       {isLive ? 'live' : 'delayed'}
@@ -142,7 +142,7 @@ function DataSourcePill({ source }: { source: string | null }) {
 function InfoTip({ text }: { text: string }) {
   return (
     <span className="group relative inline-flex items-center ml-0.5 align-middle">
-      <Info className="h-3 w-3 text-gray-300 hover:text-blue-400 cursor-help transition-colors" />
+      <Info className="h-3 w-3 text-muted-foreground/50 hover:text-primary/60 cursor-help transition-colors" />
       <span className="pointer-events-none absolute top-full left-1/2 -translate-x-1/2 mt-1.5 w-56 rounded-lg bg-gray-900 px-2.5 py-2 text-[11px] leading-snug text-white shadow-xl opacity-0 group-hover:opacity-100 transition-opacity z-50 whitespace-normal text-left font-normal">
         <span className="absolute bottom-full left-1/2 -translate-x-1/2 border-4 border-transparent border-b-gray-900" />
         {text}
@@ -164,11 +164,11 @@ function SortTh({
   const Icon = active ? (sortDir === 'asc' ? ChevronUp : ChevronDown) : ChevronsUpDown
   return (
     <th
-      className={`px-3 py-2 text-xs font-semibold text-gray-500 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100 ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
+      className={`px-3 py-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none whitespace-nowrap hover:bg-accent ${align === 'right' ? 'text-right' : 'text-left'} ${className}`}
       onClick={() => onSort(col)}
     >
       <span className={`inline-flex items-center gap-0.5 ${align === 'right' ? 'flex-row-reverse' : ''}`}>
-        <Icon className={`h-3 w-3 ${active ? 'text-blue-500' : 'text-gray-300'}`} />
+        <Icon className={`h-3 w-3 ${active ? 'text-primary/70' : 'text-muted-foreground/50'}`} />
         {label}
         {tip && <span onClick={e => e.stopPropagation()}><InfoTip text={tip} /></span>}
       </span>
@@ -201,10 +201,10 @@ function SuggestedUniverse({ watchlistTickers, onAdd }: { watchlistTickers: Set<
   const [open, setOpen] = useState(false)
 
   return (
-    <div className="border border-dashed border-gray-200 rounded-lg overflow-hidden">
+    <div className="border border-dashed border-border rounded-lg overflow-hidden">
       <button
         onClick={() => setOpen(v => !v)}
-        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-gray-500 hover:bg-gray-50 transition-colors"
+        className="w-full flex items-center justify-between px-3 py-2 text-xs font-medium text-muted-foreground hover:bg-muted/50 transition-colors"
       >
         <span className="flex items-center gap-1.5">
           <Star className="h-3 w-3 text-amber-400" />
@@ -215,13 +215,13 @@ function SuggestedUniverse({ watchlistTickers, onAdd }: { watchlistTickers: Set<
 
       {open && (
         <div className="px-3 pb-3 space-y-3">
-          <p className="text-[11px] text-gray-400">
+          <p className="text-[11px] text-muted-foreground">
             Quality covered-call candidates: liquid, optionable, typically IV-rich.
             Click + to add to your watchlist.
           </p>
           {SUGGESTED.map(group => (
             <div key={group.label}>
-              <div className="text-[10px] uppercase tracking-wide text-gray-400 font-semibold mb-1.5">{group.label}</div>
+              <div className="text-[10px] uppercase tracking-wide text-muted-foreground font-semibold mb-1.5">{group.label}</div>
               <div className="flex flex-wrap gap-1">
                 {group.tickers.map(t => {
                   const already = watchlistTickers.has(t)
@@ -232,8 +232,8 @@ function SuggestedUniverse({ watchlistTickers, onAdd }: { watchlistTickers: Set<
                       disabled={already}
                       className={`inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded-full border transition-colors ${
                         already
-                          ? 'bg-gray-100 text-gray-400 border-gray-200 cursor-default'
-                          : 'bg-white text-gray-600 border-gray-300 hover:border-blue-400 hover:text-blue-600 hover:bg-blue-50'
+                          ? 'bg-accent text-muted-foreground border-border cursor-default'
+                          : 'bg-card text-muted-foreground border-border hover:border-primary/40 hover:text-primary hover:bg-primary/10'
                       }`}
                     >
                       {already ? null : <Plus className="h-2.5 w-2.5" />}
@@ -262,7 +262,7 @@ function CollapsibleSection({
     <div>
       <button
         onClick={() => setOpen(v => !v)}
-        className={`w-full flex items-center justify-between text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2 hover:text-gray-700 transition-colors ${compact ? 'py-0.5' : 'py-1'}`}
+        className={`w-full flex items-center justify-between text-xs font-semibold text-muted-foreground uppercase tracking-wide mb-2 hover:text-foreground transition-colors ${compact ? 'py-0.5' : 'py-1'}`}
       >
         <span className="flex items-center gap-1.5">{label}</span>
         <ChevronDown className={`h-3.5 w-3.5 transition-transform ${open ? '' : '-rotate-90'}`} />
@@ -314,15 +314,15 @@ function WatchlistPanel() {
   )
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-3">
-      <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+    <div className="bg-card rounded-xl border border-border shadow-sm p-4 space-y-3">
+      <h2 className="font-semibold text-foreground flex items-center gap-2">
         <Star className="h-4 w-4 text-amber-400" />
         Watchlist
-        <span className="text-xs text-gray-400 font-normal ml-1">
+        <span className="text-xs text-muted-foreground font-normal ml-1">
           {watchlist.length} ticker{watchlist.length !== 1 ? 's' : ''}
         </span>
       </h2>
-      <p className="text-xs text-gray-400">
+      <p className="text-xs text-muted-foreground">
         Add any ticker here. The scanner also automatically includes all your portfolio positions.
       </p>
 
@@ -334,12 +334,12 @@ function WatchlistPanel() {
           onChange={e => { setInput(e.target.value.toUpperCase()); setError(null) }}
           onKeyDown={e => e.key === 'Enter' && submit()}
           placeholder="e.g. AAPL, SU.TO"
-          className="flex-1 border border-gray-200 rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+          className="bg-background text-foreground flex-1 border border-border rounded px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary"
         />
         <button
           onClick={() => submit()}
           disabled={!input.trim() || addMut.isPending}
-          className="flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 text-white text-sm rounded hover:bg-blue-700 disabled:opacity-50"
+          className="flex items-center gap-1.5 px-3 py-1.5 bg-primary text-white text-sm rounded hover:bg-primary/90 disabled:opacity-50"
         >
           <Plus className="h-3.5 w-3.5" />
           Add
@@ -347,7 +347,7 @@ function WatchlistPanel() {
       </div>
 
       {error && (
-        <p className="text-xs text-red-500">{error}</p>
+        <p className="text-xs text-red-500 dark:text-red-400">{error}</p>
       )}
 
       {/* Ticker chips */}
@@ -356,13 +356,13 @@ function WatchlistPanel() {
           {watchlist.map((item: WatchlistItem) => (
             <span
               key={item.ticker}
-              className="inline-flex items-center gap-1 bg-gray-100 text-gray-700 text-xs px-2 py-1 rounded-full"
+              className="inline-flex items-center gap-1 bg-accent text-foreground text-xs px-2 py-1 rounded-full"
               title={item.company_name ?? item.ticker}
             >
               <TickerLink ticker={item.ticker} />
               <button
                 onClick={() => removeMut.mutate(item.ticker)}
-                className="text-gray-400 hover:text-red-500 ml-0.5"
+                className="text-muted-foreground hover:text-red-500 dark:text-red-400 ml-0.5"
               >
                 <X className="h-3 w-3" />
               </button>
@@ -414,56 +414,56 @@ const DEFAULT_FILTERS: Filters = {
 function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filters) => void }) {
   const set = (patch: Partial<Filters>) => onChange({ ...filters, ...patch })
   const isDirty = JSON.stringify(filters) !== JSON.stringify(DEFAULT_FILTERS)
-  const n = "border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+  const n = "border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
 
   return (
-    <div className="bg-gray-50 rounded-lg px-4 py-3 space-y-2.5">
+    <div className="bg-muted/50 rounded-lg px-4 py-3 space-y-2.5">
       {/* Row 1 — returns & expiry */}
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-14 shrink-0">Returns</span>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-14 shrink-0">Returns</span>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min yield</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min yield</span>
           <input type="number" value={filters.minYield} min={0} max={100} step={0.5}
             className={`${n} w-16`} onChange={e => set({ minYield: parseFloat(e.target.value) || 0 })} />
-          <span className="text-xs text-gray-400">%/yr</span>
+          <span className="text-xs text-muted-foreground">%/yr</span>
         </label>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Max OTM</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Max OTM</span>
           <input type="number" value={filters.maxOtm} min={1} max={50} step={1}
             className={`${n} w-16`} onChange={e => { const v = parseFloat(e.target.value); set({ maxOtm: isNaN(v) ? 25 : v }) }} />
-          <span className="text-xs text-gray-400">%</span>
+          <span className="text-xs text-muted-foreground">%</span>
         </label>
 
-        <div className="w-px h-4 bg-gray-200 mx-1" />
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Expiry</span>
+        <div className="w-px h-4 bg-accent mx-1" />
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Expiry</span>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">DTE</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">DTE</span>
           <input type="number" value={filters.minDte} min={0} max={365} step={1}
             className={`${n} w-14`} onChange={e => set({ minDte: parseInt(e.target.value) || 0 })} />
-          <span className="text-xs text-gray-400">–</span>
+          <span className="text-xs text-muted-foreground">–</span>
           <input type="number" value={filters.maxDte} min={1} max={365} step={1}
             className={`${n} w-14`} onChange={e => set({ maxDte: parseInt(e.target.value) || 999 })} />
-          <span className="text-xs text-gray-400">days</span>
+          <span className="text-xs text-muted-foreground">days</span>
         </label>
 
-        <div className="w-px h-4 bg-gray-200 mx-1" />
+        <div className="w-px h-4 bg-accent mx-1" />
 
         <label className="flex items-center gap-1.5 cursor-pointer select-none">
           <input type="checkbox" checked={filters.inPortfolioOnly}
             onChange={e => set({ inPortfolioOnly: e.target.checked })}
-            className="rounded text-blue-600" />
-          <span className="text-xs text-gray-600 flex items-center gap-1">
+            className="bg-background text-foreground rounded text-primary" />
+          <span className="text-xs text-muted-foreground flex items-center gap-1">
             <Briefcase className="h-3 w-3" /> Portfolio only
           </span>
         </label>
 
-        <div className="w-px h-4 bg-gray-200 mx-1" />
+        <div className="w-px h-4 bg-accent mx-1" />
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min Rating</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min Rating</span>
           <select value={filters.minRating} onChange={e => set({ minRating: e.target.value })}
             className={`${n} pr-6`}>
             <option value="Avoid">All (Avoid+)</option>
@@ -476,47 +476,47 @@ function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filt
 
       {/* Row 2 — Greeks & liquidity */}
       <div className="flex flex-wrap items-center gap-3 text-sm">
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide w-14 shrink-0">Greeks</span>
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide w-14 shrink-0">Greeks</span>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Delta (Δ)</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Delta (Δ)</span>
           <input type="number" value={filters.minDelta} min={0} max={1} step={0.05}
             className={`${n} w-16`} onChange={e => { const v = parseFloat(e.target.value); set({ minDelta: isNaN(v) ? 0 : v }) }} />
-          <span className="text-xs text-gray-400">–</span>
+          <span className="text-xs text-muted-foreground">–</span>
           <input type="number" value={filters.maxDelta} min={0} max={1} step={0.05}
             className={`${n} w-16`} onChange={e => { const v = parseFloat(e.target.value); set({ maxDelta: isNaN(v) ? 1 : v }) }} />
         </label>
 
-        <div className="w-px h-4 bg-gray-200 mx-1" />
-        <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Liquidity</span>
+        <div className="w-px h-4 bg-accent mx-1" />
+        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Liquidity</span>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min option OI</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min option OI</span>
           <input type="number" value={filters.minOi} min={0} step={50}
             className={`${n} w-20`} onChange={e => set({ minOi: parseInt(e.target.value) || 0 })} />
         </label>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min option vol/day</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min option vol/day</span>
           <input type="number" value={filters.minOptionVol} min={0} step={1}
             className={`${n} w-16`} onChange={e => set({ minOptionVol: parseInt(e.target.value) || 0 })} />
         </label>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min stock avg vol</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min stock avg vol</span>
           <input type="number" value={filters.minStockVol} min={0} step={50_000}
             className={`${n} w-24`} onChange={e => set({ minStockVol: parseInt(e.target.value) || 0 })} />
         </label>
 
         <label className="flex items-center gap-1.5">
-          <span className="text-xs text-gray-500 whitespace-nowrap">Min div yield</span>
+          <span className="text-xs text-muted-foreground whitespace-nowrap">Min div yield</span>
           <input type="number" value={filters.minDivYield} min={0} max={20} step={0.5}
             className={`${n} w-16`} onChange={e => set({ minDivYield: parseFloat(e.target.value) || 0 })} />
-          <span className="text-xs text-gray-400">%</span>
+          <span className="text-xs text-muted-foreground">%</span>
         </label>
 
         <div className="flex items-center gap-2 ml-auto">
-          <Search className="h-3.5 w-3.5 text-gray-400" />
+          <Search className="h-3.5 w-3.5 text-muted-foreground" />
           <input
             type="text"
             value={filters.search}
@@ -527,7 +527,7 @@ function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filt
           {isDirty && (
             <button
               onClick={() => onChange(DEFAULT_FILTERS)}
-              className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 px-1.5 py-1 rounded hover:bg-gray-200 transition-colors"
+              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground px-1.5 py-1 rounded hover:bg-accent transition-colors"
               title="Reset filters to defaults"
             >
               <RotateCcw className="h-3 w-3" />
@@ -545,9 +545,9 @@ function FilterBar({ filters, onChange }: { filters: Filters; onChange: (f: Filt
 const ALL_RATINGS = ['Best', 'Good', 'Fair', 'Avoid'] as const
 const RATING_BADGE: Record<string, string> = {
   Best:  'bg-emerald-100 text-emerald-700 border border-emerald-200',
-  Good:  'bg-blue-100 text-blue-700 border border-blue-200',
+  Good:  'bg-primary/15 text-primary border border-primary/20',
   Fair:  'bg-amber-100 text-amber-700 border border-amber-200',
-  Avoid: 'bg-red-100 text-red-600 border border-red-200',
+  Avoid: 'bg-red-100 text-red-600 dark:text-red-400 border border-red-200',
 }
 
 function ResultsFilterBar({
@@ -559,29 +559,29 @@ function ResultsFilterBar({
   onToggleRating: (r: string) => void
   onMinScore: (v: number) => void
 }) {
-  const n = "border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-blue-500"
+  const n = "border border-border rounded px-2 py-1 text-sm focus:outline-none focus:ring-1 focus:ring-primary"
   const allActive = activeRatings.size === 0
   return (
-    <div className="flex flex-wrap items-center gap-3 bg-gray-50 rounded-lg px-4 py-2.5 text-xs">
-      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide shrink-0">Filter Results</span>
+    <div className="flex flex-wrap items-center gap-3 bg-muted/50 rounded-lg px-4 py-2.5 text-xs">
+      <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wide shrink-0">Filter Results</span>
       <div className="flex items-center gap-1.5">
-        <span className="text-gray-500 mr-0.5">Rating:</span>
+        <span className="text-muted-foreground mr-0.5">Rating:</span>
         <button
           onClick={() => activeRatings.size > 0 && onToggleRating('__all__')}
-          className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${allActive ? 'bg-gray-700 text-white border-gray-700' : 'bg-white text-gray-500 border-gray-300 hover:border-gray-500'}`}
+          className={`px-2 py-0.5 rounded text-xs font-medium border transition-colors ${allActive ? 'bg-gray-700 text-white border-border' : 'bg-card text-muted-foreground border-border hover:border-border'}`}
         >All</button>
         {ALL_RATINGS.map(r => {
           const active = activeRatings.has(r)
           return (
             <button key={r} onClick={() => onToggleRating(r)}
-              className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${active ? RATING_BADGE[r] : 'bg-white text-gray-400 border-gray-200 hover:border-gray-400 hover:text-gray-600'}`}
+              className={`px-2 py-0.5 rounded text-xs font-semibold border transition-colors ${active ? RATING_BADGE[r] : 'bg-card text-muted-foreground border-border hover:border-border hover:text-muted-foreground'}`}
             >{r}</button>
           )
         })}
       </div>
-      <div className="w-px h-4 bg-gray-200" />
+      <div className="w-px h-4 bg-accent" />
       <label className="flex items-center gap-1.5">
-        <span className="text-gray-500 whitespace-nowrap">Min Score</span>
+        <span className="text-muted-foreground whitespace-nowrap">Min Score</span>
         <input type="number" value={minScore} min={0} max={40} step={1}
           className={`${n} w-16 text-xs`}
           onChange={e => { const v = parseFloat(e.target.value); onMinScore(isNaN(v) ? 0 : v) }} />
@@ -609,8 +609,8 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
 
   if (rows.length === 0) {
     return (
-      <div className="flex flex-col items-center justify-center py-16 text-gray-400">
-        <AlertTriangle className="h-8 w-8 mb-2 text-gray-200" />
+      <div className="flex flex-col items-center justify-center py-16 text-muted-foreground">
+        <AlertTriangle className="h-8 w-8 mb-2 text-muted-foreground/30" />
         <p className="text-sm">No opportunities match the current filters.</p>
         <p className="text-xs mt-1">Try lowering the minimum yield or widening the DTE / Delta range.</p>
       </div>
@@ -618,9 +618,9 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
+    <div className="overflow-x-auto rounded-lg border border-border">
       <table className="min-w-full text-sm">
-        <thead className="bg-gray-50 border-b border-gray-200">
+        <thead className="bg-muted/50 border-b border-border">
           <tr>
             {th('ticker',            'Ticker',      'Stock symbol. Blue background = you own shares in your portfolio. The briefcase badge shows how many 100-share contracts you could write.', 'left')}
             {th('recommendation',    'Rating',      'Overall quality rating: Best = high score + ideal delta; Good = solid setup; Fair = acceptable but not ideal; Avoid = high assignment risk or wide spread.', 'left')}
@@ -647,26 +647,26 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
             {th('volume',            'Vol',         'Option contracts traded today. Low volume makes it harder to fill at the mid price.')}
           </tr>
         </thead>
-        <tbody className="divide-y divide-gray-50">
+        <tbody className="divide-y divide-border/60">
           {sorted.map(r => {
             const yieldColor =
-              (r.annual_yield_pct ?? 0) >= 20 ? 'text-emerald-600 font-semibold' :
-              (r.annual_yield_pct ?? 0) >= 12 ? 'text-emerald-600' :
-              (r.annual_yield_pct ?? 0) >= 8  ? 'text-amber-600' : 'text-gray-700'
+              (r.annual_yield_pct ?? 0) >= 20 ? 'text-emerald-600 dark:text-emerald-400 font-semibold' :
+              (r.annual_yield_pct ?? 0) >= 12 ? 'text-emerald-600 dark:text-emerald-400' :
+              (r.annual_yield_pct ?? 0) >= 8  ? 'text-amber-600 dark:text-amber-400' : 'text-foreground'
 
             const spreadColor =
-              (r.bid_ask_spread_pct ?? 99) <= 5  ? 'text-emerald-600' :
-              (r.bid_ask_spread_pct ?? 99) <= 15 ? 'text-gray-600' :
-              (r.bid_ask_spread_pct ?? 99) <= 25 ? 'text-amber-600' : 'text-red-500'
+              (r.bid_ask_spread_pct ?? 99) <= 5  ? 'text-emerald-600 dark:text-emerald-400' :
+              (r.bid_ask_spread_pct ?? 99) <= 15 ? 'text-muted-foreground' :
+              (r.bid_ask_spread_pct ?? 99) <= 25 ? 'text-amber-600 dark:text-amber-400' : 'text-red-500 dark:text-red-400'
 
             return (
-              <tr key={r.id} className={`hover:bg-blue-50/30 transition-colors ${r.in_portfolio ? 'bg-blue-50/20' : ''}`}>
+              <tr key={r.id} className={`hover:bg-primary/30 transition-colors ${r.in_portfolio ? 'bg-primary/20' : ''}`}>
                 {/* Ticker */}
                 <td className="px-3 py-2 text-left whitespace-nowrap">
                   <div className="flex items-center gap-1.5">
-                    <TickerLink ticker={r.ticker} className="font-semibold text-gray-900" />
+                    <TickerLink ticker={r.ticker} className="font-semibold text-foreground" />
                     {r.in_portfolio && (
-                      <span className="text-[10px] font-medium bg-blue-100 text-blue-600 px-1 py-0.5 rounded"
+                      <span className="text-[10px] font-medium bg-primary/15 text-primary px-1 py-0.5 rounded"
                         title={`${r.portfolio_qty} shares · ${r.portfolio_contracts} contracts`}>
                         <Briefcase className="h-2.5 w-2.5 inline" /> {r.portfolio_contracts}c
                       </span>
@@ -674,7 +674,7 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                     <DataSourcePill source={r.data_source} />
                   </div>
                   {r.company_name && (
-                    <div className="text-xs text-gray-400 whitespace-nowrap">{r.company_name}</div>
+                    <div className="text-xs text-muted-foreground whitespace-nowrap">{r.company_name}</div>
                   )}
                 </td>
 
@@ -689,24 +689,24 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                 </td>
 
                 {/* Price & contract details */}
-                <td className="px-3 py-2 text-right tabular-nums text-gray-700">
+                <td className="px-3 py-2 text-right tabular-nums text-foreground">
                   {r.currency === 'CAD' ? 'C$' : '$'}{fmt(r.current_price, 2)}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   {r.dividend_yield != null
-                    ? <span className={`text-xs ${r.dividend_yield >= 3 ? 'text-emerald-600 font-medium' : 'text-gray-500'}`}>{fmtPct(r.dividend_yield, 1)}</span>
-                    : <span className="text-gray-300 text-xs">—</span>}
+                    ? <span className={`text-xs ${r.dividend_yield >= 3 ? 'text-emerald-600 dark:text-emerald-400 font-medium' : 'text-muted-foreground'}`}>{fmtPct(r.dividend_yield, 1)}</span>
+                    : <span className="text-muted-foreground/50 text-xs">—</span>}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">
+                <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">
                   {fmt(r.strike, 2)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600 text-xs">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground text-xs">
                   {r.expiry_date ?? '—'}
                 </td>
                 <td className="px-3 py-2 text-right tabular-nums">
                   <span className={`text-xs font-medium ${
-                    (r.dte ?? 99) <= 21 ? 'text-amber-600' :
-                    (r.dte ?? 99) <= 45 ? 'text-gray-700' : 'text-gray-500'
+                    (r.dte ?? 99) <= 21 ? 'text-amber-600 dark:text-amber-400' :
+                    (r.dte ?? 99) <= 45 ? 'text-foreground' : 'text-muted-foreground'
                   }`}>{r.dte}</span>
                 </td>
 
@@ -716,9 +716,9 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                 </td>
 
                 {/* Bid / Ask / Mid */}
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmt(r.bid, 2)}</td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">{fmt(r.ask, 2)}</td>
-                <td className="px-3 py-2 text-right tabular-nums font-medium text-gray-800">{fmt(r.mid, 2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(r.bid, 2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">{fmt(r.ask, 2)}</td>
+                <td className="px-3 py-2 text-right tabular-nums font-medium text-foreground">{fmt(r.mid, 2)}</td>
 
                 {/* Spread */}
                 <td className={`px-3 py-2 text-right tabular-nums text-xs ${spreadColor}`}>
@@ -729,19 +729,19 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                 <td className={`px-3 py-2 text-right tabular-nums ${yieldColor}`}>
                   {fmtPct(r.annual_yield_pct, 1)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {fmtPct(r.otm_pct, 1)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-blue-600">
+                <td className="px-3 py-2 text-right tabular-nums text-primary">
                   {fmtPct(r.max_return_pct, 1)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-500 text-xs">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground text-xs">
                   {fmt(r.breakeven, 2)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {fmtPct(r.iv_pct, 1)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {fmtPct(r.hv_30_pct, 1)}
                 </td>
                 <td className="px-3 py-2 text-right">
@@ -749,15 +749,15 @@ function ResultsTable({ rows }: { rows: ScannerResult[] }) {
                 </td>
 
                 {/* Theta */}
-                <td className="px-3 py-2 text-right tabular-nums text-gray-500 text-xs">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground text-xs">
                   {r.theta != null ? fmt(r.theta, 2) : '—'}
                 </td>
 
                 {/* Liquidity */}
-                <td className="px-3 py-2 text-right tabular-nums text-gray-600">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {fmtVol(r.open_interest)}
                 </td>
-                <td className="px-3 py-2 text-right tabular-nums text-gray-500">
+                <td className="px-3 py-2 text-right tabular-nums text-muted-foreground">
                   {fmtVol(r.volume)}
                 </td>
               </tr>
@@ -915,7 +915,7 @@ export function CoveredCallScannerTool() {
       <div className="flex items-center justify-between gap-4">
         <div>
           {lastScanned && (
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-muted-foreground">
               Last scan: {lastScanned} · {meta?.tickers} tickers · {meta?.total_rows?.toLocaleString()} opportunities
             </p>
           )}
@@ -927,7 +927,7 @@ export function CoveredCallScannerTool() {
             className={`flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg border ${
               meta?.ibeam_available
                 ? 'bg-emerald-50 border-emerald-200 text-emerald-700'
-                : 'bg-gray-50 border-gray-200 text-gray-400'
+                : 'bg-muted/50 border-border text-muted-foreground'
             }`}
             title={meta?.ibeam_available
               ? 'IBeam connected — scanner uses live Greeks'
@@ -940,14 +940,14 @@ export function CoveredCallScannerTool() {
               {meta?.ibeam_available ? 'Live Greeks' : 'IBeam offline'}
             </span>
             {!meta?.ibeam_available && (
-              <span className="text-gray-400">· delayed data</span>
+              <span className="text-muted-foreground">· delayed data</span>
             )}
           </div>
 
           <button
             onClick={() => scanMut.mutate(scanParams)}
             disabled={isScanning || scanMut.isPending}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium rounded-lg hover:bg-blue-700 disabled:opacity-60 shadow-sm"
+            className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-60 shadow-sm"
           >
             {isScanning
               ? <RefreshCw className="h-4 w-4 animate-spin" />
@@ -959,7 +959,7 @@ export function CoveredCallScannerTool() {
 
       {/* Scan status */}
       {isScanning && (
-        <div className="flex items-center gap-2 bg-blue-50 border border-blue-200 rounded-lg px-4 py-2.5 text-sm text-blue-700">
+        <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-lg px-4 py-2.5 text-sm text-primary">
           <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />
           {liveDataActive
             ? 'Fetching live Greeks from IBeam across all tickers — this takes 3–8 minutes…'
@@ -977,7 +977,7 @@ export function CoveredCallScannerTool() {
           <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
           <div>
             <span className="font-medium">Scan completed — 0 opportunities found</span> across {lastJobResult.tickers_scanned} tickers.
-            <span className="block text-xs text-amber-600 mt-0.5">
+            <span className="block text-xs text-amber-600 dark:text-amber-400 mt-0.5">
               Yahoo Finance returns zero bid/ask prices for options outside US market hours (9:30am–4:00pm Eastern).
               Connect IB Gateway for live after-hours data, or run the scan during/shortly after market close.
             </span>
@@ -991,8 +991,8 @@ export function CoveredCallScannerTool() {
           <div className="lg:col-span-1">
             <WatchlistPanel />
           </div>
-          <div className="lg:col-span-2 bg-white rounded-xl border border-gray-200 shadow-sm p-4 space-y-2.5 text-sm text-gray-600">
-            <h2 className="font-semibold text-gray-800 flex items-center gap-2">
+          <div className="lg:col-span-2 bg-card rounded-xl border border-border shadow-sm p-4 space-y-2.5 text-sm text-muted-foreground">
+            <h2 className="font-semibold text-foreground flex items-center gap-2">
               How the scanner works
               {liveDataActive && (
                 <span className="inline-flex items-center gap-1 text-xs px-2 py-0.5 rounded bg-emerald-100 text-emerald-700 font-normal">
@@ -1000,7 +1000,7 @@ export function CoveredCallScannerTool() {
                 </span>
               )}
             </h2>
-            <ul className="space-y-1.5 text-xs text-gray-500 list-disc list-inside">
+            <ul className="space-y-1.5 text-xs text-muted-foreground list-disc list-inside">
               <li>Scans your <strong>portfolio holdings</strong> plus your <strong>watchlist</strong> for covered-call opportunities.</li>
               {liveDataActive
                 ? <li>Connected to <strong>IBeam</strong> — fetches real-time option chains with actual <strong>Greeks (Δ, Γ, Θ, V)</strong> and live bid/ask prices.</li>
@@ -1022,8 +1022,8 @@ export function CoveredCallScannerTool() {
 
       {/* No scan yet */}
       {!meta?.available && !isScanning && (
-        <div className="flex flex-col items-center justify-center py-20 text-gray-400 space-y-3">
-          <Play className="h-10 w-10 text-gray-200" />
+        <div className="flex flex-col items-center justify-center py-20 text-muted-foreground space-y-3">
+          <Play className="h-10 w-10 text-muted-foreground/30" />
           <p className="text-sm font-medium">No scan results yet</p>
           <p className="text-xs">Add tickers to your watchlist then click <strong>Run Scan</strong> to find covered-call opportunities.</p>
         </div>
@@ -1038,16 +1038,16 @@ export function CoveredCallScannerTool() {
             onToggleRating={toggleRating}
             onMinScore={setResultMinScore}
           />
-          <div className="flex items-center justify-between text-xs text-gray-400">
+          <div className="flex items-center justify-between text-xs text-muted-foreground">
             <span>
-              Showing <strong className="text-gray-600">{results.length.toLocaleString()}</strong> opportunities
+              Showing <strong className="text-muted-foreground">{results.length.toLocaleString()}</strong> opportunities
               {filters.search && ` matching "${filters.search}"`}
             </span>
-            <span className="text-gray-300">Sorted by score descending by default · click any column to re-sort</span>
+            <span className="text-muted-foreground/50">Sorted by score descending by default · click any column to re-sort</span>
           </div>
 
           {isLoading
-            ? <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" /></div>
+            ? <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-primary" /></div>
             : <ResultsTable rows={results} />}
         </div>
       )}

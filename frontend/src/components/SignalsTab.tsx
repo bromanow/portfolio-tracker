@@ -71,26 +71,26 @@ interface Row {
 
 function returnColor(n: number | null): string {
   if (n == null) return ''
-  return n > 0 ? 'text-emerald-600' : 'text-red-500'
+  return n > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 }
 
 function vsMAColor(n: number | null): string {
   if (n == null) return ''
-  return n > 0 ? 'text-emerald-600' : 'text-red-500'
+  return n > 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 }
 
 function rsiColor(n: number | null): string {
   if (n == null) return ''
-  if (n >= 70) return 'text-red-500'
-  if (n <= 30) return 'text-emerald-600'
-  return 'text-gray-700'
+  if (n >= 70) return 'text-red-500 dark:text-red-400'
+  if (n <= 30) return 'text-emerald-600 dark:text-emerald-400'
+  return 'text-foreground'
 }
 
 function volColor(n: number | null): string {
   if (n == null) return ''
-  if (n < 15) return 'text-emerald-600'
-  if (n < 30) return 'text-amber-600'
-  return 'text-red-500'
+  if (n < 15) return 'text-emerald-600 dark:text-emerald-400'
+  if (n < 30) return 'text-amber-600 dark:text-amber-400'
+  return 'text-red-500 dark:text-red-400'
 }
 
 // ─── Column definitions ───────────────────────────────────────────────────────
@@ -116,7 +116,7 @@ const COLUMNS: ColDef[] = [
       if (r.golden_cross == null) return '—'
       return r.golden_cross
         ? <span className="inline-block px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-700">✓ GX</span>
-        : <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-gray-100 text-gray-400">DC</span>
+        : <span className="inline-block px-1.5 py-0.5 rounded text-xs bg-accent text-muted-foreground">DC</span>
     },
     colorFn: _ => '',
   },
@@ -144,7 +144,7 @@ const COLUMNS: ColDef[] = [
 // ─── Group spans & colours ────────────────────────────────────────────────────
 
 const GROUP_STYLE: Record<string, { bg: string; text: string }> = {
-  'Trend':       { bg: 'bg-blue-100',   text: 'text-blue-700'   },
+  'Trend':       { bg: 'bg-primary/15',   text: 'text-primary'   },
   'Momentum':    { bg: 'bg-emerald-100',text: 'text-emerald-700'},
   'Oscillators': { bg: 'bg-amber-100',  text: 'text-amber-700'  },
   'Volatility':  { bg: 'bg-rose-100',   text: 'text-rose-700'   },
@@ -175,10 +175,10 @@ function SortTh({
   const Icon = active
     ? sortDir === 'asc' ? ChevronUp : ChevronDown
     : ChevronsUpDown
-  const iconColor = active ? 'text-blue-500' : 'text-gray-300'
+  const iconColor = active ? 'text-primary/70' : 'text-muted-foreground/50'
   return (
     <th
-      className={`px-3 py-2 text-xs font-semibold text-gray-500 cursor-pointer select-none whitespace-nowrap hover:bg-gray-100 ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
+      className={`px-3 py-2 text-xs font-semibold text-muted-foreground cursor-pointer select-none whitespace-nowrap hover:bg-accent ${align === 'right' ? 'text-right' : align === 'center' ? 'text-center' : 'text-left'}`}
       onClick={() => onSort(col)}
     >
       <span className="inline-flex items-center gap-0.5">
@@ -273,13 +273,13 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
   if (isLoading) {
     return (
       <div className="flex items-center justify-center h-40">
-        <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-blue-600" />
+        <div className="animate-spin rounded-full h-7 w-7 border-b-2 border-primary" />
       </div>
     )
   }
 
   if (rows.length === 0) {
-    return <p className="text-gray-400 text-sm py-8 text-center">No positions found.</p>
+    return <p className="text-muted-foreground text-sm py-8 text-center">No positions found.</p>
   }
 
   const coverageCount = rows.filter(r =>
@@ -288,26 +288,26 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-4 text-xs text-gray-400">
+      <div className="flex items-center gap-4 text-xs text-muted-foreground">
         <span>Signals available for {coverageCount} of {rows.length} positions.</span>
         <span className="flex items-center gap-2">
-          <span className="text-emerald-600 font-medium">Green</span> = bullish ·
-          <span className="text-red-500 font-medium"> Red</span> = bearish ·
+          <span className="text-emerald-600 dark:text-emerald-400 font-medium">Green</span> = bullish ·
+          <span className="text-red-500 dark:text-red-400 font-medium"> Red</span> = bearish ·
           OB = Overbought · OS = Oversold · GX = Golden Cross · DC = Death Cross
         </span>
       </div>
-      <div className="overflow-x-auto rounded-lg border border-gray-200">
+      <div className="overflow-x-auto rounded-lg border border-border">
         <table className="min-w-full text-sm">
-          <thead className="bg-gray-50 sticky top-0 z-10">
+          <thead className="bg-muted/50 sticky top-0 z-10">
             {/* Group header row */}
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-border">
               {spans.map((g, i) => {
                 const style = GROUP_STYLE[g.label]
                 return (
                   <th
                     key={i}
                     colSpan={g.span}
-                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-center border-r border-gray-100 last:border-r-0 ${style ? `${style.bg} ${style.text}` : 'bg-gray-50 text-gray-300'}`}
+                    className={`px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-center border-r border-border last:border-r-0 ${style ? `${style.bg} ${style.text}` : 'bg-muted/50 text-muted-foreground/50'}`}
                   >
                     {g.label}
                   </th>
@@ -315,7 +315,7 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
               })}
             </tr>
             {/* Sort header row */}
-            <tr className="border-b border-gray-200">
+            <tr className="border-b border-border">
               {COLUMNS.map(col => (
                 <SortTh
                   key={String(col.key)}
@@ -329,9 +329,9 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-50">
+          <tbody className="divide-y divide-border/60">
             {sorted.map(row => (
-              <tr key={row.security_id} className="hover:bg-blue-50/30 transition-colors">
+              <tr key={row.security_id} className="hover:bg-primary/30 transition-colors">
                 {COLUMNS.map(col => {
                   const val = col.render(row)
                   const color = col.colorFn ? col.colorFn(row) : ''
@@ -340,10 +340,10 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
                   return (
                     <td
                       key={String(col.key)}
-                      className={`px-3 py-2 whitespace-nowrap ${col.align === 'left' ? 'text-left' : col.align === 'center' ? 'text-center' : 'text-right tabular-nums'} ${color || (isDash ? 'text-gray-300' : isStr ? 'text-gray-800' : '')}`}
+                      className={`px-3 py-2 whitespace-nowrap ${col.align === 'left' ? 'text-left' : col.align === 'center' ? 'text-center' : 'text-right tabular-nums'} ${color || (isDash ? 'text-muted-foreground/50' : isStr ? 'text-foreground' : '')}`}
                     >
                       {col.key === 'ticker'
-                        ? <span className="font-semibold text-gray-900">{val}</span>
+                        ? <span className="font-semibold text-foreground">{val}</span>
                         : val}
                     </td>
                   )
@@ -353,7 +353,7 @@ export default function SignalsTab({ accountIds, asOf }: Props) {
           </tbody>
         </table>
       </div>
-      <p className="text-xs text-gray-300 text-right">
+      <p className="text-xs text-muted-foreground/50 text-right">
         Signals computed from historical price data. Options are excluded.
       </p>
     </div>

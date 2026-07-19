@@ -18,19 +18,19 @@ export function ConfirmDialog({
   const canConfirm = !requireTyping || typed === requireTyping
   return (
     <div className="fixed inset-0 bg-black/50 z-50 flex items-center justify-center p-4">
-      <div className="bg-white rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
+      <div className="bg-card rounded-xl shadow-xl max-w-md w-full p-6 space-y-4">
         <div className="flex items-start gap-3">
-          <AlertTriangle className={`h-6 w-6 flex-shrink-0 mt-0.5 ${danger ? 'text-red-500' : 'text-yellow-500'}`} />
+          <AlertTriangle className={`h-6 w-6 flex-shrink-0 mt-0.5 ${danger ? 'text-red-500 dark:text-red-400' : 'text-yellow-500'}`} />
           <div>
-            <h3 className="font-semibold text-gray-900">{title}</h3>
-            <p className="text-sm text-gray-600 mt-1">{message}</p>
+            <h3 className="font-semibold text-foreground">{title}</h3>
+            <p className="text-sm text-muted-foreground mt-1">{message}</p>
           </div>
         </div>
         {requireTyping && (
           <div>
-            <p className="text-xs text-gray-500 mb-1">Type <strong>{requireTyping}</strong> to confirm:</p>
+            <p className="text-xs text-muted-foreground mb-1">Type <strong>{requireTyping}</strong> to confirm:</p>
             <input
-              className="border rounded px-3 py-1.5 text-sm w-full"
+              className="bg-background text-foreground border rounded px-3 py-1.5 text-sm w-full"
               value={typed}
               onChange={e => setTyped(e.target.value)}
               placeholder={requireTyping}
@@ -38,13 +38,13 @@ export function ConfirmDialog({
           </div>
         )}
         <div className="flex justify-end gap-3">
-          <button onClick={onCancel} className="px-4 py-2 text-sm border border-gray-300 rounded hover:bg-gray-50">
+          <button onClick={onCancel} className="px-4 py-2 text-sm border border-border rounded hover:bg-muted/50">
             Cancel
           </button>
           <button
             onClick={onConfirm}
             disabled={!canConfirm}
-            className={`px-4 py-2 text-sm rounded text-white disabled:opacity-40 ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-blue-600 hover:bg-blue-700'}`}
+            className={`px-4 py-2 text-sm rounded text-white disabled:opacity-40 ${danger ? 'bg-red-600 hover:bg-red-700' : 'bg-primary hover:bg-primary/90'}`}
           >
             {confirmLabel}
           </button>
@@ -79,13 +79,13 @@ export function SortTh({ label, col, sort, toggle, className = '' }: {
 }) {
   const active = sort.col === col
   return (
-    <th className={`cursor-pointer select-none hover:bg-gray-100 ${className}`} onClick={() => toggle(col)}>
+    <th className={`cursor-pointer select-none hover:bg-accent ${className}`} onClick={() => toggle(col)}>
       <div className="flex items-center gap-1">
         {label}
         {active
           ? sort.dir === 'asc'
-            ? <ChevronUp className="h-3 w-3 text-blue-600" />
-            : <ChevronDown className="h-3 w-3 text-blue-600" />
+            ? <ChevronUp className="h-3 w-3 text-primary" />
+            : <ChevronDown className="h-3 w-3 text-primary" />
           : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
       </div>
     </th>

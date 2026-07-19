@@ -45,23 +45,23 @@ export default function Research() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Research</h1>
+      <h1 className="text-2xl font-bold text-foreground">Research</h1>
 
       <div className="flex gap-6 items-start">
         {/* Left panel — tool list */}
         {panelOpen ? (
-          <div className="w-64 flex-shrink-0 bg-white border border-gray-200 rounded-xl overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Research Tools</p>
+          <div className="w-64 flex-shrink-0 bg-card border border-border rounded-xl overflow-hidden">
+            <div className="px-4 py-3 border-b border-border bg-muted/50 flex items-center justify-between">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">Research Tools</p>
               <button
                 onClick={() => setPanelOpen(false)}
                 title="Hide tool list"
-                className="p-1 rounded text-gray-400 hover:text-gray-600 hover:bg-gray-200 transition-colors"
+                className="p-1 rounded text-muted-foreground hover:text-muted-foreground hover:bg-accent transition-colors"
               >
                 <PanelLeftClose className="h-3.5 w-3.5" />
               </button>
             </div>
-            <nav className="divide-y divide-gray-50">
+            <nav className="divide-y divide-border/60">
               {TOOL_DEFS.map(t => {
                 const Icon = t.icon
                 const isActive = t.id === activeId
@@ -71,16 +71,16 @@ export default function Research() {
                     onClick={() => setActiveId(t.id)}
                     className={`w-full text-left px-4 py-3.5 flex items-start gap-3 transition-colors group ${
                       isActive
-                        ? 'bg-blue-50 border-l-2 border-blue-600'
-                        : 'hover:bg-gray-50 border-l-2 border-transparent'
+                        ? 'bg-primary/10 border-l-2 border-primary'
+                        : 'hover:bg-muted/50 border-l-2 border-transparent'
                     }`}
                   >
-                    <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-blue-600' : 'text-gray-400 group-hover:text-gray-600'}`} />
+                    <Icon className={`h-4 w-4 mt-0.5 flex-shrink-0 ${isActive ? 'text-primary' : 'text-muted-foreground group-hover:text-muted-foreground'}`} />
                     <div className="min-w-0">
-                      <p className={`text-sm font-medium leading-tight ${isActive ? 'text-blue-700' : 'text-gray-700'}`}>{t.label}</p>
-                      <p className="text-xs text-gray-400 mt-0.5 leading-snug">{t.description}</p>
+                      <p className={`text-sm font-medium leading-tight ${isActive ? 'text-primary' : 'text-foreground'}`}>{t.label}</p>
+                      <p className="text-xs text-muted-foreground mt-0.5 leading-snug">{t.description}</p>
                     </div>
-                    {isActive && <ChevronRight className="h-4 w-4 text-blue-400 flex-shrink-0 mt-0.5 ml-auto" />}
+                    {isActive && <ChevronRight className="h-4 w-4 text-primary/60 flex-shrink-0 mt-0.5 ml-auto" />}
                   </button>
                 )
               })}
@@ -92,7 +92,7 @@ export default function Research() {
             <button
               onClick={() => setPanelOpen(true)}
               title="Show tool list"
-              className="flex items-center gap-1.5 px-2.5 py-2 bg-white border border-gray-200 rounded-lg text-xs text-gray-500 hover:text-gray-700 hover:bg-gray-50 transition-colors shadow-sm"
+              className="flex items-center gap-1.5 px-2.5 py-2 bg-card border border-border rounded-lg text-xs text-muted-foreground hover:text-foreground hover:bg-muted/50 transition-colors shadow-sm"
             >
               <PanelLeftOpen className="h-3.5 w-3.5" />
               Tools
@@ -108,15 +108,15 @@ export default function Research() {
                 <button
                   onClick={() => setPanelOpen(true)}
                   title="Show tool list"
-                  className="p-1.5 rounded-md text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-colors"
+                  className="p-1.5 rounded-md text-muted-foreground hover:text-muted-foreground hover:bg-accent transition-colors"
                 >
                   <PanelLeftOpen className="h-4 w-4" />
                 </button>
               )}
-              <active.icon className="h-5 w-5 text-blue-600" />
+              <active.icon className="h-5 w-5 text-primary" />
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 leading-tight">{active.label}</h2>
-                <p className="text-sm text-gray-500">{active.description}</p>
+                <h2 className="text-lg font-semibold text-foreground leading-tight">{active.label}</h2>
+                <p className="text-sm text-muted-foreground">{active.description}</p>
               </div>
             </div>
             <active.component />

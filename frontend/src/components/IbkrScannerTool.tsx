@@ -40,29 +40,29 @@ function fmtPct(n: number | null | undefined): string {
 }
 
 function pctClass(n: number | null | undefined): string {
-  if (n == null) return 'text-gray-400'
-  return n >= 0 ? 'text-emerald-600' : 'text-red-500'
+  if (n == null) return 'text-muted-foreground'
+  return n >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 }
 
 /** Compact low—pin—high bar, mirroring the Holdings page's Day/52-Wk Range columns. */
 function RangeBar({ low, high, current }: { low: number | null; high: number | null; current: number | null }) {
   if (low == null || high == null || current == null || !isFinite(low) || !isFinite(high) || high <= low) {
-    return <span className="text-gray-300 text-xs">—</span>
+    return <span className="text-muted-foreground/50 text-xs">—</span>
   }
   const pct = Math.min(100, Math.max(0, ((current - low) / (high - low)) * 100))
   return (
     <div className="w-28">
       <div className="relative h-4">
-        <div className="absolute top-0 text-blue-600" style={{ left: `${pct}%`, transform: 'translateX(-50%)' }} title={fmtPrice(current)}>
+        <div className="absolute top-0 text-primary" style={{ left: `${pct}%`, transform: 'translateX(-50%)' }} title={fmtPrice(current)}>
           <svg width="11" height="14" viewBox="0 0 14 18" fill="currentColor">
             <path d="M7 0C3.13 0 0 3.13 0 7c0 5.25 7 11 7 11s7-5.75 7-11c0-3.87-3.13-7-7-7z" />
           </svg>
         </div>
-        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-gray-200 rounded-full overflow-hidden">
-          <div className="h-full bg-blue-600 rounded-full" style={{ width: `${pct}%` }} />
+        <div className="absolute left-0 right-0 top-[13px] h-[3px] bg-accent rounded-full overflow-hidden">
+          <div className="h-full bg-primary rounded-full" style={{ width: `${pct}%` }} />
         </div>
       </div>
-      <div className="flex justify-between text-[10px] text-gray-400 mt-1 tabular-nums leading-none">
+      <div className="flex justify-between text-[10px] text-muted-foreground mt-1 tabular-nums leading-none">
         <span>{fmtPrice(low)}</span>
         <span>{fmtPrice(high)}</span>
       </div>
@@ -136,7 +136,7 @@ export default function IbkrScannerTool() {
 
   if (paramsQ.isLoading) {
     return (
-      <div className="flex items-center gap-2 text-sm text-gray-400 py-8 justify-center">
+      <div className="flex items-center gap-2 text-sm text-muted-foreground py-8 justify-center">
         <Loader2 className="h-4 w-4 animate-spin" /> Loading scanner metadata from IBKR…
       </div>
     )
@@ -157,14 +157,14 @@ export default function IbkrScannerTool() {
 
   return (
     <div className="space-y-5">
-      <div className="bg-white rounded-xl border border-gray-200 p-5 space-y-4">
+      <div className="bg-card rounded-xl border border-border p-5 space-y-4">
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Instrument</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Instrument</label>
             <select
               value={instrument}
               onChange={e => handleInstrumentChange(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="bg-background text-foreground w-full border border-border rounded-lg px-3 py-2 text-sm"
             >
               {params.instrument_list.map(i => (
                 <option key={i.type} value={i.type}>{i.display_name}</option>
@@ -172,11 +172,11 @@ export default function IbkrScannerTool() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Location</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Location</label>
             <select
               value={location}
               onChange={e => setLocation(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="bg-background text-foreground w-full border border-border rounded-lg px-3 py-2 text-sm"
             >
               {locations.map(l => (
                 <option key={l.type} value={l.type}>{l.label}</option>
@@ -184,11 +184,11 @@ export default function IbkrScannerTool() {
             </select>
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Scan ({scanCodes.length} available)</label>
+            <label className="block text-xs font-medium text-muted-foreground mb-1">Scan ({scanCodes.length} available)</label>
             <select
               value={scanCode}
               onChange={e => setScanCode(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              className="bg-background text-foreground w-full border border-border rounded-lg px-3 py-2 text-sm"
             >
               {scanCodes.map(s => (
                 <option key={s.code} value={s.code}>{s.display_name}</option>
@@ -205,8 +205,8 @@ export default function IbkrScannerTool() {
                 onClick={() => setScanCode(q.code)}
                 className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
                   scanCode === q.code
-                    ? 'bg-blue-600 text-white border-blue-600'
-                    : 'bg-gray-50 text-gray-600 border-gray-200 hover:bg-gray-100'
+                    ? 'bg-primary text-white border-primary'
+                    : 'bg-muted/50 text-muted-foreground border-border hover:bg-accent'
                 }`}
               >
                 {q.label}
@@ -216,12 +216,12 @@ export default function IbkrScannerTool() {
         )}
 
         {/* ── Filters ── */}
-        <div className="pt-3 border-t border-gray-100 space-y-2">
+        <div className="pt-3 border-t border-border space-y-2">
           <div className="flex items-center justify-between">
-            <label className="text-xs font-medium text-gray-500">Filters (optional)</label>
+            <label className="text-xs font-medium text-muted-foreground">Filters (optional)</label>
             <button
               onClick={addFilterRow}
-              className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+              className="flex items-center gap-1 text-xs text-primary hover:text-primary"
             >
               <Plus className="h-3 w-3" /> Add filter
             </button>
@@ -231,7 +231,7 @@ export default function IbkrScannerTool() {
               <select
                 value={row.code}
                 onChange={e => updateFilterRow(i, { code: e.target.value })}
-                className="flex-1 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs"
+                className="bg-background text-foreground flex-1 border border-border rounded-lg px-2.5 py-1.5 text-xs"
               >
                 {filterOptions.map(f => (
                   <option key={f.code} value={f.code}>{f.display_name}</option>
@@ -242,9 +242,9 @@ export default function IbkrScannerTool() {
                 value={row.value}
                 onChange={e => updateFilterRow(i, { value: e.target.value })}
                 placeholder="Value"
-                className="w-28 border border-gray-300 rounded-lg px-2.5 py-1.5 text-xs"
+                className="bg-background text-foreground w-28 border border-border rounded-lg px-2.5 py-1.5 text-xs"
               />
-              <button onClick={() => removeFilterRow(i)} className="text-gray-300 hover:text-red-500">
+              <button onClick={() => removeFilterRow(i)} className="text-muted-foreground/50 hover:text-red-500 dark:text-red-400">
                 <X className="h-3.5 w-3.5" />
               </button>
             </div>
@@ -254,7 +254,7 @@ export default function IbkrScannerTool() {
         <button
           onClick={() => runMutation.mutate()}
           disabled={runMutation.isPending}
-          className="flex items-center gap-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
+          className="flex items-center gap-2 bg-primary hover:bg-primary/90 disabled:opacity-50 text-white text-sm font-medium px-4 py-2 rounded-lg transition-colors"
         >
           {runMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
           Run Scan
@@ -272,20 +272,20 @@ export default function IbkrScannerTool() {
       )}
 
       {runMutation.isSuccess && (
-        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-4 py-2.5 border-b border-gray-100 bg-gray-50 flex items-center justify-between">
-            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+        <div className="bg-card rounded-xl border border-border overflow-hidden">
+          <div className="px-4 py-2.5 border-b border-border bg-muted/50 flex items-center justify-between">
+            <span className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
               {results.length} result{results.length !== 1 ? 's' : ''}
-              {results.length === 50 && <span className="ml-1.5 normal-case font-normal text-gray-400">(IBKR caps each scan at 50 — narrow with filters for more precision)</span>}
+              {results.length === 50 && <span className="ml-1.5 normal-case font-normal text-muted-foreground">(IBKR caps each scan at 50 — narrow with filters for more precision)</span>}
             </span>
           </div>
           {results.length === 0 ? (
-            <div className="p-8 text-center text-gray-400 text-sm">No matches</div>
+            <div className="p-8 text-center text-muted-foreground text-sm">No matches</div>
           ) : (
             <div className="overflow-x-auto">
-            <table className="min-w-full text-sm divide-y divide-gray-100">
-              <thead className="bg-gray-50">
-                <tr className="text-xs text-gray-500 uppercase">
+            <table className="min-w-full text-sm divide-y divide-border">
+              <thead className="bg-muted/50">
+                <tr className="text-xs text-muted-foreground uppercase">
                   <th className="px-3 py-2 text-left w-10">#</th>
                   <th className="px-3 py-2 text-left">Symbol</th>
                   <th className="px-3 py-2 text-left">Company</th>
@@ -299,22 +299,22 @@ export default function IbkrScannerTool() {
                   <th className="px-3 py-2 text-left">Industry</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-gray-100">
+              <tbody className="divide-y divide-border">
                 {results.map((r, i) => (
-                  <tr key={r.con_id ?? i} className="hover:bg-gray-50">
-                    <td className="px-3 py-2 text-gray-400">{i + 1}</td>
-                    <td className="px-3 py-2 font-mono font-semibold text-blue-700">
+                  <tr key={r.con_id ?? i} className="hover:bg-muted/50">
+                    <td className="px-3 py-2 text-muted-foreground">{i + 1}</td>
+                    <td className="px-3 py-2 font-mono font-semibold text-primary">
                       {r.symbol ? <TickerLink ticker={r.symbol} /> : '—'}
                     </td>
-                    <td className="px-3 py-2 text-gray-700 whitespace-nowrap">{r.company_name || '—'}</td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{r.exchange || '—'}</td>
+                    <td className="px-3 py-2 text-foreground whitespace-nowrap">{r.company_name || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground">{r.exchange || '—'}</td>
                     <td className="px-3 py-2 text-right font-medium">{fmtPrice(r.last_price)}</td>
                     <td className={`px-3 py-2 text-right font-medium ${pctClass(r.change_pct)}`}>{fmtPct(r.change_pct)}</td>
-                    <td className="px-3 py-2 text-right text-gray-600 whitespace-nowrap">{r.volume || '—'}</td>
-                    <td className="px-3 py-2 text-right text-gray-400 whitespace-nowrap text-xs">{r.avg_volume || '—'}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground whitespace-nowrap">{r.volume || '—'}</td>
+                    <td className="px-3 py-2 text-right text-muted-foreground whitespace-nowrap text-xs">{r.avg_volume || '—'}</td>
                     <td className="px-3 py-2"><RangeBar low={r.day_low} high={r.day_high} current={r.last_price} /></td>
                     <td className="px-3 py-2"><RangeBar low={r.week52_low} high={r.week52_high} current={r.last_price} /></td>
-                    <td className="px-3 py-2 text-xs text-gray-500 whitespace-nowrap">{r.industry || '—'}</td>
+                    <td className="px-3 py-2 text-xs text-muted-foreground whitespace-nowrap">{r.industry || '—'}</td>
                   </tr>
                 ))}
               </tbody>

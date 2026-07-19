@@ -25,37 +25,37 @@ export function DataTable<T extends object>({
 }: DataTableProps<T>) {
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-32 text-gray-400">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600" />
+      <div className="flex items-center justify-center h-32 text-muted-foreground">
+        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
       </div>
     )
   }
 
   return (
-    <div className="overflow-x-auto rounded-lg border border-gray-200">
-      <table className="min-w-full divide-y divide-gray-200 text-sm">
-        <thead className="bg-gray-50">
+    <div className="overflow-x-auto rounded-lg border border-border">
+      <table className="min-w-full divide-y divide-border text-sm">
+        <thead className="bg-muted/50">
           <tr>
             {columns.map(col => (
               <th
                 key={String(col.key)}
-                className={`px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider ${col.headerClassName || ''}`}
+                className={`px-3 py-3 text-left text-xs font-semibold text-muted-foreground uppercase tracking-wider ${col.headerClassName || ''}`}
               >
                 {col.header}
               </th>
             ))}
           </tr>
         </thead>
-        <tbody className="bg-white divide-y divide-gray-100">
+        <tbody className="bg-card divide-y divide-border">
           {data.length === 0 ? (
             <tr>
-              <td colSpan={columns.length} className="px-3 py-8 text-center text-gray-400">
+              <td colSpan={columns.length} className="px-3 py-8 text-center text-muted-foreground">
                 {emptyMessage}
               </td>
             </tr>
           ) : (
             data.map((row, i) => (
-              <tr key={rowKey ? rowKey(row, i) : i} className="hover:bg-gray-50 transition-colors">
+              <tr key={rowKey ? rowKey(row, i) : i} className="hover:bg-muted/50 transition-colors">
                 {columns.map(col => (
                   <td
                     key={String(col.key)}

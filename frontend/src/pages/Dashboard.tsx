@@ -5,13 +5,14 @@ import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } fro
 import {
   getCashBalances, getImports, getAccounts, getPositions, getPersonalAssets,
   getFxRateLookup, getMarketIndicators, getReturnsDetail, getMarketNews, getTopStories, getPortfolioNews,
-  PERSONAL_ASSET_CLASSES,
+  getPortfolioTimeline, PERSONAL_ASSET_CLASSES,
 } from '../api/client'
 import type { Position, CashBalance, Account, MarketIndicator, PersonalAsset, PersonalAssetClass } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
 import { useFilterContext } from '../context/FilterContext'
 import type { TimeRange } from '../context/FilterContext'
 import NewsList from '../components/NewsList'
+import Sparkline from '../components/Sparkline'
 import { getPref, usePreference } from '../hooks/usePreference'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -183,7 +184,14 @@ function RealEstateTable({ rows, total }: { rows: RealEstateRow[]; total: number
   )
 }
 
-function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRate: number | null }) {
+function BrokerageSummary({
+  data, usdCadRate, sparklines,
+}: {
+  data: BrokerageRow[]
+  usdCadRate: number | null
+  /** Per-brokerage value history (from the timeline endpoint, group_by=brokerage), keyed by brokerage name. */
+  sparklines: Record<string, number[]>
+}) {
   const [expanded, setExpanded]       = useState<Set<string>>(new Set())
   const [expandedGrp, setExpandedGrp] = useState<Set<string>>(new Set())
   const navigate = useNavigate()
@@ -238,10 +246,13 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                   {brok.accounts.length} acct{brok.accounts.length !== 1 ? 's' : ''} · Cash {fmtCAD(brok.totalCash)}
                 </div>
               </div>
-              <div className="text-right flex-shrink-0">
-                <div className="font-bold text-primary">{fmtCAD(brok.total)}</div>
-                <div className={`text-xs font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-muted-foreground'}`}>
-                  {brok.hasPrices ? (brok.pnl >= 0 ? '+' : '') + fmtCAD(brok.pnl) + ' P&L' : '—'}
+              <div className="text-right flex-shrink-0 flex items-center gap-2">
+                {sparklines[brok.name] && <Sparkline data={sparklines[brok.name]} width={48} height={20} />}
+                <div>
+                  <div className="font-bold text-primary">{fmtCAD(brok.total)}</div>
+                  <div className={`text-xs font-medium ${brok.hasPrices ? pnlClass(brok.pnl) : 'text-muted-foreground'}`}>
+                    {brok.hasPrices ? (brok.pnl >= 0 ? '+' : '') + fmtCAD(brok.pnl) + ' P&L' : '—'}
+                  </div>
                 </div>
               </div>
             </button>
@@ -321,6 +332,7 @@ function BrokerageSummary({ data, usdCadRate }: { data: BrokerageRow[]; usdCadRa
                       >
                         <ExternalLink className="h-3.5 w-3.5" />
                       </span>
+                      {sparklines[brok.name] && <Sparkline data={sparklines[brok.name]} width={56} height={18} className="flex-shrink-0" />}
                     </span>
                   </td>
                   <td className="px-3 py-1.5 text-right text-xs text-muted-foreground">
@@ -681,6 +693,36 @@ export default function Dashboard() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // ── Sparklines (Net Worth headline + per-brokerage rows) ──────────────────
+  // Reuses the same pre-computed snapshot timeline the Performance chart is built from —
+  // group_by=total gives one "Total" series for the headline trend, group_by=brokerage
+  // gives every brokerage's value history in a single call (no N+1 per row).
+  const { data: netWorthTimeline } = useQuery({
+    queryKey: ['portfolio-timeline-total', metricsAccountIds, fromDate, toDate],
+    queryFn: () => getPortfolioTimeline({ group_by: 'total', from_date: fromDate, to_date: toDate, account_ids: metricsAccountIds ?? undefined }),
+    enabled: metricsAccountIds !== null,
+    staleTime: 5 * 60 * 1000,
+  })
+  const netWorthSpark = useMemo(
+    () => netWorthTimeline?.points.map(p => Object.values(p.values).reduce((s, v) => s + v, 0)) ?? [],
+    [netWorthTimeline],
+  )
+
+  const { data: brokerageTimeline } = useQuery({
+    queryKey: ['portfolio-timeline-brokerage', metricsAccountIds, fromDate, toDate],
+    queryFn: () => getPortfolioTimeline({ group_by: 'brokerage', from_date: fromDate, to_date: toDate, account_ids: metricsAccountIds ?? undefined }),
+    enabled: metricsAccountIds !== null,
+    staleTime: 5 * 60 * 1000,
+  })
+  const brokerageSparklines = useMemo(() => {
+    const out: Record<string, number[]> = {}
+    if (!brokerageTimeline) return out
+    for (const label of brokerageTimeline.series_labels) {
+      out[label] = brokerageTimeline.points.map(p => p.values[label] ?? 0)
+    }
+    return out
+  }, [brokerageTimeline])
+
   const pendingImports = imports.filter((i: { status: string }) => i.status === 'PENDING')
 
   // ── Summary totals (with no-price fallback) ───────────────────────────────
@@ -908,6 +950,11 @@ export default function Dashboard() {
           <div className="text-center pb-3 mb-3 border-b border-primary/20">
             <div className="text-xs text-primary/70 uppercase tracking-wide">Net Worth</div>
             <div className="text-3xl font-bold text-foreground">{fmtCAD(netWorth)}</div>
+            {netWorthSpark.length > 1 && (
+              <div className="flex justify-center mt-1">
+                <Sparkline data={netWorthSpark} width={120} height={28} />
+              </div>
+            )}
             <div className="text-[11px] text-primary/60 mt-0.5">{investmentPositions.length} positions · {allAcctIds.length} accounts</div>
           </div>
           <div className="grid grid-cols-2 gap-x-4 gap-y-3">
@@ -965,9 +1012,12 @@ export default function Dashboard() {
             <div className="text-xs text-primary/70 uppercase tracking-wide">Liabilities</div>
             <div className={`text-lg md:text-xl font-bold ${totalLiabilities < 0 ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{fmtCAD(totalLiabilities)}</div>
           </div>
-          <div className="md:border-l md:border-primary/20 md:pl-6">
-            <div className="text-xs text-primary/70 uppercase tracking-wide">Net Worth</div>
-            <div className="text-xl md:text-2xl font-bold text-foreground">{fmtCAD(netWorth)}</div>
+          <div className="md:border-l md:border-primary/20 md:pl-6 flex items-center gap-3">
+            <div>
+              <div className="text-xs text-primary/70 uppercase tracking-wide">Net Worth</div>
+              <div className="text-xl md:text-2xl font-bold text-foreground">{fmtCAD(netWorth)}</div>
+            </div>
+            {netWorthSpark.length > 1 && <Sparkline data={netWorthSpark} width={90} height={30} />}
           </div>
           {hasReturn && (
             <div>
@@ -994,7 +1044,7 @@ export default function Dashboard() {
       </div>
 
       {/* ── Brokerages ── */}
-      <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} />
+      <BrokerageSummary data={brokerageSummary} usdCadRate={usdCadRate} sparklines={brokerageSparklines} />
 
       {/* ── Crypto ── */}
       {cryptoPositions.length > 0 && (

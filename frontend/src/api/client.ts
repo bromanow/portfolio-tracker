@@ -1131,6 +1131,22 @@ export const getReturnsDetail = (params?: {
   account_ids?: string
 }) => api.get<ReturnDetailRow[]>('/portfolio/performance/returns-detail', { params }).then(r => r.data)
 
+export interface TimelinePoint {
+  date:     string
+  values:   Record<string, number>
+  invested: Record<string, number>
+}
+export interface TimelineResponse {
+  series_labels: string[]
+  points:        TimelinePoint[]
+}
+export const getPortfolioTimeline = (params: {
+  group_by:     'total' | 'brokerage' | 'account_type' | 'account'
+  from_date?:   string
+  to_date?:     string
+  account_ids?: string
+}) => api.get<TimelineResponse>('/portfolio/performance/timeline', { params }).then(r => r.data)
+
 export const computeSnapshots = (params?: {
   account_ids?: string
   from_date?:   string

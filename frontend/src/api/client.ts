@@ -1609,6 +1609,14 @@ export const runIbkrScanner = (data: {
 
 export type PersonalAssetClass = 'REAL_ESTATE' | 'LIFE_INSURANCE' | 'OTHER_ASSET' | 'LIABILITY'
 
+// Personal assets/liabilities share the same Security/Position pipeline as real
+// investment holdings, but should never appear as ordinary rows on investment-focused
+// pages (Holdings, Dashboard's Brokerage/Account table) — they get their own dedicated
+// Net Worth views instead.
+export const PERSONAL_ASSET_CLASSES: ReadonlySet<string> = new Set(
+  ['REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'] satisfies PersonalAssetClass[],
+)
+
 export interface PersonalAsset {
   security_id: number
   ticker: string

@@ -5,6 +5,7 @@ import { TrendingUp, TrendingDown, ChevronDown, ChevronRight, ExternalLink } fro
 import {
   getCashBalances, getImports, getAccounts, getPositions, getPersonalAssets,
   getFxRateLookup, getMarketIndicators, getReturnsDetail, getMarketNews, getTopStories, getPortfolioNews,
+  PERSONAL_ASSET_CLASSES,
 } from '../api/client'
 import type { Position, CashBalance, Account, MarketIndicator, PersonalAsset, PersonalAssetClass } from '../api/client'
 import { usePortfolioFilters } from '../hooks/usePortfolioFilters'
@@ -534,7 +535,6 @@ export default function Dashboard() {
   // same Security/Position pipeline as everything else, but are kept out of the existing
   // "Total Value" investment figure — that number should keep meaning exactly what it always
   // has. They get their own Net Worth breakout below instead.
-  const PERSONAL_ASSET_CLASSES = new Set(['REAL_ESTATE', 'LIFE_INSURANCE', 'OTHER_ASSET', 'LIABILITY'])
   const investmentPositions = useMemo(
     () => filteredPositions.filter(p => !PERSONAL_ASSET_CLASSES.has(p.asset_class)),
     [filteredPositions],

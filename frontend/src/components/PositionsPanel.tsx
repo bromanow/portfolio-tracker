@@ -1,7 +1,7 @@
 import { useState, useMemo, useEffect, useRef, Fragment } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from 'react-router-dom'
-import { getConsolidatedPositions } from '../api/client'
+import { getConsolidatedPositions, PERSONAL_ASSET_CLASSES } from '../api/client'
 import type { ConsolidatedPosition, CashBalance } from '../api/client'
 import {
   ChevronDown, ChevronRight, ChevronUp, ChevronsUpDown,
@@ -305,12 +305,18 @@ export default function PositionsPanel({ accountIds, cash, asOf }: PositionsPane
     }
   }
 
-  const { data: consolidated = [], isLoading } = useQuery({
+  const { data: rawConsolidated = [], isLoading } = useQuery({
     queryKey: ['consolidated-positions', accountIds, asOf],
     queryFn: () => getConsolidatedPositions({ account_ids: accountIds ?? undefined, as_of: asOf }),
     // null means "accounts still loading with active filter" — wait before querying
     enabled: accountIds !== null,
   })
+  // Real estate/insurance/other-asset/liability rows live on the Dashboard's Net Worth
+  // breakout instead — never show them here alongside real investment holdings.
+  const consolidated = useMemo(
+    () => rawConsolidated.filter(p => !PERSONAL_ASSET_CLASSES.has(p.asset_class)),
+    [rawConsolidated],
+  )
 
   const toggleTicker = (ticker: string) =>
     setExpandedTickers(prev => {

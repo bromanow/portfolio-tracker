@@ -1625,6 +1625,14 @@ def get_performance_timeline(
     accounts = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
 
+    # Real estate/insurance/other-asset/liability securities all live under the synthetic
+    # "Other Assets" brokerage (per-owner accounts created in personal_assets.py) — exclude
+    # those accounts so the Performance chart tracks investment performance only, matching
+    # the Dashboard's Brokerage/Account table (crypto is unaffected — it lives in a real
+    # brokerage like Coinsquare, not this one).
+    from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
+    personal_brokerage_ids = {b.id for b in db.query(Brokerage).filter(Brokerage.code == PERSONAL_BROKERAGE_CODE).all()}
+
     def _group_label(acct: Account) -> str:
         if group_by == "total":
             return "Total"
@@ -1660,6 +1668,8 @@ def get_performance_timeline(
         if acct is None:
             continue
         if parsed_ids and row.account_id not in parsed_ids:
+            continue
+        if acct.brokerage_id in personal_brokerage_ids:
             continue
         label = _group_label(acct)
         all_labels.add(label)
@@ -1703,6 +1713,8 @@ def get_performance_timeline(
     for t in contrib_q.all():
         acct = accounts.get(t.account_id)
         if acct is None:
+            continue
+        if acct.brokerage_id in personal_brokerage_ids:
             continue
         td = t.transaction_date
         if isinstance(td, _dt0):
@@ -1771,6 +1783,8 @@ def get_performance_timeline(
     for t in flow_q.order_by(Txn.transaction_date).all():
         acct = accounts.get(t.account_id)
         if acct is None:
+            continue
+        if acct.brokerage_id in personal_brokerage_ids:
             continue
         ev_date = t.transaction_date
         if isinstance(ev_date, _dt):

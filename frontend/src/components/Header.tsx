@@ -38,8 +38,8 @@ function usePriceAge(liveLastUpdated: string | null) {
 
 // ── Page title map for mobile header ─────────────────────────────────────────
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard':   'Overview',
-  '/holdings':    'Holdings',
+  '/dashboard':   'Net Worth',
+  '/holdings':    'Securities',
   '/performance': 'Performance & Reports',
   '/activity':    'Activity',
   '/scanner':     'Research',

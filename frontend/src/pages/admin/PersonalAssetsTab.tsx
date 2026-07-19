@@ -722,7 +722,7 @@ export default function PersonalAssetsTab() {
       <div className="flex gap-4 text-sm">
         <div className="bg-emerald-50 border border-emerald-200 rounded-lg px-4 py-2">
           <span className="text-emerald-700 font-semibold">{fmtCAD(String(totalAssets))}</span>
-          <span className="text-emerald-600 text-xs ml-1">personal assets</span>
+          <span className="text-emerald-600 text-xs ml-1">other assets</span>
         </div>
         <div className="bg-red-50 border border-red-200 rounded-lg px-4 py-2">
           <span className="text-red-600 font-semibold">-{fmtCAD(String(totalLiabilities))}</span>
@@ -736,7 +736,7 @@ export default function PersonalAssetsTab() {
 
       {assets.length === 0 && (
         <div className="bg-white border border-gray-200 rounded-xl px-5">
-          <p className="text-sm text-gray-400 py-6 text-center">No personal assets or liabilities yet.</p>
+          <p className="text-sm text-gray-400 py-6 text-center">No other assets or liabilities yet.</p>
         </div>
       )}
 

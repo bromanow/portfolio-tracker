@@ -10,8 +10,8 @@ import {
 import { useAuth } from '../context/AuthContext'
 
 const tabs = [
-  { to: '/dashboard',   label: 'Overview',     icon: LayoutDashboard },
-  { to: '/holdings',    label: 'Holdings',     icon: Briefcase },
+  { to: '/dashboard',   label: 'Net Worth',    icon: LayoutDashboard },
+  { to: '/holdings',    label: 'Securities',   icon: Briefcase },
   { to: '/performance', label: 'Performance',  icon: TrendingUp },
   { to: '/activity',    label: 'Activity',     icon: List },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },

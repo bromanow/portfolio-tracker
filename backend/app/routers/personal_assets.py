@@ -30,7 +30,7 @@ router = APIRouter(prefix="/api/personal-assets", tags=["personal-assets"])
 
 ASSET_CLASSES = {"REAL_ESTATE", "LIFE_INSURANCE", "OTHER_ASSET", "LIABILITY"}
 PERSONAL_BROKERAGE_CODE = "PERSONAL"
-PERSONAL_BROKERAGE_NAME = "Personal Assets"
+PERSONAL_BROKERAGE_NAME = "Other Assets"
 
 
 def _slugify(name: str) -> str:
@@ -52,7 +52,7 @@ def _get_or_create_personal_brokerage(db: Session) -> Brokerage:
 
 def _get_or_create_owner_account(db: Session, owner: str) -> Account:
     brokerage = _get_or_create_personal_brokerage(db)
-    name = f"{owner} Personal Assets"
+    name = f"{owner} Other Assets"
     acct = db.query(Account).filter(
         Account.brokerage_id == brokerage.id, Account.owner == owner,
     ).first()

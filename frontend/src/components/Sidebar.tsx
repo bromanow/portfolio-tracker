@@ -17,8 +17,8 @@ import { useAuth } from '../context/AuthContext'
 import { getDataHealth } from '../api/client'
 
 const nav = [
-  { to: '/dashboard',   label: 'Overview',     icon: LayoutDashboard },
-  { to: '/holdings',    label: 'Holdings',     icon: Briefcase },
+  { to: '/dashboard',   label: 'Net Worth',    icon: LayoutDashboard },
+  { to: '/holdings',    label: 'Securities',   icon: Briefcase },
   { to: '/performance', label: 'Performance & Reports', icon: TrendingUp },
   { to: '/activity',    label: 'Activity',     icon: List },
   { to: '/scanner',     label: 'Research',     icon: ScanSearch },

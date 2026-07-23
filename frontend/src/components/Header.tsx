@@ -1,10 +1,10 @@
-import { useState, useEffect, useRef } from 'react'
+import { useState, useEffect } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useLocation } from 'react-router-dom'
 import {
   getPriceStatus, refreshAllPrices, getPriceJob, getAccounts, getScannerMeta,
 } from '../api/client'
-import type { Account } from '../api/client'
+import type { Account, PriceJob, PriceJobProgress } from '../api/client'
 import { RefreshCw, Clock, X, SlidersHorizontal, LogOut, Eye, EyeOff, Sun, Moon, Monitor } from 'lucide-react'
 import MultiSelectDropdown from './MultiSelectDropdown'
 import DatePicker from './DatePicker'
@@ -20,6 +20,9 @@ import { getPref, usePreference } from '../hooks/usePreference'
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
 // Pages that also show time range controls
 const TIME_RANGE_PATHS = new Set(['/dashboard', '/holdings'])
+// Date (toDateString()) of the last auto price refresh — gates "refresh on login" to once
+// per calendar day rather than once per Header mount (see the effect below for why).
+const LAST_AUTO_REFRESH_KEY = 'pref-last-auto-price-refresh'
 
 const THEME_CYCLE: Record<Theme, Theme> = { light: 'dark', dark: 'system', system: 'light' }
 const THEME_ICON = { light: Sun, dark: Moon, system: Monitor }
@@ -40,6 +43,31 @@ function usePriceAge(liveLastUpdated: string | null) {
   const isStale = diffHr >= 4
   const colorClass = diffMin < 60 ? 'text-emerald-600 dark:text-emerald-400' : diffHr < 4 ? 'text-yellow-600 dark:text-yellow-400' : 'text-red-500 dark:text-red-400'
   return { label, colorClass, isStale }
+}
+
+function fmtEta(sec: number): string {
+  if (sec < 60) return `${sec}s`
+  const m = Math.floor(sec / 60), s = sec % 60
+  return `${m}m ${s}s`
+}
+
+// Human-readable "what's updating, from where, how long left" for the currently-running
+// price job — derived fresh on every render (not stored in state) so a ticking re-render
+// (see the `tick` interval in Header) smoothly counts down between the 2s job-status polls,
+// while each new poll still resyncs the estimate (elapsed / done * total) to reality.
+function jobStatusText(job: { status: string; started_at: string; progress: PriceJobProgress | null } | undefined): string | null {
+  if (!job || job.status !== 'running' || !job.progress || !job.progress.source) return null
+  const { source, done, total } = job.progress
+  if (total <= 0) return `${source}…`
+  let eta = ''
+  if (done > 0) {
+    const startedMs = new Date(job.started_at + 'Z').getTime()
+    const elapsedMs = Date.now() - startedMs
+    const estTotalMs = (elapsedMs / done) * total
+    const remainingSec = Math.max(0, Math.round((estTotalMs - elapsedMs) / 1000))
+    eta = ` · ~${fmtEta(remainingSec)} left`
+  }
+  return `${source} ${done}/${total}${eta}`
 }
 
 // ── Page title map for mobile header ─────────────────────────────────────────
@@ -109,26 +137,51 @@ export default function Header() {
   })
 
   // "Refresh prices on login" preference (My Account) — drives the SAME button/mutation as a
-  // manual click, so it shows up as the header button spinning/"Refreshing…" rather than a
-  // separate indicator. Fires once per login (Header unmounts on logout, so `fired` resets
-  // naturally on the next login).
-  const loginRefreshFired = useRef(false)
+  // manual click, so it shows up as the header button spinning/with live status rather than a
+  // separate indicator. Gated on calendar day (localStorage), not on the Header mount/unmount
+  // cycle — a mount-only guard misses the common case of a browser tab or installed PWA that's
+  // simply resumed from yesterday (session cookie still valid, so no real "login" ever fires,
+  // but the user still expects a fresh refresh for the new day). Checked on mount AND whenever
+  // the tab/PWA regains visibility, so a resumed session on a new day still triggers it.
   useEffect(() => {
-    if (!user || loginRefreshFired.current) return
-    loginRefreshFired.current = true
-    if (getPref('refreshOnLogin')) refreshMut.mutate()
+    if (!user) return
+    const tryAutoRefresh = () => {
+      if (document.visibilityState === 'hidden') return
+      if (!getPref('refreshOnLogin')) return
+      const today = new Date().toDateString()
+      if (localStorage.getItem(LAST_AUTO_REFRESH_KEY) === today) return
+      localStorage.setItem(LAST_AUTO_REFRESH_KEY, today)
+      refreshMut.mutate()
+    }
+    tryAutoRefresh()
+    document.addEventListener('visibilitychange', tryAutoRefresh)
+    return () => document.removeEventListener('visibilitychange', tryAutoRefresh)
   }, [user])
 
-  const { data: jobData } = useQuery({
-    queryKey: ['price-job', activeJobId],
-    queryFn: () => getPriceJob(activeJobId!),
-    enabled: !!activeJobId,
-    refetchInterval: (q) => { const d = q.state.data; return !d || d.status === 'running' ? 2000 : false },
-  })
+  // Poll the running job's status directly (setTimeout, not react-query's refetchInterval —
+  // in testing, the function form of refetchInterval fired exactly once and then silently
+  // never rescheduled, even with the tab kept in the foreground; a plain recursive setTimeout
+  // is simple enough to reason about and reliably ticks every 2s until the job finishes).
+  const [jobData, setJobData] = useState<PriceJob | undefined>(undefined)
   useEffect(() => {
-    if (!jobData) return
-    if (jobData.status === 'done' || jobData.status === 'error') {
-      if (jobData.status === 'done') {
+    if (!activeJobId) { setJobData(undefined); return }
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      let data: PriceJob
+      try {
+        data = await getPriceJob(activeJobId)
+      } catch {
+        if (!cancelled) timer = setTimeout(poll, 2000)
+        return
+      }
+      if (cancelled) return
+      setJobData(data)
+      if (data.status === 'running') {
+        timer = setTimeout(poll, 2000)
+        return
+      }
+      if (data.status === 'done') {
         qc.invalidateQueries({ queryKey: ['price-status'] })
         qc.invalidateQueries({ queryKey: ['price-report'] })
         qc.invalidateQueries({ queryKey: ['positions'] })
@@ -140,12 +193,24 @@ export default function Header() {
       }
       setActiveJobId(null)
     }
-  }, [jobData?.status])
+    poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [activeJobId])
 
   const isBusy = refreshMut.isPending || (!!activeJobId && jobData?.status === 'running')
   const isDone = !activeJobId && refreshMut.isSuccess
   const isErr  = refreshMut.isError || jobData?.status === 'error'
   const { label, colorClass, isStale } = usePriceAge(status?.live_last_updated ?? null)
+
+  // Force a re-render once a second while a job is running so the ETA countdown ticks down
+  // smoothly between the 2s job-status polls, instead of only updating on each poll.
+  const [, forceTick] = useState(0)
+  useEffect(() => {
+    if (!isBusy) return
+    const t = setInterval(() => forceTick(x => x + 1), 1000)
+    return () => clearInterval(t)
+  }, [isBusy])
+  const jobStatus = jobStatusText(jobData)
 
   // Close filter sheet on route change
   useEffect(() => { setFilterSheetOpen(false) }, [location.pathname])
@@ -263,12 +328,13 @@ export default function Header() {
           <button
             onClick={() => refreshMut.mutate()}
             disabled={isBusy}
+            title={jobStatus ?? undefined}
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-medium transition-colors disabled:opacity-50 ${
               isStale ? 'bg-primary text-primary-foreground hover:bg-primary/90' : 'bg-accent text-muted-foreground hover:bg-accent/70'
             }`}
           >
             <RefreshCw className={`h-3.5 w-3.5 ${isBusy ? 'animate-spin' : ''}`} />
-            {isBusy ? 'Refreshing…' : 'Refresh Prices'}
+            {isBusy ? (jobStatus ?? 'Refreshing…') : 'Refresh Prices'}
           </button>
           {isDone && <span className="text-xs text-emerald-600 dark:text-emerald-400">✓ Updated</span>}
           {isErr  && <span className="text-xs text-destructive">Failed — try again</span>}
@@ -302,7 +368,7 @@ export default function Header() {
         <button
           onClick={() => refreshMut.mutate()}
           disabled={isBusy}
-          title="Refresh prices"
+          title={jobStatus ?? 'Refresh prices'}
           className="p-1.5 rounded-lg text-muted-foreground hover:bg-accent disabled:opacity-40"
         >
           <RefreshCw className={`h-4 w-4 ${isBusy ? 'animate-spin text-primary' : isStale ? 'text-primary' : ''}`} />
@@ -333,6 +399,14 @@ export default function Header() {
           <LogOut className="h-4 w-4" />
         </button>
       </header>
+
+      {/* ── Mobile price-refresh status strip ── */}
+      {isBusy && jobStatus && (
+        <div className="md:hidden bg-primary/10 border-b border-primary/20 px-4 py-1.5 flex items-center gap-1.5 text-xs text-primary shrink-0">
+          <RefreshCw className="h-3 w-3 animate-spin shrink-0" />
+          <span className="truncate">{jobStatus}</span>
+        </div>
+      )}
 
       {/* ── Mobile filter bottom sheet ── */}
       {filterSheetOpen && (

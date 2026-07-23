@@ -27,6 +27,7 @@ from sqlalchemy.orm import Session
 from app.models.master import Security
 from app.models.prices import MarketPrice
 from app.services.fx_service import get_rate
+from app import background_jobs
 
 logger = logging.getLogger(__name__)
 
@@ -846,6 +847,7 @@ def fetch_price_for_security(
 def refresh_all_prices(
     db: Session,
     security_ids: Optional[list[int]] = None,
+    job_id: Optional[str] = None,
 ) -> dict:
     """
     Refresh market prices for actively-tracked securities.
@@ -876,6 +878,8 @@ def refresh_all_prices(
     }
 
     non_options = [s for s in securities if not s.is_option and s.asset_class not in SKIP_ASSET_CLASSES]
+    if job_id:
+        background_jobs.update_progress(job_id, {"stage": "starting", "source": None, "done": 0, "total": len(non_options)})
     skipped = len(securities) - len(non_options)
     fetched = 0
     failed = 0
@@ -889,7 +893,9 @@ def refresh_all_prices(
     #  so TMX-priced funds were never refreshed after their first manual fetch.)
     tmx_secs = [s for s in non_options
                 if (s.fetch_ticker_override or "").strip().lower().startswith("tmx:")]
-    for sec in tmx_secs:
+    if job_id and tmx_secs:
+        background_jobs.update_progress(job_id, {"stage": "tmx", "source": "TMX", "done": 0, "total": len(tmx_secs)})
+    for i, sec in enumerate(tmx_secs):
         try:
             if fetch_price_for_security(db, sec, usd_to_cad=usd_to_cad, cached_mp=all_mp.get(sec.id)):
                 fetched += 1
@@ -898,6 +904,8 @@ def refresh_all_prices(
         except Exception as exc:
             logger.warning("TMX price refresh failed for %s: %s", sec.ticker, exc)
             failed += 1
+        if job_id:
+            background_jobs.update_progress(job_id, {"stage": "tmx", "source": "TMX", "done": i + 1, "total": len(tmx_secs)})
 
     # Build sym → [securities] map (multiple securities may share a fetch ticker)
     sym_to_secs: dict[str, list[Security]] = {}
@@ -918,8 +926,11 @@ def refresh_all_prices(
         from concurrent.futures import ThreadPoolExecutor, as_completed
         syms = list(sym_to_secs.keys())
         sym_results: dict[str, Optional[dict]] = {}
+        if job_id:
+            background_jobs.update_progress(job_id, {"stage": "yahoo", "source": "Yahoo Finance", "done": 0, "total": len(syms)})
         with ThreadPoolExecutor(max_workers=4) as pool:
             future_to_sym = {pool.submit(_fetch_one, sym): sym for sym in syms}
+            done_count = 0
             for future in as_completed(future_to_sym):
                 sym = future_to_sym[future]
                 try:
@@ -927,6 +938,9 @@ def refresh_all_prices(
                 except Exception as exc:
                     logger.debug("Thread error for %s: %s", sym, exc)
                     sym_results[sym] = None
+                done_count += 1
+                if job_id:
+                    background_jobs.update_progress(job_id, {"stage": "yahoo", "source": "Yahoo Finance", "done": done_count, "total": len(syms)})
 
         from datetime import timedelta
         yesterday = today - timedelta(days=1)

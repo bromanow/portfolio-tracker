@@ -165,7 +165,7 @@ def _spawn_job(name: str, fn) -> dict:
         from app.database import SessionLocal
         db2 = SessionLocal()
         try:
-            result = fn(db2)
+            result = fn(db2, job_id)
             background_jobs.finish_job(job_id, result)
         except Exception as exc:
             import logging
@@ -616,11 +616,13 @@ def refresh_recent():
     Smart refresh: live prices + incremental history download + today's snapshots (background job).
     Returns a job_id immediately; poll GET /jobs/{job_id} for status.
     """
-    def _fn(db):
+    def _fn(db, job_id):
         from datetime import timedelta
         from app.services.portfolio_history_service import compute_portfolio_snapshots
-        live = price_service.refresh_all_prices(db)
+        live = price_service.refresh_all_prices(db, job_id=job_id)
+        background_jobs.update_progress(job_id, {"stage": "history", "source": "Historical prices", "done": 0, "total": 0})
         hist = price_service.fetch_historical_prices(db, incremental=True)
+        background_jobs.update_progress(job_id, {"stage": "snapshots", "source": "Portfolio snapshots", "done": 0, "total": 0})
         # Rebuild snapshots for the past 14 days to capture any historical prices
         # that the incremental download filled in (not just today).
         snaps = compute_portfolio_snapshots(db, from_date=date.today() - timedelta(days=14))
@@ -636,7 +638,7 @@ def refresh_all():
     Also recomputes today's portfolio snapshots.
     Returns a job_id immediately; poll GET /jobs/{job_id} for status.
     """
-    def _fn(db):
+    def _fn(db, job_id):
         from app.services.portfolio_history_service import compute_portfolio_snapshots
         from app.services import ibkr_service
         from app.models.master import Security as _Security
@@ -653,7 +655,8 @@ def refresh_all():
                     .filter(_Security.is_option == False)  # noqa: E712
                     .all()
                 )
-                ibkr_result = ibkr_service.fetch_prices(all_non_options, db)
+                background_jobs.update_progress(job_id, {"stage": "ibkr", "source": "IBKR (IBeam)", "done": 0, "total": len(all_non_options)})
+                ibkr_result = ibkr_service.fetch_prices(all_non_options, db, job_id=job_id)
                 fallback_ids = ibkr_result.get("failed_security_ids") or []
                 _log.getLogger(__name__).info(
                     "IBKR: %d ok — falling back to yfinance for %d securities",
@@ -666,9 +669,10 @@ def refresh_all():
                 fallback_ids = None   # full yfinance fallback
 
         # ── yfinance/TMX for anything IBKR missed ────────────────────────────
-        live = price_service.refresh_all_prices(db, security_ids=fallback_ids)
+        live = price_service.refresh_all_prices(db, security_ids=fallback_ids, job_id=job_id)
         # Full refresh: rebuild all snapshots from scratch so they cover every
         # account for the complete history (no from_date = earliest transaction).
+        background_jobs.update_progress(job_id, {"stage": "snapshots", "source": "Portfolio snapshots", "done": 0, "total": 0})
         snaps = compute_portfolio_snapshots(db)
 
         return {"ibkr": ibkr_result, "live": live, "snapshots": snaps}
@@ -686,7 +690,7 @@ def refresh_fundamentals():
     Returns a job_id immediately; poll GET /jobs/{job_id} for status.
     """
     from app.services.signals_service import refresh_fundamentals_all
-    return _spawn_job("refresh_fundamentals", lambda db: refresh_fundamentals_all(db))
+    return _spawn_job("refresh_fundamentals", lambda db, job_id: refresh_fundamentals_all(db))
 
 
 @router.post("/compute-signals")
@@ -697,7 +701,7 @@ def compute_signals():
     Returns a job_id immediately; poll GET /jobs/{job_id} for status.
     """
     from app.services.signals_service import compute_signals_all
-    return _spawn_job("compute_signals", lambda db: compute_signals_all(db))
+    return _spawn_job("compute_signals", lambda db, job_id: compute_signals_all(db))
 
 
 @router.post("/refresh/{security_id}")

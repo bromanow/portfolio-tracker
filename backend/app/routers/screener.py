@@ -128,7 +128,7 @@ def seed_universe(current_user: User = Depends(get_current_user), db: Session = 
         added += 1
     db.commit()
 
-    def _backfill(db2):
+    def _backfill(db2, job_id):
         from app.routers.securities import _apply_yahoo_info
         from app.services.price_service import fetch_security_info
 
@@ -163,7 +163,7 @@ def refresh_universe():
     from app.routers.prices import _spawn_job
     from app.services.signals_service import refresh_fundamentals_all
 
-    def _fn(db):
+    def _fn(db, job_id):
         ids = [
             s.id for s in db.query(Security.id)
             .filter(Security.in_screener_universe == True)  # noqa: E712

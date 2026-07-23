@@ -337,6 +337,12 @@ export interface SummaryMetrics {
 
 export const getPrices = () => api.get<MarketPrice[]>('/prices').then(r => r.data)
 
+export interface PriceJobProgress {
+  stage: string
+  source: string | null
+  done: number
+  total: number
+}
 export interface PriceJob {
   id: string
   name: string
@@ -345,7 +351,7 @@ export interface PriceJob {
   finished_at: string | null
   result: Record<string, unknown> | null
   error: string | null
-  progress: string | null
+  progress: PriceJobProgress | null
   already_running?: boolean
   job_id?: string  // alias returned by spawn endpoints
 }

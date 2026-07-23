@@ -27,6 +27,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Optional
 
+from app import background_jobs
+
 logger = logging.getLogger(__name__)
 
 # ── Optional import guard ──────────────────────────────────────────────────────
@@ -1043,7 +1045,7 @@ _BATCH_SIZE = 45   # IB default concurrency limit is 50; leave a 5-line buffer
 _WAIT_SECS  = 4    # seconds to wait per batch for snapshot data to arrive
 
 
-def fetch_prices(securities, db) -> dict:
+def fetch_prices(securities, db, job_id: Optional[str] = None) -> dict:
     """
     Fetch live snapshot prices for a list of Security objects via TWS/Gateway.
     Upserts into market_prices (and mirrors into historical_prices as intraday).
@@ -1133,6 +1135,11 @@ def fetch_prices(securities, db) -> dict:
         # ── Request snapshot data in batches ──────────────────────────────────
         for batch_start in range(0, len(qualified), _BATCH_SIZE):
             batch = qualified[batch_start: batch_start + _BATCH_SIZE]
+            if job_id:
+                background_jobs.update_progress(job_id, {
+                    "stage": "ibkr", "source": "IBKR (IBeam)",
+                    "done": batch_start, "total": len(qualified),
+                })
 
             # reqMktData returns the Ticker object directly — store it
             batch_tickers: list[tuple] = []   # (Ticker, Contract, Security)

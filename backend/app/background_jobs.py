@@ -33,7 +33,7 @@ def start_job(name: str) -> str:
     return job_id
 
 
-def update_progress(job_id: str, progress: str) -> None:
+def update_progress(job_id: str, progress: dict) -> None:
     with _lock:
         if job_id in _jobs:
             _jobs[job_id]["progress"] = progress

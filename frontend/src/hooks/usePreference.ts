@@ -1,12 +1,15 @@
 import { useEffect, useState } from 'react'
 
-// Lightweight client-side user preferences (localStorage). These are device-local behaviours
-// (idle auto-logout, refresh-on-login) so they don't need a server round-trip; a custom event
-// keeps every reader in sync when one toggle changes.
+// Lightweight client-side user preferences (localStorage). These are genuinely device-local
+// behaviours (idle auto-logout, hide-values display toggle) so they don't need a server
+// round-trip; a custom event keeps every reader in sync when one toggle changes.
+// ("Refresh prices on login" used to live here too, but a purely per-browser setting silently
+// resets/desyncs across devices with no visible warning — it's now tied to the account via
+// user.refresh_prices_on_login / PATCH /auth/me/preferences instead, see MyAccountTab.tsx's
+// ServerPrefToggle and Header.tsx's login-refresh effect.)
 
 export const PREF_KEYS = {
   idleLogout: 'pref-idle-logout',
-  refreshOnLogin: 'pref-refresh-on-login',
   hideValues: 'pref-hide-values',
 } as const
 

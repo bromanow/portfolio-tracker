@@ -173,6 +173,7 @@ def _run_migrations(eng):
         ("personal_asset_details", "contract_type",         "VARCHAR(120)"),
         ("personal_asset_details", "sum_insured_cad",       "NUMERIC(14, 2)"),
         ("personal_asset_details", "insured_name",          "VARCHAR(120)"),
+        ("users",                  "refresh_prices_on_login", "BOOLEAN DEFAULT FALSE"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

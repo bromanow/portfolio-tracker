@@ -6,6 +6,7 @@ export interface AuthUser {
   email: string
   name: string
   role: string
+  refresh_prices_on_login: boolean
 }
 
 interface AuthContextType {
@@ -13,6 +14,10 @@ interface AuthContextType {
   isLoading: boolean
   login: (email: string, password: string) => Promise<void>
   logout: () => void
+  /** Merge a patch into the current user locally — used after a preferences save so
+   *  consumers (e.g. Header's login-refresh trigger) see the new value immediately
+   *  without a full /auth/me round-trip. */
+  updateUser: (patch: Partial<AuthUser>) => void
 }
 
 const AuthContext = createContext<AuthContextType | null>(null)
@@ -59,8 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     queryClient.clear()   // wipe all cached data so next login gets a fresh fetch
   }, [queryClient])
 
+  const updateUser = useCallback((patch: Partial<AuthUser>) => {
+    setUser(u => (u ? { ...u, ...patch } : u))
+  }, [])
+
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, login, logout, updateUser }}>
       {children}
     </AuthContext.Provider>
   )

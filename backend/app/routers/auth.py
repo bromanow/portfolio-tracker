@@ -31,6 +31,10 @@ class UserOut(BaseModel):
     email: str
     name: str
     role: str
+    refresh_prices_on_login: bool = False
+
+class PreferencesUpdate(BaseModel):
+    refresh_prices_on_login: Optional[bool] = None
 
 class UserCreate(BaseModel):
     email: str
@@ -81,7 +85,10 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         path="/",
     )
     return {
-        "user": UserOut(id=user.id, email=user.email, name=user.name, role=user.role),
+        "user": UserOut(
+            id=user.id, email=user.email, name=user.name, role=user.role,
+            refresh_prices_on_login=user.refresh_prices_on_login,
+        ),
     }
 
 
@@ -100,6 +107,22 @@ def logout(response: Response, current_user: User = Depends(get_current_user)):
 
 @router.get("/me", response_model=UserOut)
 def get_me(current_user: User = Depends(get_current_user)):
+    return current_user
+
+
+@router.patch("/me/preferences", response_model=UserOut)
+def update_my_preferences(
+    req: PreferencesUpdate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+):
+    """Self-service preference update — tied to the account, not per-browser localStorage,
+    so it stays consistent across devices/browsers (a purely local setting was silently
+    resetting/desyncing with no visible warning)."""
+    if req.refresh_prices_on_login is not None:
+        current_user.refresh_prices_on_login = req.refresh_prices_on_login
+    db.commit()
+    db.refresh(current_user)
     return current_user
 
 

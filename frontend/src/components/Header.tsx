@@ -14,7 +14,7 @@ import type { TimeRange } from '../context/FilterContext'
 import { useAuth } from '../context/AuthContext'
 import { useTheme } from '../context/ThemeContext'
 import type { Theme } from '../context/ThemeContext'
-import { getPref, usePreference } from '../hooks/usePreference'
+import { usePreference } from '../hooks/usePreference'
 
 // Pages that show portfolio account filters
 const ACCOUNT_FILTER_PATHS = new Set(['/dashboard', '/holdings', '/activity'])
@@ -138,16 +138,20 @@ export default function Header() {
 
   // "Refresh prices on login" preference (My Account) — drives the SAME button/mutation as a
   // manual click, so it shows up as the header button spinning/with live status rather than a
-  // separate indicator. Gated on calendar day (localStorage), not on the Header mount/unmount
-  // cycle — a mount-only guard misses the common case of a browser tab or installed PWA that's
-  // simply resumed from yesterday (session cookie still valid, so no real "login" ever fires,
-  // but the user still expects a fresh refresh for the new day). Checked on mount AND whenever
-  // the tab/PWA regains visibility, so a resumed session on a new day still triggers it.
+  // separate indicator. Tied to the account (user.refresh_prices_on_login, set via
+  // PATCH /auth/me/preferences) rather than per-browser localStorage — a purely local setting
+  // silently resets/desyncs across devices and browser profiles with no visible warning.
+  // "Already ran today" is still tracked in localStorage (that part genuinely is per-device —
+  // no need to hit the server for it), gated on calendar day rather than the Header
+  // mount/unmount cycle — a mount-only guard misses the common case of a browser tab or
+  // installed PWA that's simply resumed from yesterday (session cookie still valid, so no real
+  // "login" ever fires). Checked on mount AND whenever the tab/PWA regains visibility, so a
+  // resumed session on a new day still triggers it.
   useEffect(() => {
     if (!user) return
     const tryAutoRefresh = () => {
       if (document.visibilityState === 'hidden') return
-      if (!getPref('refreshOnLogin')) return
+      if (!user.refresh_prices_on_login) return
       const today = new Date().toDateString()
       if (localStorage.getItem(LAST_AUTO_REFRESH_KEY) === today) return
       localStorage.setItem(LAST_AUTO_REFRESH_KEY, today)

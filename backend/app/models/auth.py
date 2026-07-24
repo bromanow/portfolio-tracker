@@ -16,3 +16,6 @@ class User(Base):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow)
     last_login: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    # Per-account preference (was previously a per-browser localStorage-only setting, which
+    # silently reset/desynced across devices and browser profiles with no visible warning).
+    refresh_prices_on_login: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

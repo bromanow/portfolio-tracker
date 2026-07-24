@@ -2,22 +2,62 @@ import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
 import { usePreference } from '../../hooks/usePreference'
-import { changePassword } from '../../api/client'
+import { changePassword, updateMyPreferences } from '../../api/client'
 
 // ─── My Account Tab ──────────────────────────────────────────────────────────
+function ToggleSwitch({ on, onClick, disabled }: { on: boolean; onClick: () => void; disabled?: boolean }) {
+  return (
+    <button
+      type="button"
+      role="switch"
+      aria-checked={on}
+      disabled={disabled}
+      onClick={onClick}
+      className={`mt-0.5 relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors disabled:opacity-50 ${on ? 'bg-primary' : 'bg-muted-foreground/30'}`}
+    >
+      <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-card transition-transform`} style={{ transform: on ? 'translateX(18px)' : 'translateX(3px)' }} />
+    </button>
+  )
+}
+
+// A per-browser preference — stored only in this device's localStorage.
 function PrefToggle({ prefKey, label, hint }: { prefKey: Parameters<typeof usePreference>[0]; label: string; hint: string }) {
   const [on, setOn] = usePreference(prefKey)
   return (
     <label className="flex items-start gap-3 cursor-pointer">
-      <button
-        type="button"
-        role="switch"
-        aria-checked={on}
-        onClick={() => setOn(!on)}
-        className={`mt-0.5 relative inline-flex h-5 w-9 flex-shrink-0 items-center rounded-full transition-colors ${on ? 'bg-primary' : 'bg-muted-foreground/30'}`}
-      >
-        <span className={`inline-block h-3.5 w-3.5 transform rounded-full bg-card transition-transform ${on ? 'translate-x-4.5' : 'translate-x-1'}`} style={{ transform: on ? 'translateX(18px)' : 'translateX(3px)' }} />
-      </button>
+      <ToggleSwitch on={on} onClick={() => setOn(!on)} />
+      <span>
+        <span className="text-sm font-medium text-foreground">{label}</span>
+        <span className="block text-xs text-muted-foreground">{hint}</span>
+      </span>
+    </label>
+  )
+}
+
+// A per-account preference — persisted server-side (via updateUser), so it stays
+// consistent across every browser/device signed into this account, unlike PrefToggle
+// above (which silently resets per-browser with no visible warning).
+function ServerPrefToggle({ label, hint }: { label: string; hint: string }) {
+  const { user, updateUser } = useAuth()
+  const [saving, setSaving] = useState(false)
+  const on = user?.refresh_prices_on_login ?? false
+
+  const toggle = async () => {
+    const next = !on
+    setSaving(true)
+    try {
+      await updateMyPreferences({ refresh_prices_on_login: next })
+      updateUser({ refresh_prices_on_login: next })
+    } catch {
+      // leave the switch as-is on failure — no optimistic flip happened yet
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <label className="flex items-start gap-3 cursor-pointer">
+      <ToggleSwitch on={on} onClick={toggle} disabled={saving} />
       <span>
         <span className="text-sm font-medium text-foreground">{label}</span>
         <span className="block text-xs text-muted-foreground">{hint}</span>
@@ -80,9 +120,9 @@ export default function MyAccountTab() {
         <PrefToggle prefKey="idleLogout"
           label="Log out after 10 minutes of inactivity"
           hint="Automatically signs you out if there's no mouse or keyboard activity." />
-        <PrefToggle prefKey="refreshOnLogin"
+        <ServerPrefToggle
           label="Refresh prices automatically on login"
-          hint="Kicks off a market-price refresh once each time you sign in." />
+          hint="Kicks off a market-price refresh once each time you sign in. Applies to this account on every device." />
       </div>
 
       {/* Change password */}

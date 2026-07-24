@@ -481,15 +481,37 @@ def fetch_option_chain_price(db: Session, security: Security, usd_to_cad: Option
         price_cad = None
 
     today = date.today()
+
+    # None of the option-pricing sources above (Yahoo chain, MX, IBeam snapshot) surface a
+    # previous-close / day-change field, so day gain always showed blank for options. Derive
+    # it ourselves from our own price history instead of the source: the most recent
+    # HistoricalPrice row strictly before today is that option's last trading day's close.
+    # (First day an option is priced, there's no prior row yet — day change is genuinely
+    # undefined until tomorrow, same as it would be for a security priced for the first time.)
+    from app.models.prices import HistoricalPrice as _HistoricalPrice
+    prev_hist = (
+        db.query(_HistoricalPrice)
+        .filter(_HistoricalPrice.security_id == security.id, _HistoricalPrice.price_date < today)
+        .order_by(_HistoricalPrice.price_date.desc())
+        .first()
+    )
+    day_change: Optional[Decimal] = None
+    day_change_pct: Optional[Decimal] = None
+    prev_close: Optional[Decimal] = None
+    if prev_hist and prev_hist.close_price and prev_hist.close_price > 0:
+        prev_close = prev_hist.close_price
+        day_change = (price_val - prev_close).quantize(Decimal("0.000001"), rounding=ROUND_HALF_UP)
+        day_change_pct = (day_change / prev_close * Decimal("100")).quantize(Decimal("0.0001"), rounding=ROUND_HALF_UP)
+
     data = {
         "price": price_val,
         "currency": currency,
         "price_cad": price_cad,
-        "prev_close": None,
+        "prev_close": prev_close,
         "day_high": None,
         "day_low": None,
-        "day_change": None,
-        "day_change_pct": None,
+        "day_change": day_change,
+        "day_change_pct": day_change_pct,
         "price_date": today,
         "fetched_at": datetime.now(timezone.utc).replace(tzinfo=None),
         "fetch_ticker": fetch_ticker_used,
@@ -1003,10 +1025,14 @@ def refresh_all_prices(
             skipped += 1  # expired — no market price exists
         else:
             option_secs.append(sec)
-    for sec in option_secs:
+    if job_id and option_secs:
+        background_jobs.update_progress(job_id, {"stage": "options", "source": "Options (chain lookup)", "done": 0, "total": len(option_secs)})
+    for i, sec in enumerate(option_secs):
         result = fetch_option_chain_price(db, sec, usd_to_cad=usd_to_cad)
         if result is not None:
             fetched += 1
+        if job_id:
+            background_jobs.update_progress(job_id, {"stage": "options", "source": "Options (chain lookup)", "done": i + 1, "total": len(option_secs)})
 
     db.commit()
     logger.info("Price refresh complete: %d fetched, %d skipped, %d failed", fetched, skipped, failed)

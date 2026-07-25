@@ -3,8 +3,10 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   proposeCoveredCallPortfolio, getProposeJob, adoptCoveredCallPortfolio,
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
+  sellToOpen, rollCoveredCall, closeCoveredCall, getCoveredCallSummary,
+  getUnmatchedTransactions, matchTransaction,
 } from '../api/client'
-import type { ProposeParams, ProposeResult, CoveredCallPick, Account } from '../api/client'
+import type { ProposeParams, ProposeResult, CoveredCallPick, Account, CoveredCallHolding, CoveredCallPortfolioDetail } from '../api/client'
 import { ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
 
@@ -347,26 +349,187 @@ export default function CoveredCallPortfolioTool() {
                   {expandedId === p.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                 </button>
                 {expandedId === p.id && expanded && (
-                  <div className="pb-3 pl-2 space-y-2">
-                    {expanded.holdings.map(h => (
-                      <div key={h.id} className="text-sm flex items-center justify-between border-b border-border/40 py-1.5">
-                        <span>
-                          <TickerLink ticker={h.ticker ?? ''} />
-                          {h.shares != null && <span className="ml-2 text-xs text-muted-foreground">{h.shares} sh</span>}
-                        </span>
-                        {h.trades[0] && (
-                          <span className="text-xs text-muted-foreground tabular-nums">
-                            {h.trades[0].trade_type} ${fmt(h.trades[0].strike)} exp {h.trades[0].expiry_date}
-                            {h.trades[0].premium_per_contract != null && ` @ ${fmtMoney(h.trades[0].premium_per_contract, h.currency)}`}
-                          </span>
-                        )}
-                      </div>
-                    ))}
-                  </div>
+                  <PortfolioDetail portfolio={expanded} />
                 )}
               </div>
             ))}
           </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// ─── Portfolio detail: summary, per-holding trade management, REAL-mode matching ──
+
+function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail }) {
+  const qc = useQueryClient()
+  const invalidate = () => {
+    qc.invalidateQueries({ queryKey: ['covered-call-portfolio', portfolio.id] })
+    qc.invalidateQueries({ queryKey: ['covered-call-summary', portfolio.id] })
+    qc.invalidateQueries({ queryKey: ['covered-call-unmatched', portfolio.id] })
+  }
+
+  const { data: summary } = useQuery({
+    queryKey: ['covered-call-summary', portfolio.id],
+    queryFn: () => getCoveredCallSummary(portfolio.id),
+  })
+  const { data: unmatched } = useQuery({
+    queryKey: ['covered-call-unmatched', portfolio.id],
+    queryFn: () => getUnmatchedTransactions(portfolio.id),
+    enabled: portfolio.mode === 'REAL',
+  })
+
+  return (
+    <div className="pb-4 pl-2 space-y-4">
+      {summary && (
+        <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2">
+          <span>Premium collected: <span className="font-semibold text-foreground">{fmtMoney(summary.total_premium_collected)}</span></span>
+          {summary.annualized_yield_on_capital_pct != null && (
+            <span>Annualized yield on capital: <span className="font-semibold text-foreground">{fmtPct(summary.annualized_yield_on_capital_pct)}</span></span>
+          )}
+          <span>Sold {summary.trade_counts.SELL_TO_OPEN ?? 0} · Rolled {summary.trade_counts.BUY_TO_CLOSE ?? 0} · Expired worthless {summary.trade_counts.EXPIRED_WORTHLESS ?? 0} · Assigned {summary.trade_counts.ASSIGNED ?? 0}</span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {portfolio.holdings.map(h => (
+          <HoldingRow key={h.id} portfolioId={portfolio.id} holding={h} onChanged={invalidate} />
+        ))}
+      </div>
+
+      {portfolio.mode === 'REAL' && unmatched && unmatched.length > 0 && (
+        <div className="border-t border-border pt-3 space-y-2">
+          <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">
+            Unmatched real transactions — link instead of re-entering by hand
+          </p>
+          {unmatched.map(u => (
+            <div key={u.transaction_id} className="flex items-center justify-between text-xs bg-muted/30 rounded px-3 py-2">
+              <span>
+                <span className="font-medium text-foreground">{u.underlying}</span>{' '}
+                {u.suggested_trade_type} ${fmt(u.strike)} exp {u.expiry_date} · {u.transaction_date} · {u.transaction_type}
+              </span>
+              <button
+                onClick={async () => { await matchTransaction(portfolio.id, u.holding_id, u.transaction_id); invalidate() }}
+                className="px-2 py-1 bg-primary text-white rounded text-xs font-medium hover:bg-primary/90"
+              >
+                Match
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HoldingRow({ portfolioId, holding, onChanged }: {
+  portfolioId: number; holding: CoveredCallHolding; onChanged: () => void
+}) {
+  const [action, setAction] = useState<'sell' | 'roll' | 'close' | null>(null)
+  const [strike, setStrike] = useState('')
+  const [expiry, setExpiry] = useState('')
+  const [premium, setPremium] = useState('')
+  const [closePremium, setClosePremium] = useState('')
+  const [submitting, setSubmitting] = useState(false)
+
+  const openLeg = holding.trades[0]?.trade_type === 'SELL_TO_OPEN' ? holding.trades[0] : null
+
+  const reset = () => { setAction(null); setStrike(''); setExpiry(''); setPremium(''); setClosePremium('') }
+
+  const submitSell = async () => {
+    if (!strike || !expiry) return
+    setSubmitting(true)
+    try {
+      await sellToOpen(portfolioId, holding.id, { strike: parseFloat(strike), expiry_date: expiry, premium_per_contract: premium ? parseFloat(premium) : undefined })
+      onChanged(); reset()
+    } finally { setSubmitting(false) }
+  }
+  const submitRoll = async () => {
+    if (!strike || !expiry) return
+    setSubmitting(true)
+    try {
+      await rollCoveredCall(portfolioId, holding.id, {
+        new_strike: parseFloat(strike), new_expiry_date: expiry,
+        new_premium_per_contract: premium ? parseFloat(premium) : undefined,
+        close_premium_per_contract: closePremium ? parseFloat(closePremium) : undefined,
+      })
+      onChanged(); reset()
+    } finally { setSubmitting(false) }
+  }
+  const submitClose = async (outcome: 'ASSIGNED' | 'EXPIRED_WORTHLESS') => {
+    setSubmitting(true)
+    try {
+      await closeCoveredCall(portfolioId, holding.id, { outcome })
+      onChanged(); reset()
+    } finally { setSubmitting(false) }
+  }
+
+  return (
+    <div className="text-sm border border-border/60 rounded-lg px-3 py-2 space-y-2">
+      <div className="flex items-center justify-between">
+        <span>
+          <TickerLink ticker={holding.ticker ?? ''} />
+          {holding.shares != null && <span className="ml-2 text-xs text-muted-foreground">{holding.shares} sh</span>}
+          {holding.status === 'CLOSED' && <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-accent text-muted-foreground">Closed</span>}
+        </span>
+        {openLeg ? (
+          <span className="text-xs text-muted-foreground tabular-nums">
+            Short ${fmt(openLeg.strike)} exp {openLeg.expiry_date}
+            {openLeg.premium_per_contract != null && ` @ ${fmtMoney(openLeg.premium_per_contract, holding.currency)}`}
+          </span>
+        ) : (
+          <span className="text-xs text-muted-foreground">No open call</span>
+        )}
+      </div>
+
+      {holding.status === 'ACTIVE' && (
+        <div className="flex items-center gap-2">
+          {!openLeg && action !== 'sell' && (
+            <button onClick={() => setAction('sell')} className="px-2 py-1 text-xs rounded bg-primary/10 text-primary hover:bg-primary/20">Sell to open</button>
+          )}
+          {openLeg && action !== 'roll' && (
+            <button onClick={() => setAction('roll')} className="px-2 py-1 text-xs rounded bg-primary/10 text-primary hover:bg-primary/20">Roll</button>
+          )}
+          {openLeg && action !== 'close' && (
+            <button onClick={() => setAction('close')} className="px-2 py-1 text-xs rounded bg-accent text-muted-foreground hover:bg-accent/70">Close</button>
+          )}
+        </div>
+      )}
+
+      {action === 'sell' && (
+        <div className="flex flex-wrap items-end gap-2 bg-muted/30 rounded p-2">
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">Strike</span>
+            <input type="number" value={strike} onChange={e => setStrike(e.target.value)} className="w-20 bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">Expiry</span>
+            <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} className="bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">Premium/contract</span>
+            <input type="number" value={premium} onChange={e => setPremium(e.target.value)} className="w-24 bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <button onClick={submitSell} disabled={submitting} className="px-2 py-1 bg-primary text-white rounded text-xs font-medium disabled:opacity-50">Confirm</button>
+          <button onClick={reset} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+        </div>
+      )}
+
+      {action === 'roll' && (
+        <div className="flex flex-wrap items-end gap-2 bg-muted/30 rounded p-2">
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">Buy-back cost/contract</span>
+            <input type="number" value={closePremium} onChange={e => setClosePremium(e.target.value)} className="w-24 bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">New strike</span>
+            <input type="number" value={strike} onChange={e => setStrike(e.target.value)} className="w-20 bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">New expiry</span>
+            <input type="date" value={expiry} onChange={e => setExpiry(e.target.value)} className="bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <label className="flex flex-col gap-0.5"><span className="text-xs text-muted-foreground">New premium/contract</span>
+            <input type="number" value={premium} onChange={e => setPremium(e.target.value)} className="w-24 bg-background border border-border rounded px-1.5 py-1 text-xs" /></label>
+          <button onClick={submitRoll} disabled={submitting} className="px-2 py-1 bg-primary text-white rounded text-xs font-medium disabled:opacity-50">Confirm roll</button>
+          <button onClick={reset} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
+        </div>
+      )}
+
+      {action === 'close' && (
+        <div className="flex items-center gap-2 bg-muted/30 rounded p-2">
+          <button onClick={() => submitClose('EXPIRED_WORTHLESS')} disabled={submitting} className="px-2 py-1 bg-emerald-600 text-white rounded text-xs font-medium disabled:opacity-50">Expired worthless</button>
+          <button onClick={() => submitClose('ASSIGNED')} disabled={submitting} className="px-2 py-1 bg-amber-600 text-white rounded text-xs font-medium disabled:opacity-50">Assigned</button>
+          <button onClick={reset} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
         </div>
       )}
     </div>

@@ -10,6 +10,7 @@ GET  /api/covered-call-portfolio/{id}              – one portfolio + its holdi
 """
 import logging
 import threading
+import uuid
 from datetime import date
 from typing import Optional
 
@@ -47,6 +48,35 @@ class AdoptRequest(BaseModel):
     mode: str  # SIMULATED | REAL
     account_id: Optional[int] = None       # REAL mode only
     picks: list[dict]                      # the propose job's result "picks" list (or a subset)
+
+
+class SellToOpenRequest(BaseModel):
+    strike: float
+    expiry_date: date
+    contracts: int = 1
+    premium_per_contract: Optional[float] = None
+    trade_date: Optional[date] = None   # defaults to today in the handler
+    notes: Optional[str] = None
+
+
+class RollRequest(BaseModel):
+    close_premium_per_contract: Optional[float] = None   # cost to buy back the expiring leg
+    new_strike: float
+    new_expiry_date: date
+    new_premium_per_contract: Optional[float] = None
+    contracts: Optional[int] = None   # defaults to the closed leg's contract count
+    trade_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class CloseRequest(BaseModel):
+    outcome: str  # ASSIGNED | EXPIRED_WORTHLESS
+    trade_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class MatchTransactionRequest(BaseModel):
+    transaction_id: int
 
 
 def _spawn_propose(req: ProposeRequest) -> dict:
@@ -202,7 +232,7 @@ def get_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
         trades = (
             db.query(CoveredCallTrade)
             .filter(CoveredCallTrade.holding_id == h.id)
-            .order_by(CoveredCallTrade.trade_date.desc())
+            .order_by(CoveredCallTrade.trade_date.desc(), CoveredCallTrade.id.desc())
             .all()
         )
         holdings_out.append({
@@ -236,3 +266,327 @@ def get_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
         "account_id": p.account_id, "created_at": p.created_at.isoformat() if p.created_at else None,
         "holdings": holdings_out,
     }
+
+
+# ── Trade management: sell-to-open, roll, close ────────────────────────────────
+#
+# A "roll chain" is a sequence of trades sharing roll_chain_id: it starts with a
+# SELL_TO_OPEN, may continue through any number of (BUY_TO_CLOSE, SELL_TO_OPEN) roll
+# pairs, and ends in a terminal BUY_TO_CLOSE (closed outright, no replacement),
+# ASSIGNED, or EXPIRED_WORTHLESS. "The open leg" for a holding is its most recent
+# trade IF that trade is a SELL_TO_OPEN — any other most-recent trade_type means the
+# holding currently has no call sold against it.
+
+def _get_holding(db: Session, portfolio_id: int, holding_id: int):
+    from app.models.covered_call import CoveredCallHolding
+    h = (
+        db.query(CoveredCallHolding)
+        .filter(CoveredCallHolding.id == holding_id, CoveredCallHolding.portfolio_id == portfolio_id)
+        .first()
+    )
+    if h is None:
+        raise HTTPException(status_code=404, detail="Holding not found in this portfolio")
+    return h
+
+
+def _get_open_leg(db: Session, holding_id: int):
+    from app.models.covered_call import CoveredCallTrade
+    latest = (
+        db.query(CoveredCallTrade)
+        .filter(CoveredCallTrade.holding_id == holding_id)
+        .order_by(CoveredCallTrade.trade_date.desc(), CoveredCallTrade.id.desc())
+        .first()
+    )
+    if latest is not None and latest.trade_type == "SELL_TO_OPEN":
+        return latest
+    return None
+
+
+@router.post("/{portfolio_id}/holdings/{holding_id}/sell-to-open")
+def sell_to_open(portfolio_id: int, holding_id: int, body: SellToOpenRequest, db: Session = Depends(get_db)):
+    """Start a new roll chain — sell a call against a holding with no currently open leg."""
+    from app.models.covered_call import CoveredCallTrade
+
+    _get_holding(db, portfolio_id, holding_id)
+    if _get_open_leg(db, holding_id) is not None:
+        raise HTTPException(status_code=409, detail="This holding already has an open call — use /roll or /close instead")
+
+    trade = CoveredCallTrade(
+        holding_id=holding_id, trade_type="SELL_TO_OPEN",
+        strike=body.strike, expiry_date=body.expiry_date, contracts=body.contracts,
+        premium_per_contract=body.premium_per_contract,
+        trade_date=body.trade_date or date.today(),
+        roll_chain_id=str(uuid.uuid4()), notes=body.notes,
+    )
+    db.add(trade)
+    db.commit()
+    db.refresh(trade)
+    return {"id": trade.id, "roll_chain_id": trade.roll_chain_id}
+
+
+@router.post("/{portfolio_id}/holdings/{holding_id}/roll")
+def roll(portfolio_id: int, holding_id: int, body: RollRequest, db: Session = Depends(get_db)):
+    """Close the current open leg and immediately open the next one, same roll chain."""
+    from app.models.covered_call import CoveredCallTrade
+
+    _get_holding(db, portfolio_id, holding_id)
+    open_leg = _get_open_leg(db, holding_id)
+    if open_leg is None:
+        raise HTTPException(status_code=409, detail="No open call on this holding to roll — use /sell-to-open first")
+
+    trade_date = body.trade_date or date.today()
+    chain_id = open_leg.roll_chain_id or str(uuid.uuid4())
+
+    close_trade = CoveredCallTrade(
+        holding_id=holding_id, trade_type="BUY_TO_CLOSE",
+        strike=open_leg.strike, expiry_date=open_leg.expiry_date, contracts=open_leg.contracts,
+        premium_per_contract=body.close_premium_per_contract,
+        trade_date=trade_date, roll_chain_id=chain_id, notes=body.notes,
+    )
+    open_trade = CoveredCallTrade(
+        holding_id=holding_id, trade_type="SELL_TO_OPEN",
+        strike=body.new_strike, expiry_date=body.new_expiry_date,
+        contracts=body.contracts or open_leg.contracts,
+        premium_per_contract=body.new_premium_per_contract,
+        trade_date=trade_date, roll_chain_id=chain_id,
+    )
+    db.add(close_trade)
+    db.add(open_trade)
+    db.commit()
+    db.refresh(close_trade)
+    db.refresh(open_trade)
+    return {"closed_id": close_trade.id, "opened_id": open_trade.id, "roll_chain_id": chain_id}
+
+
+@router.post("/{portfolio_id}/holdings/{holding_id}/close")
+def close_leg(portfolio_id: int, holding_id: int, body: CloseRequest, db: Session = Depends(get_db)):
+    """Terminal outcome for the current open leg — assigned (shares called away) or
+    expired worthless (kept the shares, free to sell a new call). No new leg opened."""
+    from app.models.covered_call import CoveredCallTrade
+
+    holding = _get_holding(db, portfolio_id, holding_id)
+    if body.outcome not in ("ASSIGNED", "EXPIRED_WORTHLESS"):
+        raise HTTPException(status_code=400, detail="outcome must be ASSIGNED or EXPIRED_WORTHLESS")
+
+    open_leg = _get_open_leg(db, holding_id)
+    if open_leg is None:
+        raise HTTPException(status_code=409, detail="No open call on this holding to close")
+
+    trade_date = body.trade_date or date.today()
+    trade = CoveredCallTrade(
+        holding_id=holding_id, trade_type=body.outcome,
+        strike=open_leg.strike, expiry_date=open_leg.expiry_date, contracts=open_leg.contracts,
+        premium_per_contract=None, trade_date=trade_date,
+        roll_chain_id=open_leg.roll_chain_id, notes=body.notes,
+    )
+    db.add(trade)
+
+    # SIMULATED assignment means the shares are actually sold at strike — the holding's
+    # position is gone. (EXPIRED_WORTHLESS keeps the shares; nothing to change.)
+    if body.outcome == "ASSIGNED" and holding.shares is not None:
+        holding.status = "CLOSED"
+        holding.closed_at = trade_date
+
+    db.commit()
+    db.refresh(trade)
+    return {"id": trade.id, "holding_status": holding.status}
+
+
+@router.get("/{portfolio_id}/summary")
+def get_portfolio_summary(portfolio_id: int, db: Session = Depends(get_db)):
+    """Premium collected (per holding + portfolio total) and trade-outcome counts.
+    Annualized yield-on-capital is computed only for SIMULATED holdings, where a cost
+    basis is actually tracked here — REAL holdings' cost basis lives in the real ledger,
+    not duplicated in this schema (see Stage 2 real-transaction matching)."""
+    from app.models.covered_call import CoveredCallPortfolio, CoveredCallHolding, CoveredCallTrade
+    from app.models.master import Security
+
+    p = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.id == portfolio_id).first()
+    if p is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    holdings = db.query(CoveredCallHolding).filter(CoveredCallHolding.portfolio_id == p.id).all()
+
+    per_holding = []
+    total_premium = 0.0
+    total_cost_basis = 0.0
+    earliest_trade: Optional[date] = None
+    counts = {"SELL_TO_OPEN": 0, "BUY_TO_CLOSE": 0, "ASSIGNED": 0, "EXPIRED_WORTHLESS": 0}
+
+    for h in holdings:
+        security = db.query(Security).filter(Security.id == h.security_id).first()
+        trades = db.query(CoveredCallTrade).filter(CoveredCallTrade.holding_id == h.id).all()
+        premium = 0.0
+        for t in trades:
+            counts[t.trade_type] = counts.get(t.trade_type, 0) + 1
+            if t.premium_per_contract is None:
+                continue
+            amt = float(t.premium_per_contract) * t.contracts * 100
+            if t.trade_type == "SELL_TO_OPEN":
+                premium += amt
+            elif t.trade_type == "BUY_TO_CLOSE":
+                premium -= amt
+            if earliest_trade is None or (t.trade_date and t.trade_date < earliest_trade):
+                earliest_trade = t.trade_date
+
+        total_premium += premium
+        if h.shares is not None and h.cost_basis_per_share is not None:
+            total_cost_basis += float(h.shares) * float(h.cost_basis_per_share)
+
+        per_holding.append({
+            "holding_id": h.id, "ticker": security.ticker if security else None,
+            "premium_collected": round(premium, 2), "status": h.status,
+        })
+
+    days = (date.today() - earliest_trade).days if earliest_trade else 0
+    annualized_yield_pct = (
+        round(total_premium / total_cost_basis * (365 / days) * 100, 2)
+        if total_cost_basis > 0 and days > 0 else None
+    )
+
+    return {
+        "portfolio_id": p.id,
+        "total_premium_collected": round(total_premium, 2),
+        "total_cost_basis": round(total_cost_basis, 2) if total_cost_basis > 0 else None,
+        "annualized_yield_on_capital_pct": annualized_yield_pct,
+        "trade_counts": counts,
+        "per_holding": per_holding,
+    }
+
+
+# ── REAL mode: match imported option transactions to a holding ────────────────
+#
+# Real transaction_type strings this app actually imports for options (see
+# ibkr_flex.py/ibkr_trades.py): OPTION_SELL, OPTION_BUY, OPTION_EXPIRY,
+# OPTION_ASSIGNMENT, OPTION_EXERCISE. None of these match CoveredCallTrade's own
+# vocabulary (SELL_TO_OPEN/BUY_TO_CLOSE/ASSIGNED/EXPIRED_WORTHLESS), so matching
+# translates one to the other rather than reusing the string directly.
+_REAL_TYPE_MAP = {
+    "OPTION_SELL": "SELL_TO_OPEN",
+    "OPTION_BUY": "BUY_TO_CLOSE",
+    "OPTION_ASSIGNMENT": "ASSIGNED",
+    "OPTION_EXPIRY": "EXPIRED_WORTHLESS",
+}
+
+
+@router.get("/{portfolio_id}/unmatched-transactions")
+def unmatched_transactions(portfolio_id: int, db: Session = Depends(get_db)):
+    """Real option transactions on this portfolio's account, for underlyings this
+    portfolio holds, that aren't yet linked to a CoveredCallTrade — candidates to match
+    via POST .../match-transaction instead of re-entering the trade by hand."""
+    from app.models.covered_call import CoveredCallPortfolio, CoveredCallHolding, CoveredCallTrade
+    from app.models.master import Security
+    from app.models.transactions import Transaction
+    from app.services.price_service import parse_option_ticker
+
+    p = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.id == portfolio_id).first()
+    if p is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+    if p.mode != "REAL" or not p.account_id:
+        return []
+
+    holdings = db.query(CoveredCallHolding).filter(CoveredCallHolding.portfolio_id == p.id).all()
+    tickers_by_underlying = {}
+    for h in holdings:
+        sec = db.query(Security).filter(Security.id == h.security_id).first()
+        if sec:
+            tickers_by_underlying[sec.ticker.upper()] = (h.id, sec.ticker)
+
+    already_linked = {
+        r[0] for r in db.query(CoveredCallTrade.real_transaction_id)
+        .filter(CoveredCallTrade.real_transaction_id.isnot(None)).all()
+    }
+
+    txns = (
+        db.query(Transaction)
+        .filter(
+            Transaction.account_id == p.account_id,
+            Transaction.transaction_type.in_(list(_REAL_TYPE_MAP.keys())),
+        )
+        .order_by(Transaction.transaction_date.desc())
+        .all()
+    )
+
+    out = []
+    for t in txns:
+        if t.id in already_linked or t.security_id is None:
+            continue
+        sec = db.query(Security).filter(Security.id == t.security_id).first()
+        if sec is None:
+            continue
+        parsed = parse_option_ticker(sec.ticker, sec)
+        if not parsed or parsed["underlying"].upper() not in tickers_by_underlying:
+            continue
+        holding_id, holding_ticker = tickers_by_underlying[parsed["underlying"].upper()]
+        out.append({
+            "transaction_id": t.id,
+            "holding_id": holding_id,
+            "underlying": holding_ticker,
+            "transaction_type": t.transaction_type,
+            "suggested_trade_type": _REAL_TYPE_MAP[t.transaction_type],
+            "option_type": parsed["option_type"],
+            "strike": parsed["strike"],
+            "expiry_date": parsed["expiry"].isoformat(),
+            "contracts": abs(float(t.quantity)) if t.quantity is not None else None,
+            "transaction_date": t.transaction_date.isoformat() if t.transaction_date else None,
+            "transaction_amount": float(t.transaction_amount) if t.transaction_amount is not None else None,
+        })
+    return out
+
+
+@router.post("/{portfolio_id}/holdings/{holding_id}/match-transaction")
+def match_transaction(portfolio_id: int, holding_id: int, body: MatchTransactionRequest, db: Session = Depends(get_db)):
+    """Create a CoveredCallTrade from a real imported option Transaction instead of the
+    user re-entering it by hand — strike/expiry/contracts/premium all read from the real
+    row so this can never drift from the actual ledger."""
+    from app.models.covered_call import CoveredCallTrade
+    from app.models.master import Security
+    from app.models.transactions import Transaction
+    from app.services.price_service import parse_option_ticker
+
+    holding = _get_holding(db, portfolio_id, holding_id)
+    txn = db.query(Transaction).filter(Transaction.id == body.transaction_id).first()
+    if txn is None:
+        raise HTTPException(status_code=404, detail="Transaction not found")
+    if txn.transaction_type not in _REAL_TYPE_MAP:
+        raise HTTPException(status_code=400, detail=f"Unsupported transaction_type: {txn.transaction_type}")
+
+    already = db.query(CoveredCallTrade).filter(CoveredCallTrade.real_transaction_id == txn.id).first()
+    if already is not None:
+        raise HTTPException(status_code=409, detail="This transaction is already linked to a trade")
+
+    sec = db.query(Security).filter(Security.id == txn.security_id).first()
+    parsed = parse_option_ticker(sec.ticker, sec) if sec else None
+    if not parsed:
+        raise HTTPException(status_code=400, detail="Could not parse option details from this transaction's security")
+
+    trade_type = _REAL_TYPE_MAP[txn.transaction_type]
+    contracts = int(abs(txn.quantity)) if txn.quantity is not None else 1
+
+    premium_per_contract = None
+    if trade_type in ("SELL_TO_OPEN", "BUY_TO_CLOSE"):
+        amt = txn.transaction_amount if txn.transaction_amount is not None else txn.cad_amount
+        if amt is not None and contracts > 0:
+            premium_per_contract = abs(float(amt)) / contracts / 100
+
+    if trade_type == "SELL_TO_OPEN":
+        chain_id = str(uuid.uuid4())
+    else:
+        open_leg = _get_open_leg(db, holding_id)
+        chain_id = open_leg.roll_chain_id if open_leg else str(uuid.uuid4())
+
+    trade = CoveredCallTrade(
+        holding_id=holding_id, trade_type=trade_type,
+        strike=parsed["strike"], expiry_date=parsed["expiry"], contracts=contracts,
+        premium_per_contract=premium_per_contract, trade_date=txn.transaction_date,
+        roll_chain_id=chain_id, real_transaction_id=txn.id,
+    )
+    db.add(trade)
+
+    if trade_type == "ASSIGNED":
+        holding.status = "CLOSED"
+        holding.closed_at = txn.transaction_date
+
+    db.commit()
+    db.refresh(trade)
+    return {"id": trade.id, "trade_type": trade.trade_type, "roll_chain_id": chain_id}

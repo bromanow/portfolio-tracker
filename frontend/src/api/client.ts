@@ -1555,6 +1555,51 @@ export const listCoveredCallPortfolios = () =>
 export const getCoveredCallPortfolio = (id: number) =>
   api.get<CoveredCallPortfolioDetail>(`/covered-call-portfolio/${id}`).then(r => r.data)
 
+export const sellToOpen = (portfolioId: number, holdingId: number, data: {
+  strike: number; expiry_date: string; contracts?: number; premium_per_contract?: number; trade_date?: string; notes?: string
+}) => api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/sell-to-open`, data).then(r => r.data)
+
+export const rollCoveredCall = (portfolioId: number, holdingId: number, data: {
+  close_premium_per_contract?: number; new_strike: number; new_expiry_date: string
+  new_premium_per_contract?: number; contracts?: number; trade_date?: string; notes?: string
+}) => api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/roll`, data).then(r => r.data)
+
+export const closeCoveredCall = (portfolioId: number, holdingId: number, data: {
+  outcome: 'ASSIGNED' | 'EXPIRED_WORTHLESS'; trade_date?: string; notes?: string
+}) => api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/close`, data).then(r => r.data)
+
+export interface CoveredCallSummary {
+  portfolio_id: number
+  total_premium_collected: number
+  total_cost_basis: number | null
+  annualized_yield_on_capital_pct: number | null
+  trade_counts: Record<string, number>
+  per_holding: { holding_id: number; ticker: string | null; premium_collected: number; status: string }[]
+}
+
+export const getCoveredCallSummary = (portfolioId: number) =>
+  api.get<CoveredCallSummary>(`/covered-call-portfolio/${portfolioId}/summary`).then(r => r.data)
+
+export interface UnmatchedTransaction {
+  transaction_id: number
+  holding_id: number
+  underlying: string
+  transaction_type: string
+  suggested_trade_type: string
+  option_type: string
+  strike: number
+  expiry_date: string
+  contracts: number | null
+  transaction_date: string | null
+  transaction_amount: number | null
+}
+
+export const getUnmatchedTransactions = (portfolioId: number) =>
+  api.get<UnmatchedTransaction[]>(`/covered-call-portfolio/${portfolioId}/unmatched-transactions`).then(r => r.data)
+
+export const matchTransaction = (portfolioId: number, holdingId: number, transactionId: number) =>
+  api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/match-transaction`, { transaction_id: transactionId }).then(r => r.data)
+
 // ── Plaid ─────────────────────────────────────────────────────────────────────
 export interface PlaidItem {
   id: number

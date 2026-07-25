@@ -11,6 +11,7 @@ scoring — this module only adds candidate-universe scoping and the "pick the b
 per ticker, then the best N/M tickers" selection on top.
 """
 import logging
+import statistics
 from dataclasses import dataclass
 from typing import Optional
 
@@ -47,6 +48,11 @@ class BuildParams:
     num_ca: int = 5
     num_us: int = 10
     extra_tickers: Optional[list[str]] = None   # user-added candidates (from the retired watchlist)
+    # Step 2 of the two-step flow: an explicit, user-approved ticker list from /screen.
+    # When set, build_portfolio scans ONLY these tickers (ignores the curated universe and
+    # extra_tickers) and returns every one of them (num_ca/num_us caps don't apply — the
+    # approved list IS the chosen set).
+    tickers: Optional[list[str]] = None
 
     def to_scan_params(self) -> ScanParams:
         return ScanParams(
@@ -103,16 +109,23 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
     """
     scan_params = params.to_scan_params()
 
-    ca_universe = list(CA_CANDIDATES)
-    us_universe = list(US_CANDIDATES)
-    if params.extra_tickers:
-        for t in params.extra_tickers:
-            tu = t.strip().upper()
-            if tu.endswith(".TO") or tu.endswith(".V"):
-                if tu not in ca_universe:
-                    ca_universe.append(tu)
-            elif tu and tu not in us_universe:
-                us_universe.append(tu)
+    if params.tickers:
+        # Step 2 of the two-step flow — an explicit approved list, no curated defaults.
+        ca_universe = [t for t in params.tickers if t.upper().endswith(".TO") or t.upper().endswith(".V")]
+        us_universe = [t for t in params.tickers if t not in ca_universe]
+        num_ca, num_us = len(ca_universe), len(us_universe)
+    else:
+        ca_universe = list(CA_CANDIDATES)
+        us_universe = list(US_CANDIDATES)
+        if params.extra_tickers:
+            for t in params.extra_tickers:
+                tu = t.strip().upper()
+                if tu.endswith(".TO") or tu.endswith(".V"):
+                    if tu not in ca_universe:
+                        ca_universe.append(tu)
+                elif tu and tu not in us_universe:
+                    us_universe.append(tu)
+        num_ca, num_us = params.num_ca, params.num_us
 
     total = len(ca_universe) + len(us_universe)
     done = 0
@@ -135,8 +148,8 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
         key=lambda o: -o["score"],
     )
 
-    ca_picks = ca_best[: params.num_ca]
-    us_picks = us_best[: params.num_us]
+    ca_picks = ca_best[:num_ca]
+    us_picks = us_best[:num_us]
 
     def _enrich(opp: dict) -> dict:
         why = explain_score(
@@ -168,9 +181,116 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
         "errors": ca_errors + us_errors,
         "data_source": ca_meta["data_source"],
         "shortfall": {
-            "ca": params.num_ca - len(ca_picks),
-            "us": params.num_us - len(us_picks),
+            "ca": num_ca - len(ca_picks),
+            "us": num_us - len(us_picks),
         },
+    }
+
+
+def _aggregate_by_ticker(opportunities: list[dict], min_annual_yield_pct: float,
+                          min_delta: Optional[float], max_delta: Optional[float],
+                          min_iv_pct: Optional[float]) -> list[dict]:
+    """Step 1 of the two-step flow: group ALL of a ticker's qualifying contracts (not just
+    its single best) into a stock-level suitability summary — best/median score across its
+    own chain, total open interest across strikes (liquidity depth, not one strike's OI),
+    and how many contracts even qualify at all (0 means an illiquid/no-chain name). This is
+    what lets you judge "is this a consistently good covered-call name" before locking into
+    one specific strike/expiry, which build_portfolio (Step 2) does separately."""
+    by_ticker: dict[str, list[dict]] = {}
+    for opp in opportunities:
+        if opp["annual_yield_pct"] < min_annual_yield_pct:
+            continue
+        if min_delta is not None or max_delta is not None:
+            delta = opp.get("delta")
+            if delta is None:
+                continue
+            if min_delta is not None and delta < min_delta:
+                continue
+            if max_delta is not None and delta > max_delta:
+                continue
+        if min_iv_pct is not None:
+            iv = opp.get("iv_pct")
+            if iv is None or iv < min_iv_pct:
+                continue
+        by_ticker.setdefault(opp["ticker"], []).append(opp)
+
+    rows = []
+    for ticker, contracts in by_ticker.items():
+        best = max(contracts, key=lambda o: o["score"])
+        scores = [c["score"] for c in contracts]
+        rows.append({
+            "ticker": ticker,
+            "company_name": best.get("company_name"),
+            "currency": best.get("currency"),
+            "current_price": best.get("current_price"),
+            "dividend_yield": best.get("dividend_yield"),
+            "avg_stock_volume": best.get("avg_stock_volume"),
+            "contracts_found": len(contracts),
+            "total_open_interest": sum(c.get("open_interest") or 0 for c in contracts),
+            "best_score": best["score"],
+            "median_score": round(statistics.median(scores), 4),
+            "best_annual_yield_pct": best["annual_yield_pct"],
+            "best_iv_pct": best.get("iv_pct"),
+            "best_iv_hv_ratio": best.get("iv_hv_ratio"),
+            "best_dte": best["dte"],
+            "best_strike": best["strike"],
+            "best_expiry_date": best["expiry_date"],
+            "best_recommendation": best.get("recommendation"),
+        })
+    return rows
+
+
+def screen_stock_universe(db: Session, params: BuildParams, progress_cb=None) -> dict:
+    """Step 1: rank the FULL CA/US candidate universe by stock-level covered-call
+    suitability (not tied to any one strike/expiry) so you can review and hand-pick which
+    names you actually want, before Step 2 (build_portfolio) finds each one's best contract.
+    Unlike build_portfolio, this returns EVERY qualifying ticker — no num_ca/num_us cap."""
+    scan_params = params.to_scan_params()
+
+    ca_universe = list(CA_CANDIDATES)
+    us_universe = list(US_CANDIDATES)
+    if params.extra_tickers:
+        for t in params.extra_tickers:
+            tu = t.strip().upper()
+            if tu.endswith(".TO") or tu.endswith(".V"):
+                if tu not in ca_universe:
+                    ca_universe.append(tu)
+            elif tu and tu not in us_universe:
+                us_universe.append(tu)
+
+    total = len(ca_universe) + len(us_universe)
+    done = 0
+
+    def _cb(i, n, ticker):
+        nonlocal done
+        done += 1
+        if progress_cb:
+            progress_cb(done, total, ticker)
+
+    ca_opps, ca_errors, ca_meta = scan_tickers(ca_universe, db, scan_params, progress_cb=_cb)
+    us_opps, us_errors, us_meta = scan_tickers(us_universe, db, scan_params, progress_cb=_cb)
+
+    ca_rows = sorted(
+        _aggregate_by_ticker(ca_opps, params.min_annual_yield_pct, params.min_delta, params.max_delta, params.min_iv_pct),
+        key=lambda r: -r["best_score"],
+    )
+    us_rows = sorted(
+        _aggregate_by_ticker(us_opps, params.min_annual_yield_pct, params.min_delta, params.max_delta, params.min_iv_pct),
+        key=lambda r: -r["best_score"],
+    )
+
+    logger.info(
+        "screen_stock_universe: %d CA candidates → %d qualify, %d US candidates → %d qualify",
+        len(ca_universe), len(ca_rows), len(us_universe), len(us_rows),
+    )
+
+    return {
+        "ca": ca_rows,
+        "us": us_rows,
+        "ca_candidates_scanned": len(ca_universe),
+        "us_candidates_scanned": len(us_universe),
+        "errors": ca_errors + us_errors,
+        "data_source": ca_meta["data_source"],
     }
 
 

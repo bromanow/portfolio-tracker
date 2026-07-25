@@ -1484,6 +1484,9 @@ export interface ProposeParams {
   num_ca?: number
   num_us?: number
   extra_tickers?: string[]
+  /** Step 2 of the two-step flow — an explicit ticker list approved in Step 1 (screen).
+   *  When set, num_ca/num_us/extra_tickers are ignored; only these tickers are scanned. */
+  tickers?: string[]
 }
 
 export interface ProposeResult {
@@ -1496,6 +1499,43 @@ export interface ProposeResult {
   data_source: string
   shortfall: { ca: number; us: number }
 }
+
+export interface CoveredCallScreenRow {
+  ticker: string
+  company_name: string | null
+  currency: string | null
+  current_price: number | null
+  dividend_yield: number | null
+  avg_stock_volume: number | null
+  contracts_found: number
+  total_open_interest: number
+  best_score: number
+  median_score: number
+  best_annual_yield_pct: number
+  best_iv_pct: number | null
+  best_iv_hv_ratio: number | null
+  best_dte: number
+  best_strike: number
+  best_expiry_date: string
+  best_recommendation: string | null
+}
+
+export interface ScreenResult {
+  ca: CoveredCallScreenRow[]
+  us: CoveredCallScreenRow[]
+  ca_candidates_scanned: number
+  us_candidates_scanned: number
+  errors: string[]
+  data_source: string
+}
+
+export const screenStockUniverse = (params?: ProposeParams) =>
+  api.post<{ job_id: string; status: string; already_running: boolean }>('/covered-call-portfolio/screen', params ?? {}).then(r => r.data)
+
+export const getScreenJob = (jobId: string) =>
+  api.get<{ id: string; status: string; result?: ScreenResult; error?: string; progress?: { stage: string; source: string | null; done: number; total: number } }>(
+    `/covered-call-portfolio/screen/${jobId}`
+  ).then(r => r.data)
 
 export interface CoveredCallTrade {
   id: number

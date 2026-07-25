@@ -1,8 +1,13 @@
 """
 Covered Call Portfolio Builder & Manager.
 
-POST /api/covered-call-portfolio/propose   – background job: score the CA/US candidate
-                                              universes, return top N/M picks
+Two-step selection flow:
+POST /api/covered-call-portfolio/screen    – Step 1: background job, ranks the FULL CA/US
+                                              candidate universe by stock-level suitability
+GET  /api/covered-call-portfolio/screen/{job_id}  – poll a screen job
+POST /api/covered-call-portfolio/propose   – Step 2: background job, finds the best contract
+                                              per ticker (pass `tickers` from Step 1's picks,
+                                              or omit it to scan the curated universe directly)
 GET  /api/covered-call-portfolio/propose/{job_id} – poll a propose job
 POST /api/covered-call-portfolio/{id}/adopt        – adopt a PROPOSED set of picks
 GET  /api/covered-call-portfolio                   – list portfolios
@@ -41,6 +46,9 @@ class ProposeRequest(BaseModel):
     num_ca: int = 5
     num_us: int = 10
     extra_tickers: Optional[list[str]] = None
+    # Step 2 of the two-step flow — an explicit ticker list approved in /screen. When set,
+    # only these tickers are scanned (num_ca/num_us/extra_tickers are ignored).
+    tickers: Optional[list[str]] = None
 
 
 class AdoptRequest(BaseModel):
@@ -99,6 +107,7 @@ def _spawn_propose(req: ProposeRequest) -> dict:
                 min_annual_yield_pct=req.min_annual_yield_pct,
                 min_delta=req.min_delta, max_delta=req.max_delta, min_iv_pct=req.min_iv_pct,
                 num_ca=req.num_ca, num_us=req.num_us, extra_tickers=req.extra_tickers,
+                tickers=req.tickers,
             )
 
             def _progress(done, total, ticker):
@@ -125,6 +134,61 @@ def propose_portfolio(body: ProposeRequest = None):
 
 @router.get("/propose/{job_id}")
 def get_propose_job(job_id: str):
+    job = background_jobs.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _spawn_screen(req: ProposeRequest) -> dict:
+    name = "covered_call_portfolio_screen"
+    if background_jobs.is_running(name):
+        running = [j for j in background_jobs.list_jobs() if j["name"] == name and j["status"] == "running"]
+        return {"job_id": running[0]["id"] if running else None, "status": "already_running", "already_running": True}
+
+    job_id = background_jobs.start_job(name)
+
+    def _run():
+        try:
+            from app.services.covered_call_portfolio_service import BuildParams, screen_stock_universe
+
+            params = BuildParams(
+                min_dte=req.min_dte, max_dte=req.max_dte,
+                min_otm_pct=req.min_otm_pct, max_otm_pct=req.max_otm_pct,
+                min_option_oi=req.min_option_oi, min_option_vol=req.min_option_vol,
+                min_avg_stock_vol=req.min_avg_stock_vol, min_div_yield=req.min_div_yield,
+                min_annual_yield_pct=req.min_annual_yield_pct,
+                min_delta=req.min_delta, max_delta=req.max_delta, min_iv_pct=req.min_iv_pct,
+                extra_tickers=req.extra_tickers,
+            )
+
+            def _progress(done, total, ticker):
+                background_jobs.update_progress(job_id, {
+                    "stage": "screening", "source": ticker, "done": done, "total": total,
+                })
+
+            with SessionLocal() as db:
+                result = screen_stock_universe(db, params, progress_cb=_progress)
+            background_jobs.finish_job(job_id, result)
+        except Exception as exc:
+            logger.exception("Covered-call stock screen job failed")
+            background_jobs.fail_job(job_id, str(exc))
+
+    threading.Thread(target=_run, daemon=True).start()
+    return {"job_id": job_id, "status": "started", "already_running": False}
+
+
+@router.post("/screen")
+def screen_stocks(body: ProposeRequest = None):
+    """Step 1 of the two-step flow: rank the FULL CA/US candidate universe by stock-level
+    covered-call suitability (not a specific contract). Returns a job_id to poll — use the
+    result's tickers as the `tickers` field on /propose (Step 2) to find each one's best
+    contract."""
+    return _spawn_screen(body or ProposeRequest())
+
+
+@router.get("/screen/{job_id}")
+def get_screen_job(job_id: str):
     job = background_jobs.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail="Job not found")

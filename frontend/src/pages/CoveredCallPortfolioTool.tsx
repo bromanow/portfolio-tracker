@@ -2,12 +2,16 @@ import { useState, useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   proposeCoveredCallPortfolio, getProposeJob, adoptCoveredCallPortfolio,
+  screenStockUniverse, getScreenJob,
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
   sellToOpen, rollCoveredCall, closeCoveredCall, getCoveredCallSummary,
   getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar,
 } from '../api/client'
-import type { ProposeParams, ProposeResult, CoveredCallPick, Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry } from '../api/client'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react'
+import type {
+  ProposeParams, ProposeResult, ScreenResult, CoveredCallScreenRow, CoveredCallPick,
+  Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry,
+} from '../api/client'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Sparkles, Search } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -68,8 +72,6 @@ interface FormState {
   min_delta: number   // 0 = no floor
   max_delta: number   // 1 = no cap (delta can't exceed 1)
   min_iv_pct: number  // 0 = no floor
-  num_ca: number
-  num_us: number
 }
 
 const DEFAULT_FORM: FormState = {
@@ -77,7 +79,6 @@ const DEFAULT_FORM: FormState = {
   min_option_oi: 50, min_option_vol: 3, min_avg_stock_vol: 250_000,
   min_div_yield: 0, min_annual_yield_pct: 0,
   min_delta: 0, max_delta: 1, min_iv_pct: 0,
-  num_ca: 5, num_us: 10,
 }
 
 function NumField({ label, value, onChange, step = 1, title }: {
@@ -121,12 +122,36 @@ function useProposeJob() {
   return { jobId, setJobId, job }
 }
 
+function useScreenJob() {
+  const [jobId, setJobId] = useState<string | null>(null)
+  const [job, setJob] = useState<{ status: string; result?: ScreenResult; error?: string; progress?: any } | undefined>()
+
+  useEffect(() => {
+    if (!jobId) { setJob(undefined); return }
+    let cancelled = false
+    let timer: ReturnType<typeof setTimeout>
+    const poll = async () => {
+      let data
+      try { data = await getScreenJob(jobId) } catch { if (!cancelled) timer = setTimeout(poll, 1500); return }
+      if (cancelled) return
+      setJob(data)
+      if (data.status === 'running') timer = setTimeout(poll, 1500)
+    }
+    poll()
+    return () => { cancelled = true; clearTimeout(timer) }
+  }, [jobId])
+
+  return { jobId, setJobId, job }
+}
+
 // ─── Main tool ────────────────────────────────────────────────────────────────
 
 export default function CoveredCallPortfolioTool() {
   const qc = useQueryClient()
   const [form, setForm] = useState<FormState>(DEFAULT_FORM)
   const [extraTickers, setExtraTickers] = useState('')
+  const { jobId: screenJobId, setJobId: setScreenJobId, job: screenJob } = useScreenJob()
+  const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set())
   const { jobId, setJobId, job } = useProposeJob()
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [mode, setMode] = useState<'SIMULATED' | 'REAL'>('SIMULATED')
@@ -150,19 +175,40 @@ export default function CoveredCallPortfolioTool() {
   const { data: calendarEntries } = useQuery({ queryKey: ['covered-call-calendar'], queryFn: getCoveredCallCalendar })
   const atRiskCount = (calendarEntries ?? []).filter(e => e.dte <= 7 || e.itm).length
 
+  const screenResult = screenJob?.status === 'done' ? screenJob.result : undefined
+  const isScreening = screenJob?.status === 'running'
   const result = job?.status === 'done' ? job.result : undefined
   const isBusy = job?.status === 'running'
+
+  useEffect(() => {
+    if (screenResult) setSelectedStocks(new Set([...screenResult.ca, ...screenResult.us].map(r => r.ticker)))
+  }, [screenResult])
 
   useEffect(() => {
     if (result) setSelectedPicks(new Set(result.picks.map(p => p.ticker)))
   }, [result])
 
-  const runPropose = async () => {
+  const runScreen = async () => {
+    setJobId(null)   // clear any stale Step 2 result — it no longer matches a fresh screen
     const params: ProposeParams = {
       ...form,
       extra_tickers: extraTickers.split(',').map(t => t.trim().toUpperCase()).filter(Boolean),
     }
-    const r = await proposeCoveredCallPortfolio(params)
+    const r = await screenStockUniverse(params)
+    setScreenJobId(r.job_id)
+  }
+
+  const toggleStock = (ticker: string) => {
+    setSelectedStocks(prev => {
+      const next = new Set(prev)
+      if (next.has(ticker)) next.delete(ticker); else next.add(ticker)
+      return next
+    })
+  }
+
+  const runProposeForSelected = async () => {
+    if (selectedStocks.size === 0) return
+    const r = await proposeCoveredCallPortfolio({ tickers: [...selectedStocks] })
     setJobId(r.job_id)
   }
 
@@ -206,12 +252,17 @@ export default function CoveredCallPortfolioTool() {
         </div>
       )}
 
-      {/* ── Target parameters ── */}
+      {/* ── Step 1: Screen Stocks ── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
-        <h3 className="text-sm font-semibold text-foreground">Target Parameters</h3>
+        <div>
+          <h3 className="text-sm font-semibold text-foreground">1. Screen Stocks</h3>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            Rank the full CA/US candidate universe by stock-level covered-call suitability — liquidity, dividend
+            yield, IV richness, and how many qualifying contracts each name actually has — before locking into any
+            one strike or expiry.
+          </p>
+        </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <NumField label="Target CA names" value={form.num_ca} onChange={v => setForm(f => ({ ...f, num_ca: v }))} />
-          <NumField label="Target US names" value={form.num_us} onChange={v => setForm(f => ({ ...f, num_us: v }))} />
           <NumField label="Min annualized yield %" value={form.min_annual_yield_pct} onChange={v => setForm(f => ({ ...f, min_annual_yield_pct: v }))} step={0.5}
             title="The 'target return' floor — annualized covered-call premium yield" />
           <NumField label="Min dividend yield %" value={form.min_div_yield} onChange={v => setForm(f => ({ ...f, min_div_yield: v }))} step={0.5} />
@@ -240,25 +291,93 @@ export default function CoveredCallPortfolioTool() {
           />
         </label>
         <button
-          onClick={runPropose}
-          disabled={isBusy}
+          onClick={runScreen}
+          disabled={isScreening}
           className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
         >
-          {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-          {isBusy ? `Scanning… ${job?.progress?.source ?? ''} ${job?.progress ? `${job.progress.done}/${job.progress.total}` : ''}` : 'Propose Portfolio'}
+          {isScreening ? <Loader2 className="h-4 w-4 animate-spin" /> : <Search className="h-4 w-4" />}
+          {isScreening ? `Screening… ${screenJob?.progress?.source ?? ''} ${screenJob?.progress ? `${screenJob.progress.done}/${screenJob.progress.total}` : ''}` : 'Screen Stocks'}
         </button>
-        {job?.status === 'failed' && <p className="text-xs text-red-600 dark:text-red-400">{job.error}</p>}
+        {screenJob?.status === 'failed' && <p className="text-xs text-red-600 dark:text-red-400">{screenJob.error}</p>}
       </div>
 
-      {/* ── Proposal results ── */}
+      {/* ── Step 1 results: pick which stocks to carry forward ── */}
+      {screenResult && (
+        <div className="bg-card border border-border rounded-xl p-5 space-y-5">
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className="text-sm font-semibold text-foreground">
+              {screenResult.ca.length} CA + {screenResult.us.length} US stocks qualify
+            </h3>
+            <span className="text-xs text-muted-foreground">via {screenResult.data_source}</span>
+          </div>
+
+          {[{ label: 'Canadian', rows: screenResult.ca }, { label: 'US', rows: screenResult.us }].map(group => group.rows.length > 0 && (
+            <div key={group.label} className="space-y-2">
+              <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wide">{group.label}</p>
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="text-xs text-muted-foreground border-b border-border">
+                      <th className="text-left py-1.5 pr-2"></th>
+                      <th className="text-left py-1.5 pr-2">Ticker</th>
+                      <th className="text-right py-1.5 pr-2">Price</th>
+                      <th className="text-right py-1.5 pr-2">Div Yield</th>
+                      <th className="text-right py-1.5 pr-2">Contracts</th>
+                      <th className="text-right py-1.5 pr-2">Total OI</th>
+                      <th className="text-right py-1.5 pr-2">Best IV</th>
+                      <th className="text-right py-1.5 pr-2">Best Yield</th>
+                      <th className="text-right py-1.5 pr-2">Best Score</th>
+                      <th className="text-right py-1.5 pr-2" title="Median score across all its qualifying contracts — a consistently good name, not a one-off lucky strike">Median Score</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {group.rows.map(r => (
+                      <tr key={r.ticker}>
+                        <td className="py-1.5 pr-2">
+                          <input type="checkbox" checked={selectedStocks.has(r.ticker)} onChange={() => toggleStock(r.ticker)} />
+                        </td>
+                        <td className="py-1.5 pr-2"><TickerLink ticker={r.ticker} /></td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{fmtMoney(r.current_price, r.currency)}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{fmtPct(r.dividend_yield)}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{r.contracts_found}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{r.total_open_interest.toLocaleString()}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{fmtPct(r.best_iv_pct)}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums font-medium">{fmtPct(r.best_annual_yield_pct)}</td>
+                        <td className="py-1.5 pr-2 text-right"><ScoreBadge score={r.best_score} /></td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums text-muted-foreground">{r.median_score.toFixed(1)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ))}
+
+          <div className="border-t border-border pt-4">
+            <button
+              onClick={runProposeForSelected}
+              disabled={isBusy || selectedStocks.size === 0}
+              className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+            >
+              {isBusy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {isBusy
+                ? `Scoring contracts… ${job?.progress?.source ?? ''} ${job?.progress ? `${job.progress.done}/${job.progress.total}` : ''}`
+                : `2. Find Best Calls for ${selectedStocks.size} Selected Stock${selectedStocks.size === 1 ? '' : 's'}`}
+            </button>
+            {job?.status === 'failed' && <p className="text-xs text-red-600 dark:text-red-400 mt-2">{job.error}</p>}
+          </div>
+        </div>
+      )}
+
+      {/* ── Step 2 results: the optimal contract per selected stock ── */}
       {result && (
         <div className="bg-card border border-border rounded-xl p-5 space-y-5">
           <div className="flex items-center justify-between flex-wrap gap-2">
             <h3 className="text-sm font-semibold text-foreground">
-              Proposal — {result.ca_picks} CA + {result.us_picks} US picks
+              Optimal Contracts — {result.ca_picks} CA + {result.us_picks} US
               {(result.shortfall.ca > 0 || result.shortfall.us > 0) && (
                 <span className="ml-2 text-xs font-normal text-amber-600 dark:text-amber-400">
-                  (short {result.shortfall.ca > 0 ? `${result.shortfall.ca} CA` : ''}{result.shortfall.ca > 0 && result.shortfall.us > 0 ? ', ' : ''}{result.shortfall.us > 0 ? `${result.shortfall.us} US` : ''} — loosen filters or add extra tickers)
+                  ({result.shortfall.ca + result.shortfall.us} selected stock{result.shortfall.ca + result.shortfall.us === 1 ? '' : 's'} had no qualifying contract right now)
                 </span>
               )}
             </h3>

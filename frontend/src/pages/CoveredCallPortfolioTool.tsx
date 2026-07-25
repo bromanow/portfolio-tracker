@@ -4,10 +4,10 @@ import {
   proposeCoveredCallPortfolio, getProposeJob, adoptCoveredCallPortfolio,
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
   sellToOpen, rollCoveredCall, closeCoveredCall, getCoveredCallSummary,
-  getUnmatchedTransactions, matchTransaction,
+  getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar,
 } from '../api/client'
-import type { ProposeParams, ProposeResult, CoveredCallPick, Account, CoveredCallHolding, CoveredCallPortfolioDetail } from '../api/client'
-import { ChevronDown, ChevronUp, Loader2, Sparkles } from 'lucide-react'
+import type { ProposeParams, ProposeResult, CoveredCallPick, Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry } from '../api/client'
+import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Sparkles } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -356,6 +356,8 @@ export default function CoveredCallPortfolioTool() {
           </div>
         </div>
       )}
+
+      <ExpiryCalendar />
     </div>
   )
 }
@@ -532,6 +534,103 @@ function HoldingRow({ portfolioId, holding, onChanged }: {
           <button onClick={reset} className="px-2 py-1 text-xs text-muted-foreground hover:text-foreground">Cancel</button>
         </div>
       )}
+    </div>
+  )
+}
+
+// ─── Expiry calendar ──────────────────────────────────────────────────────────
+// Day-grid/month-nav math mirrors DatePicker.tsx (firstWd/daysIn/cells + shiftMonth) —
+// no other full calendar-grid view exists yet in this app, so this is the reusable
+// starting point rather than a from-scratch layout.
+
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+const WD = ['Su', 'Mo', 'Tu', 'We', 'Th', 'Fr', 'Sa']
+
+function dteColor(dte: number): string {
+  if (dte < 7) return 'bg-red-100 text-red-700'
+  if (dte < 14) return 'bg-orange-100 text-orange-700'
+  if (dte < 30) return 'bg-yellow-100 text-yellow-700 dark:text-yellow-400'
+  return 'bg-green-100 text-green-600 dark:text-green-400'
+}
+
+function ExpiryCalendar() {
+  const today = new Date()
+  const [view, setView] = useState({ y: today.getFullYear(), m: today.getMonth() })
+  const { data: entries } = useQuery({ queryKey: ['covered-call-calendar'], queryFn: getCoveredCallCalendar })
+
+  const byDate = new Map<string, CoveredCallCalendarEntry[]>()
+  for (const e of entries ?? []) {
+    const list = byDate.get(e.expiry_date) ?? []
+    list.push(e)
+    byDate.set(e.expiry_date, list)
+  }
+
+  const firstWd = new Date(view.y, view.m, 1).getDay()
+  const daysIn = new Date(view.y, view.m + 1, 0).getDate()
+  const cells: (number | null)[] = [
+    ...Array(firstWd).fill(null),
+    ...Array.from({ length: daysIn }, (_, i) => i + 1),
+  ]
+
+  const shiftMonth = (delta: number) => {
+    setView(v => {
+      let m = v.m + delta, y = v.y
+      if (m < 0) { m = 11; y-- }
+      if (m > 11) { m = 0; y++ }
+      return { y, m }
+    })
+  }
+
+  const pad = (n: number) => String(n).padStart(2, '0')
+  const dateKey = (d: number) => `${view.y}-${pad(view.m + 1)}-${pad(d)}`
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-3">
+      <div className="flex items-center justify-between">
+        <h3 className="text-sm font-semibold text-foreground">Expiry Calendar</h3>
+        <div className="flex items-center gap-2">
+          <button onClick={() => shiftMonth(-1)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent">
+            <ChevronLeft className="h-4 w-4" />
+          </button>
+          <span className="text-sm font-medium text-foreground w-32 text-center">{MONTHS[view.m]} {view.y}</span>
+          <button onClick={() => shiftMonth(1)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent">
+            <ChevronRight className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div className="grid grid-cols-7 gap-1">
+        {WD.map(w => <div key={w} className="text-xs text-muted-foreground font-medium text-center py-1">{w}</div>)}
+        {cells.map((d, i) => {
+          if (d === null) return <div key={i} />
+          const key = dateKey(d)
+          const dayEntries = byDate.get(key) ?? []
+          const isToday = today.getFullYear() === view.y && today.getMonth() === view.m && today.getDate() === d
+          return (
+            <div key={i} className={`min-h-[4.5rem] rounded border p-1 space-y-0.5 ${isToday ? 'border-primary/50 bg-primary/5' : 'border-border/60'}`}>
+              <div className={`text-xs ${isToday ? 'font-semibold text-primary' : 'text-muted-foreground'}`}>{d}</div>
+              {dayEntries.map(e => (
+                <div
+                  key={`${e.holding_id}-${e.strike}`}
+                  title={`${e.ticker} $${e.strike} × ${e.contracts} — ${e.portfolio_name}${e.itm ? ' — ITM, assignment risk' : ''}`}
+                  className={`text-[10px] px-1 py-0.5 rounded truncate flex items-center gap-1 ${dteColor(e.dte)}`}
+                >
+                  <span className="font-medium truncate">{e.ticker}</span>
+                  {e.itm && <span className="shrink-0">⚠</span>}
+                </div>
+              ))}
+            </div>
+          )
+        })}
+      </div>
+
+      <div className="flex items-center gap-4 text-xs text-muted-foreground pt-1">
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-green-100"></span> 30d+</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-yellow-100"></span> 14–29d</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-orange-100"></span> 7–13d</span>
+        <span className="flex items-center gap-1"><span className="w-2.5 h-2.5 rounded-sm bg-red-100"></span> &lt;7d</span>
+        <span className="flex items-center gap-1">⚠ ITM / assignment risk</span>
+      </div>
     </div>
   )
 }

@@ -1600,6 +1600,25 @@ export const getUnmatchedTransactions = (portfolioId: number) =>
 export const matchTransaction = (portfolioId: number, holdingId: number, transactionId: number) =>
   api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/match-transaction`, { transaction_id: transactionId }).then(r => r.data)
 
+export interface CoveredCallCalendarEntry {
+  portfolio_id: number
+  portfolio_name: string
+  mode: 'SIMULATED' | 'REAL'
+  holding_id: number
+  ticker: string | null
+  currency: string | null
+  strike: number
+  expiry_date: string
+  dte: number
+  contracts: number
+  premium_per_contract: number | null
+  current_price: number | null
+  itm: boolean
+}
+
+export const getCoveredCallCalendar = () =>
+  api.get<CoveredCallCalendarEntry[]>('/covered-call-portfolio/calendar').then(r => r.data)
+
 // ── Plaid ─────────────────────────────────────────────────────────────────────
 export interface PlaidItem {
   id: number

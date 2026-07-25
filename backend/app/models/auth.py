@@ -19,3 +19,6 @@ class User(Base):
     # Per-account preference (was previously a per-browser localStorage-only setting, which
     # silently reset/desynced across devices and browser profiles with no visible warning).
     refresh_prices_on_login: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    # Daily email digest when a covered-call leg is within the DTE warning window or has
+    # gone ITM (assignment risk) — see app/scheduler.py's covered-call check job.
+    notify_covered_call_alerts: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)

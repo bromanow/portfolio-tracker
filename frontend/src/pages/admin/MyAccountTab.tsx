@@ -37,17 +37,19 @@ function PrefToggle({ prefKey, label, hint }: { prefKey: Parameters<typeof usePr
 // A per-account preference — persisted server-side (via updateUser), so it stays
 // consistent across every browser/device signed into this account, unlike PrefToggle
 // above (which silently resets per-browser with no visible warning).
-function ServerPrefToggle({ label, hint }: { label: string; hint: string }) {
+function ServerPrefToggle({ field, label, hint }: {
+  field: 'refresh_prices_on_login' | 'notify_covered_call_alerts'; label: string; hint: string
+}) {
   const { user, updateUser } = useAuth()
   const [saving, setSaving] = useState(false)
-  const on = user?.refresh_prices_on_login ?? false
+  const on = user?.[field] ?? false
 
   const toggle = async () => {
     const next = !on
     setSaving(true)
     try {
-      await updateMyPreferences({ refresh_prices_on_login: next })
-      updateUser({ refresh_prices_on_login: next })
+      await updateMyPreferences({ [field]: next })
+      updateUser({ [field]: next })
     } catch {
       // leave the switch as-is on failure — no optimistic flip happened yet
     } finally {
@@ -120,9 +122,12 @@ export default function MyAccountTab() {
         <PrefToggle prefKey="idleLogout"
           label="Log out after 10 minutes of inactivity"
           hint="Automatically signs you out if there's no mouse or keyboard activity." />
-        <ServerPrefToggle
+        <ServerPrefToggle field="refresh_prices_on_login"
           label="Refresh prices automatically on login"
           hint="Kicks off a market-price refresh once each time you sign in. Applies to this account on every device." />
+        <ServerPrefToggle field="notify_covered_call_alerts"
+          label="Email me covered-call alerts"
+          hint="Daily digest when a sold call is within 7 days of expiry or has gone in-the-money (assignment risk)." />
       </div>
 
       {/* Change password */}

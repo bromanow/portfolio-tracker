@@ -7,6 +7,7 @@ export interface AuthUser {
   name: string
   role: string
   refresh_prices_on_login: boolean
+  notify_covered_call_alerts: boolean
 }
 
 interface AuthContextType {

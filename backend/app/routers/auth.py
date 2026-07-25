@@ -32,9 +32,11 @@ class UserOut(BaseModel):
     name: str
     role: str
     refresh_prices_on_login: bool = False
+    notify_covered_call_alerts: bool = False
 
 class PreferencesUpdate(BaseModel):
     refresh_prices_on_login: Optional[bool] = None
+    notify_covered_call_alerts: Optional[bool] = None
 
 class UserCreate(BaseModel):
     email: str
@@ -88,6 +90,7 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
         "user": UserOut(
             id=user.id, email=user.email, name=user.name, role=user.role,
             refresh_prices_on_login=user.refresh_prices_on_login,
+            notify_covered_call_alerts=user.notify_covered_call_alerts,
         ),
     }
 
@@ -121,6 +124,8 @@ def update_my_preferences(
     resetting/desyncing with no visible warning)."""
     if req.refresh_prices_on_login is not None:
         current_user.refresh_prices_on_login = req.refresh_prices_on_login
+    if req.notify_covered_call_alerts is not None:
+        current_user.notify_covered_call_alerts = req.notify_covered_call_alerts
     db.commit()
     db.refresh(current_user)
     return current_user

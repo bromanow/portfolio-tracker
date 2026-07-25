@@ -202,6 +202,51 @@ def _run_nightly_snapshot_refresh() -> str:
         db.close()
 
 
+_COVERED_CALL_DTE_WARNING = 7   # matches the calendar UI's red "<7d" band
+
+
+def _run_covered_call_alert_check() -> str:
+    """Daily digest: any open covered-call leg within the DTE warning window or gone
+    ITM (assignment risk), emailed to whichever users opted in (User.notify_covered_call_alerts).
+    Reuses the exact same data source as the Expiry Calendar (get_open_legs_with_risk) so
+    the two views can never disagree about what's "at risk". Sends once per day by nature
+    of the cron cadence — no separate dedup flag needed (unlike the IBeam check, an ongoing
+    risk is worth a daily reminder, not a one-time alert)."""
+    from app.database import SessionLocal
+    from app.models.auth import User
+    from app.services import email_service
+    from app.services.covered_call_portfolio_service import get_open_legs_with_risk
+
+    db = SessionLocal()
+    try:
+        entries = get_open_legs_with_risk(db)
+        flagged = [e for e in entries if e["dte"] <= _COVERED_CALL_DTE_WARNING or e["itm"]]
+        if not flagged:
+            return f"ok — 0/{len(entries)} legs need attention"
+
+        recipients = db.query(User).filter(User.notify_covered_call_alerts == True).all()  # noqa: E712
+        if not recipients:
+            return f"{len(flagged)} legs flagged, but no user has notify_covered_call_alerts on"
+
+        lines = []
+        for e in sorted(flagged, key=lambda e: e["dte"]):
+            risk = " — ITM (assignment risk)" if e["itm"] else ""
+            lines.append(f"  {e['ticker']} ${e['strike']} exp {e['expiry_date']} ({e['dte']}d){risk} — {e['portfolio_name']}")
+        body = (
+            f"{len(flagged)} covered-call leg(s) need attention "
+            f"(within {_COVERED_CALL_DTE_WARNING} days of expiry, or already ITM):\n\n"
+            + "\n".join(lines)
+        )
+
+        sent = 0
+        for user in recipients:
+            if email_service.send_alert("Covered call alerts", body, to_email=user.email):
+                sent += 1
+        return f"{len(flagged)} legs flagged, emailed {sent}/{len(recipients)} users"
+    finally:
+        db.close()
+
+
 def start_scheduler():
     global _scheduler
     if _scheduler is not None:
@@ -273,6 +318,17 @@ def start_scheduler():
         CronTrigger(hour=13, minute=0, timezone="UTC"),   # ~9am ET
         id="ibeam_health_check",
         name="Daily IBeam container health check",
+        replace_existing=True,
+        misfire_grace_time=3600,
+    )
+
+    # Covered-call expiry/assignment-risk digest — after the nightly price refresh so
+    # ITM checks use the day's fresh prices.
+    _scheduler.add_job(
+        _logged("Covered call alerts", _run_covered_call_alert_check),
+        CronTrigger(hour=13, minute=30, timezone="UTC"),   # ~9:30am ET
+        id="covered_call_alerts",
+        name="Daily covered-call expiry/assignment-risk digest",
         replace_existing=True,
         misfire_grace_time=3600,
     )

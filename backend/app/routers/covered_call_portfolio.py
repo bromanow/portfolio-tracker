@@ -221,39 +221,10 @@ def get_expiry_calendar(db: Session = Depends(get_db)):
     """Every currently-open call across all ACTIVE portfolios, for the expiry calendar —
     bucketing by expiry_date happens client-side (dte/expiry_date are enough to group by).
     ITM/assignment-risk is derived from the underlying's live MarketPrice, same source the
-    rest of the app already uses (no separate price fetch)."""
-    from app.models.covered_call import CoveredCallPortfolio, CoveredCallHolding
-    from app.models.master import Security
-    from app.models.prices import MarketPrice
-
-    portfolios = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.status == "ACTIVE").all()
-    today = date.today()
-    entries = []
-    for p in portfolios:
-        holdings = (
-            db.query(CoveredCallHolding)
-            .filter(CoveredCallHolding.portfolio_id == p.id, CoveredCallHolding.status == "ACTIVE")
-            .all()
-        )
-        for h in holdings:
-            open_leg = _get_open_leg(db, h.id)
-            if open_leg is None:
-                continue
-            security = db.query(Security).filter(Security.id == h.security_id).first()
-            mp = db.query(MarketPrice).filter(MarketPrice.security_id == h.security_id).first()
-            current_price = float(mp.price) if mp else None
-            strike = float(open_leg.strike)
-            entries.append({
-                "portfolio_id": p.id, "portfolio_name": p.name, "mode": p.mode,
-                "holding_id": h.id, "ticker": security.ticker if security else None,
-                "currency": security.currency if security else None,
-                "strike": strike, "expiry_date": open_leg.expiry_date.isoformat(),
-                "dte": (open_leg.expiry_date - today).days, "contracts": open_leg.contracts,
-                "premium_per_contract": float(open_leg.premium_per_contract) if open_leg.premium_per_contract is not None else None,
-                "current_price": current_price,
-                "itm": current_price is not None and current_price > strike,
-            })
-    return entries
+    rest of the app already uses (no separate price fetch). Same data source the scheduler's
+    daily alert check uses, so the two can never disagree about what's "at risk"."""
+    from app.services.covered_call_portfolio_service import get_open_legs_with_risk
+    return get_open_legs_with_risk(db)
 
 
 @router.get("/{portfolio_id}")

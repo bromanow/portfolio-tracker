@@ -172,3 +172,48 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
             "us": params.num_us - len(us_picks),
         },
     }
+
+
+def get_open_legs_with_risk(db: Session) -> list[dict]:
+    """Every currently-open call across all ACTIVE portfolios, with DTE and an
+    ITM/assignment-risk flag — the shared data source for both the expiry calendar
+    (GET /calendar) and the scheduler's daily alert check, so the two can never
+    disagree about what counts as "at risk"."""
+    from datetime import date
+    from app.models.covered_call import CoveredCallPortfolio, CoveredCallHolding, CoveredCallTrade
+    from app.models.master import Security
+    from app.models.prices import MarketPrice
+
+    portfolios = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.status == "ACTIVE").all()
+    today = date.today()
+    entries = []
+    for p in portfolios:
+        holdings = (
+            db.query(CoveredCallHolding)
+            .filter(CoveredCallHolding.portfolio_id == p.id, CoveredCallHolding.status == "ACTIVE")
+            .all()
+        )
+        for h in holdings:
+            latest = (
+                db.query(CoveredCallTrade)
+                .filter(CoveredCallTrade.holding_id == h.id)
+                .order_by(CoveredCallTrade.trade_date.desc(), CoveredCallTrade.id.desc())
+                .first()
+            )
+            if latest is None or latest.trade_type != "SELL_TO_OPEN":
+                continue
+            security = db.query(Security).filter(Security.id == h.security_id).first()
+            mp = db.query(MarketPrice).filter(MarketPrice.security_id == h.security_id).first()
+            current_price = float(mp.price) if mp else None
+            strike = float(latest.strike)
+            entries.append({
+                "portfolio_id": p.id, "portfolio_name": p.name, "mode": p.mode,
+                "holding_id": h.id, "ticker": security.ticker if security else None,
+                "currency": security.currency if security else None,
+                "strike": strike, "expiry_date": latest.expiry_date.isoformat(),
+                "dte": (latest.expiry_date - today).days, "contracts": latest.contracts,
+                "premium_per_contract": float(latest.premium_per_contract) if latest.premium_per_contract is not None else None,
+                "current_price": current_price,
+                "itm": current_price is not None and current_price > strike,
+            })
+    return entries

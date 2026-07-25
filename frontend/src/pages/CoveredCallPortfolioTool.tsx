@@ -144,6 +144,11 @@ export default function CoveredCallPortfolioTool() {
     queryFn: () => getCoveredCallPortfolio(expandedId!),
     enabled: expandedId != null,
   })
+  // Same queryKey as ExpiryCalendar's own fetch below — React Query dedupes/shares the
+  // cache, so this doesn't cost a second request; it just lets the banner render at the
+  // top of the page instead of only after scrolling down to the calendar.
+  const { data: calendarEntries } = useQuery({ queryKey: ['covered-call-calendar'], queryFn: getCoveredCallCalendar })
+  const atRiskCount = (calendarEntries ?? []).filter(e => e.dte <= 7 || e.itm).length
 
   const result = job?.status === 'done' ? job.result : undefined
   const isBusy = job?.status === 'running'
@@ -191,6 +196,16 @@ export default function CoveredCallPortfolioTool() {
 
   return (
     <div className="space-y-6">
+      {atRiskCount > 0 && (
+        <div className="flex items-center gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 rounded-lg px-4 py-2.5 text-sm">
+          <span>⚠</span>
+          <span>
+            {atRiskCount} covered call{atRiskCount === 1 ? '' : 's'} need{atRiskCount === 1 ? 's' : ''} attention — within 7 days of expiry or already in-the-money.
+            See the Expiry Calendar below.
+          </span>
+        </div>
+      )}
+
       {/* ── Target parameters ── */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-4">
         <h3 className="text-sm font-semibold text-foreground">Target Parameters</h3>

@@ -27,7 +27,7 @@ api.interceptors.response.use(
 export const changePassword = (data: { current_password: string; new_password: string }) =>
   api.post('/auth/change-password', data).then(r => r.data)
 
-export const updateMyPreferences = (data: { refresh_prices_on_login?: boolean }) =>
+export const updateMyPreferences = (data: { refresh_prices_on_login?: boolean; notify_covered_call_alerts?: boolean }) =>
   api.patch('/auth/me/preferences', data).then(r => r.data)
 
 export interface AppUser {

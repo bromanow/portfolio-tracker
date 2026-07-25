@@ -1,10 +1,10 @@
 import { useState } from 'react'
-import { PanelLeftClose, PanelLeftOpen, ChevronRight, ScanSearch, SlidersHorizontal, Radar } from 'lucide-react'
-import { CoveredCallScannerTool } from './Scanner'
+import { PanelLeftClose, PanelLeftOpen, ChevronRight, Target, SlidersHorizontal, Radar } from 'lucide-react'
+import CoveredCallPortfolioTool from './CoveredCallPortfolioTool'
 import FundamentalScreener from '../components/FundamentalScreener'
 import IbkrScannerTool from '../components/IbkrScannerTool'
 
-type ToolId = 'covered-call-scanner' | 'fundamental-screener' | 'ibkr-scanner'
+type ToolId = 'covered-call-portfolio' | 'fundamental-screener' | 'ibkr-scanner'
 
 const TOOL_DEFS: {
   id: ToolId
@@ -14,11 +14,11 @@ const TOOL_DEFS: {
   component: React.ComponentType
 }[] = [
   {
-    id: 'covered-call-scanner',
-    label: 'Covered Call Scanner',
-    description: 'Find covered-call opportunities across your watchlist and holdings',
-    icon: ScanSearch,
-    component: CoveredCallScannerTool,
+    id: 'covered-call-portfolio',
+    label: 'Covered Call Portfolio',
+    description: 'Build and manage a covered-call income portfolio from your own target parameters',
+    icon: Target,
+    component: CoveredCallPortfolioTool,
   },
   {
     id: 'fundamental-screener',
@@ -38,7 +38,7 @@ const TOOL_DEFS: {
 
 // ── Main Research Page ────────────────────────────────────────────────────────
 export default function Research() {
-  const [activeId, setActiveId] = useState<ToolId>('covered-call-scanner')
+  const [activeId, setActiveId] = useState<ToolId>('covered-call-portfolio')
   const [panelOpen, setPanelOpen] = useState(true)
 
   const active = TOOL_DEFS.find(t => t.id === activeId)!

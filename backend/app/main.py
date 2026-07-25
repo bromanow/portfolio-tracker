@@ -19,6 +19,7 @@ import app.models.clients      # noqa
 import app.models.ibkr         # noqa
 import app.models.scanner      # noqa
 import app.models.plaid        # noqa
+import app.models.covered_call # noqa
 
 from app.dependencies import get_current_user
 from app.routers import auth as auth_router
@@ -38,6 +39,7 @@ from app.routers import market as market_router
 from app.routers import screener as screener_router
 from app.routers import ibkr_scanner as ibkr_scanner_router
 from app.routers import personal_assets as personal_assets_router
+from app.routers import covered_call_portfolio as covered_call_portfolio_router
 
 log = logging.getLogger(__name__)
 
@@ -280,6 +282,7 @@ app.include_router(market_router.router, dependencies=_auth)
 app.include_router(screener_router.router, dependencies=_auth)
 app.include_router(ibkr_scanner_router.router, dependencies=_auth)
 app.include_router(personal_assets_router.router, dependencies=_auth)
+app.include_router(covered_call_portfolio_router.router, dependencies=_auth)
 
 
 @app.get("/api/health")

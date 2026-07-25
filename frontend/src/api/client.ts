@@ -1403,7 +1403,8 @@ export const syncAllFlexAccounts = () =>
   api.post<{ job_id: string; status: string }>('/ibkr/flex/sync-all').then(r => r.data)
 
 
-// ─── Covered-call Scanner ────────────────────────────────────────────────────
+// ─── Scanner (IBeam status + extra-candidate watchlist only — the scan/results UI
+//     was retired in favour of the Covered Call Portfolio Builder below) ───────
 
 export interface ScannerMeta {
   available: boolean
@@ -1412,54 +1413,6 @@ export interface ScannerMeta {
   total_rows?: number
   tickers?: number
   ibeam_available?: boolean
-}
-
-export interface ScannerResult {
-  id: number
-  ticker: string
-  company_name: string | null
-  current_price: number | null
-  avg_stock_volume: number | null
-  currency: string | null
-  dividend_yield: number | null
-  strike: number
-  expiry_date: string | null
-  dte: number
-  bid: number | null
-  ask: number | null
-  mid: number | null
-  volume: number | null
-  open_interest: number | null
-  iv_pct: number | null
-  hv_30_pct: number | null
-  iv_hv_ratio: number | null
-  otm_pct: number | null
-  annual_yield_pct: number | null
-  max_return_pct: number | null
-  breakeven: number | null
-  score: number | null
-  why: string | null
-  delta: number | null
-  gamma: number | null
-  theta: number | null
-  vega: number | null
-  bid_ask_spread_pct: number | null
-  data_source: string | null
-  recommendation: string | null
-  in_portfolio: boolean
-  portfolio_qty: number
-  portfolio_contracts: number
-}
-
-export interface ScanTriggerParams {
-  min_avg_stock_vol?: number
-  min_option_oi?: number
-  min_option_vol?: number
-  min_dte?: number
-  max_dte?: number
-  min_otm_pct?: number
-  max_otm_pct?: number
-  min_div_yield?: number
 }
 
 export interface WatchlistItem {
@@ -1473,20 +1426,6 @@ export interface WatchlistItem {
 export const getScannerMeta = () =>
   api.get<ScannerMeta>('/scanner/meta').then(r => r.data)
 
-export const getScannerResults = (params?: {
-  min_yield?: number
-  max_otm?: number
-  min_oi?: number
-  min_dte?: number
-  max_dte?: number
-  min_div_yield?: number
-  in_portfolio?: boolean
-  limit?: number
-}) => api.get<ScannerResult[]>('/scanner/results', { params }).then(r => r.data)
-
-export const triggerScan = (params?: ScanTriggerParams) =>
-  api.post<{ job_id: string; status: string; already_running: boolean }>('/scanner/run', params ?? {}).then(r => r.data)
-
 export const getWatchlist = () =>
   api.get<WatchlistItem[]>('/scanner/watchlist').then(r => r.data)
 
@@ -1495,6 +1434,123 @@ export const addToWatchlist = (ticker: string, notes?: string) =>
 
 export const removeFromWatchlist = (ticker: string) =>
   api.delete(`/scanner/watchlist/${ticker}`).then(r => r.data)
+
+// ─── Covered Call Portfolio Builder & Manager ───────────────────────────────
+
+export interface CoveredCallPick {
+  ticker: string
+  company_name: string | null
+  current_price: number
+  currency: string | null
+  dividend_yield: number | null
+  strike: number
+  expiry_date: string
+  dte: number
+  bid: number
+  ask: number
+  mid: number
+  volume: number
+  open_interest: number
+  iv_pct: number | null
+  hv_30_pct: number | null
+  iv_hv_ratio: number | null
+  otm_pct: number
+  annual_yield_pct: number
+  max_return_pct: number
+  breakeven: number
+  score: number
+  why: string
+  recommendation: string
+  delta: number | null
+  theta: number | null
+  data_source: string
+  in_portfolio: boolean
+  portfolio_qty: number
+}
+
+export interface ProposeParams {
+  min_dte?: number
+  max_dte?: number
+  min_otm_pct?: number
+  max_otm_pct?: number
+  min_option_oi?: number
+  min_option_vol?: number
+  min_avg_stock_vol?: number
+  min_div_yield?: number
+  min_annual_yield_pct?: number
+  num_ca?: number
+  num_us?: number
+  extra_tickers?: string[]
+}
+
+export interface ProposeResult {
+  picks: CoveredCallPick[]
+  ca_picks: number
+  us_picks: number
+  ca_candidates_scanned: number
+  us_candidates_scanned: number
+  errors: string[]
+  data_source: string
+  shortfall: { ca: number; us: number }
+}
+
+export interface CoveredCallTrade {
+  id: number
+  trade_type: string
+  strike: number
+  expiry_date: string
+  contracts: number
+  premium_per_contract: number | null
+  trade_date: string | null
+  roll_chain_id: string | null
+  notes: string | null
+}
+
+export interface CoveredCallHolding {
+  id: number
+  security_id: number
+  ticker: string | null
+  company_name: string | null
+  currency: string | null
+  shares: number | null
+  cost_basis_per_share: number | null
+  status: string
+  opened_at: string | null
+  proposal_score: number | null
+  proposal_why: string | null
+  trades: CoveredCallTrade[]
+}
+
+export interface CoveredCallPortfolioSummary {
+  id: number
+  name: string
+  mode: 'SIMULATED' | 'REAL'
+  status: string
+  account_id: number | null
+  created_at: string | null
+  holdings: number
+}
+
+export interface CoveredCallPortfolioDetail extends Omit<CoveredCallPortfolioSummary, 'holdings'> {
+  holdings: CoveredCallHolding[]
+}
+
+export const proposeCoveredCallPortfolio = (params?: ProposeParams) =>
+  api.post<{ job_id: string; status: string; already_running: boolean }>('/covered-call-portfolio/propose', params ?? {}).then(r => r.data)
+
+export const getProposeJob = (jobId: string) =>
+  api.get<{ id: string; status: string; result?: ProposeResult; error?: string; progress?: { stage: string; source: string | null; done: number; total: number } }>(
+    `/covered-call-portfolio/propose/${jobId}`
+  ).then(r => r.data)
+
+export const adoptCoveredCallPortfolio = (data: { name: string; mode: 'SIMULATED' | 'REAL'; account_id?: number; picks: CoveredCallPick[] }) =>
+  api.post<{ id: number; name: string; mode: string; holdings: number }>('/covered-call-portfolio/adopt', data).then(r => r.data)
+
+export const listCoveredCallPortfolios = () =>
+  api.get<CoveredCallPortfolioSummary[]>('/covered-call-portfolio').then(r => r.data)
+
+export const getCoveredCallPortfolio = (id: number) =>
+  api.get<CoveredCallPortfolioDetail>(`/covered-call-portfolio/${id}`).then(r => r.data)
 
 // ── Plaid ─────────────────────────────────────────────────────────────────────
 export interface PlaidItem {

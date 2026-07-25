@@ -1478,6 +1478,9 @@ export interface ProposeParams {
   min_avg_stock_vol?: number
   min_div_yield?: number
   min_annual_yield_pct?: number
+  min_delta?: number
+  max_delta?: number
+  min_iv_pct?: number
   num_ca?: number
   num_us?: number
   extra_tickers?: string[]

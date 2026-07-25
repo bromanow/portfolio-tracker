@@ -34,6 +34,9 @@ class ProposeRequest(BaseModel):
     min_avg_stock_vol: int = 250_000
     min_div_yield: float = 0.0
     min_annual_yield_pct: float = 0.0
+    min_delta: Optional[float] = None
+    max_delta: Optional[float] = None
+    min_iv_pct: Optional[float] = None
     num_ca: int = 5
     num_us: int = 10
     extra_tickers: Optional[list[str]] = None
@@ -64,6 +67,7 @@ def _spawn_propose(req: ProposeRequest) -> dict:
                 min_option_oi=req.min_option_oi, min_option_vol=req.min_option_vol,
                 min_avg_stock_vol=req.min_avg_stock_vol, min_div_yield=req.min_div_yield,
                 min_annual_yield_pct=req.min_annual_yield_pct,
+                min_delta=req.min_delta, max_delta=req.max_delta, min_iv_pct=req.min_iv_pct,
                 num_ca=req.num_ca, num_us=req.num_us, extra_tickers=req.extra_tickers,
             )
 

@@ -35,6 +35,15 @@ class BuildParams:
     min_avg_stock_vol: int = 250_000
     min_div_yield: float = 0.0
     min_annual_yield_pct: float = 0.0   # the "target return" floor, annualized premium yield
+    # Aggressiveness dial: delta is the real lever (0.15-0.25 conservative, 0.35-0.50 aggressive)
+    # — exact on the IBKR live path, Black-Scholes-estimated on the yfinance fallback. Left
+    # unset (None) by default so existing callers/behavior are unaffected.
+    min_delta: Optional[float] = None
+    max_delta: Optional[float] = None
+    # Absolute IV floor — distinct from the score's IV/HV *ratio* multiplier (which only
+    # rewards richness vs the stock's own history); this lets a user chase high-premium,
+    # high-vol names outright regardless of whether IV looks "rich" relative to HV.
+    min_iv_pct: Optional[float] = None
     num_ca: int = 5
     num_us: int = 10
     extra_tickers: Optional[list[str]] = None   # user-added candidates (from the retired watchlist)
@@ -53,13 +62,33 @@ class BuildParams:
         )
 
 
-def _best_per_ticker(opportunities: list[dict], min_annual_yield_pct: float) -> list[dict]:
+def _best_per_ticker(
+    opportunities: list[dict],
+    min_annual_yield_pct: float,
+    min_delta: Optional[float] = None,
+    max_delta: Optional[float] = None,
+    min_iv_pct: Optional[float] = None,
+) -> list[dict]:
     """Collapse multiple strikes/expiries per ticker down to that ticker's single best-scoring
-    contract, then drop any ticker whose best pick still misses the target-return floor."""
+    contract satisfying the hard filters (target-return floor, delta band, IV floor), so a
+    ticker isn't dropped just because ITS highest-scoring contract happens to miss the band
+    while a different strike/expiry for the same name would have qualified."""
     best: dict[str, dict] = {}
     for opp in opportunities:
         if opp["annual_yield_pct"] < min_annual_yield_pct:
             continue
+        if min_delta is not None or max_delta is not None:
+            delta = opp.get("delta")
+            if delta is None:
+                continue   # can't verify the requested delta band — exclude rather than guess
+            if min_delta is not None and delta < min_delta:
+                continue
+            if max_delta is not None and delta > max_delta:
+                continue
+        if min_iv_pct is not None:
+            iv = opp.get("iv_pct")
+            if iv is None or iv < min_iv_pct:
+                continue
         t = opp["ticker"]
         if t not in best or opp["score"] > best[t]["score"]:
             best[t] = opp
@@ -97,8 +126,14 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
     ca_opps, ca_errors, ca_meta = scan_tickers(ca_universe, db, scan_params, progress_cb=_cb)
     us_opps, us_errors, us_meta = scan_tickers(us_universe, db, scan_params, progress_cb=_cb)
 
-    ca_best = sorted(_best_per_ticker(ca_opps, params.min_annual_yield_pct), key=lambda o: -o["score"])
-    us_best = sorted(_best_per_ticker(us_opps, params.min_annual_yield_pct), key=lambda o: -o["score"])
+    ca_best = sorted(
+        _best_per_ticker(ca_opps, params.min_annual_yield_pct, params.min_delta, params.max_delta, params.min_iv_pct),
+        key=lambda o: -o["score"],
+    )
+    us_best = sorted(
+        _best_per_ticker(us_opps, params.min_annual_yield_pct, params.min_delta, params.max_delta, params.min_iv_pct),
+        key=lambda o: -o["score"],
+    )
 
     ca_picks = ca_best[: params.num_ca]
     us_picks = us_best[: params.num_us]

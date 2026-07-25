@@ -63,6 +63,9 @@ interface FormState {
   min_avg_stock_vol: number
   min_div_yield: number
   min_annual_yield_pct: number
+  min_delta: number   // 0 = no floor
+  max_delta: number   // 1 = no cap (delta can't exceed 1)
+  min_iv_pct: number  // 0 = no floor
   num_ca: number
   num_us: number
 }
@@ -70,7 +73,9 @@ interface FormState {
 const DEFAULT_FORM: FormState = {
   min_dte: 14, max_dte: 60, min_otm_pct: 0.5, max_otm_pct: 25,
   min_option_oi: 50, min_option_vol: 3, min_avg_stock_vol: 250_000,
-  min_div_yield: 0, min_annual_yield_pct: 0, num_ca: 5, num_us: 10,
+  min_div_yield: 0, min_annual_yield_pct: 0,
+  min_delta: 0, max_delta: 1, min_iv_pct: 0,
+  num_ca: 5, num_us: 10,
 }
 
 function NumField({ label, value, onChange, step = 1, title }: {
@@ -195,8 +200,16 @@ export default function CoveredCallPortfolioTool() {
           <NumField label="Min dividend yield %" value={form.min_div_yield} onChange={v => setForm(f => ({ ...f, min_div_yield: v }))} step={0.5} />
           <NumField label="Min DTE" value={form.min_dte} onChange={v => setForm(f => ({ ...f, min_dte: v }))} />
           <NumField label="Max DTE" value={form.max_dte} onChange={v => setForm(f => ({ ...f, max_dte: v }))} />
-          <NumField label="Min OTM %" value={form.min_otm_pct} onChange={v => setForm(f => ({ ...f, min_otm_pct: v }))} step={0.5} />
-          <NumField label="Max OTM %" value={form.max_otm_pct} onChange={v => setForm(f => ({ ...f, max_otm_pct: v }))} step={0.5} />
+          <NumField label="Min OTM %" value={form.min_otm_pct} onChange={v => setForm(f => ({ ...f, min_otm_pct: v }))} step={0.5}
+            title="Fallback strike-distance filter, only used when delta isn't available" />
+          <NumField label="Max OTM %" value={form.max_otm_pct} onChange={v => setForm(f => ({ ...f, max_otm_pct: v }))} step={0.5}
+            title="Fallback strike-distance filter, only used when delta isn't available" />
+          <NumField label="Min delta" value={form.min_delta} onChange={v => setForm(f => ({ ...f, min_delta: v }))} step={0.05}
+            title="Aggressiveness dial — 0.15-0.25 conservative, 0.35-0.50 aggressive. 0 = no floor." />
+          <NumField label="Max delta" value={form.max_delta} onChange={v => setForm(f => ({ ...f, max_delta: v }))} step={0.05}
+            title="Aggressiveness dial — higher delta = closer to the money, more premium, more assignment risk. 1 = no cap." />
+          <NumField label="Min implied vol %" value={form.min_iv_pct} onChange={v => setForm(f => ({ ...f, min_iv_pct: v }))} step={5}
+            title="Absolute IV floor — chase high-premium, high-vol names outright, regardless of IV/HV richness. 0 = no floor." />
           <NumField label="Min option open interest" value={form.min_option_oi} onChange={v => setForm(f => ({ ...f, min_option_oi: v }))} />
           <NumField label="Min option volume" value={form.min_option_vol} onChange={v => setForm(f => ({ ...f, min_option_vol: v }))} />
           <NumField label="Min avg stock volume" value={form.min_avg_stock_vol} onChange={v => setForm(f => ({ ...f, min_avg_stock_vol: v }))} step={10000} />

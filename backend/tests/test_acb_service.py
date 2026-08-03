@@ -109,19 +109,38 @@ def test_negative_quantity_buy_cannot_take_position_negative():
 
 # ── SELL ───────────────────────────────────────────────────────────────────────
 
-def test_positive_quantity_sell_cancels_a_prior_sell():
-    """Mirror of the BUY-cancel case: a SELL row with positive quantity (iTrade's
-    'AS OF ... to cxl sell') reverses the sell immediately before it. It must restore
-    both quantity and ACB, and remove the realized gain the original sell recorded."""
+def test_positive_quantity_sell_with_cxl_description_cancels_a_prior_sell():
+    """Mirror of the BUY-cancel case: a SELL row with positive quantity AND a
+    description marking it as a cancellation (iTrade's 'AS OF ... to cxl sell')
+    reverses the sell immediately before it. It must restore both quantity and
+    ACB, and remove the realized gain the original sell recorded."""
     txns = [
         FakeTxn(1, date(2024, 1, 1), "BUY", quantity=D(100), cad_amount=D(-1000)),
         FakeTxn(2, date(2024, 11, 15), "SELL", quantity=D(-19), cad_amount=D(11397.96)),
-        FakeTxn(3, date(2024, 11, 19), "SELL", quantity=D(19), cad_amount=D(-11397.96)),
+        FakeTxn(3, date(2024, 11, 19), "SELL", quantity=D(19), cad_amount=D(-11397.96),
+                raw_description="AS OF 11/15/24 to cxl sell"),
     ]
     result = calc(txns)
     assert result["quantity"] == D(100)
     assert result["total_acb_cad"] == D(1000)
     assert result["realized_gains"] == []
+
+
+def test_positive_quantity_sell_without_cxl_description_is_a_normal_sell():
+    """A different importer convention (e.g. the statement importer's _pos()
+    helper) always stores a positive quantity and signals direction via
+    transaction_type alone. Without cancellation wording in the description, a
+    positive-quantity SELL must reduce the position like any other sell — not
+    be mistaken for a cancellation and add shares back."""
+    txns = [
+        FakeTxn(1, date(2024, 1, 1), "BUY", quantity=D(100), cad_amount=D(-1000)),
+        FakeTxn(2, date(2024, 6, 30), "SELL", quantity=D(40), cad_amount=D(600)),
+    ]
+    result = calc(txns)
+    assert result["quantity"] == D(60)
+    assert result["total_acb_cad"] == D(600)
+    assert len(result["realized_gains"]) == 1
+    assert result["realized_gains"][0]["gain_cad"] == D(200)
 
 
 def test_sell_realizes_gain_at_pooled_acb():

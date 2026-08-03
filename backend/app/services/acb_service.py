@@ -166,7 +166,33 @@ def _apply_txn(lot: "ACBLot", txn, db, security_id, realized_gains: list, _txn_p
 
         # ── Regular sell (stocks/ETFs) ─────────────────────────────────────────
         elif t_type == "SELL":
-            if qty < ZERO:
+            # Two different importers use opposite sign conventions for SELL:
+            #  - iTrade/Scotia CSVs: quantity is negative for a real sell; a
+            #    cancellation of a prior sell ("AS OF ... to cxl sell") shows up as
+            #    a SELL row with POSITIVE quantity refunding the proceeds.
+            #  - The statement importer's _pos() helper (Manulife etc.) always
+            #    stores a positive quantity and signals direction via
+            #    transaction_type alone — so a positive-quantity SELL there is a
+            #    perfectly normal sell, not a cancellation.
+            # Only treat qty > 0 as a cancellation when the description actually
+            # says so; otherwise a positive quantity is just that importer's
+            # normal-sell convention.
+            desc_lower = (txn.raw_description or "").lower()
+            is_cancel = qty > ZERO and ("cxl" in desc_lower or "cancel" in desc_lower)
+            if is_cancel:
+                # Since a sell never changes acb_per_share (only quantity/total_acb
+                # move proportionally), and the cancel immediately follows the sell
+                # it reverses with no buy in between, the lot's current
+                # acb_per_share is exactly the rate the original sell was costed
+                # at — so add the shares back at that rate to undo it exactly, and
+                # drop the realized gain it recorded.
+                cancel_qty = qty
+                acb_per = lot.acb_per_share
+                lot.quantity += cancel_qty
+                lot.total_acb += cancel_qty * acb_per
+                if realized_gains and realized_gains[-1]["quantity"] == cancel_qty:
+                    realized_gains.pop()
+            elif qty != ZERO:
                 sell_qty = abs(qty)
                 acb_of_sold, acb_per = lot.sell(sell_qty)
                 proceeds = abs(cad_amount)
@@ -179,20 +205,6 @@ def _apply_txn(lot: "ACBLot", txn, db, security_id, realized_gains: list, _txn_p
                     "gain_cad": gain,
                     "transaction_id": txn.id,
                 })
-            elif qty > ZERO:
-                # Broker "cancel prior sell" adjustment (e.g. iTrade "AS OF ... to cxl sell") —
-                # a SELL row with positive quantity that reverses an earlier sell of the same
-                # size, refunding the proceeds. Since a sell never changes acb_per_share (only
-                # quantity/total_acb move proportionally), and the cancel immediately follows
-                # the sell it reverses with no buy in between, the lot's current acb_per_share
-                # is exactly the rate the original sell was costed at — so add the shares back
-                # at that rate to undo it exactly, and drop the realized gain it recorded.
-                cancel_qty = qty
-                acb_per = lot.acb_per_share
-                lot.quantity += cancel_qty
-                lot.total_acb += cancel_qty * acb_per
-                if realized_gains and realized_gains[-1]["quantity"] == cancel_qty:
-                    realized_gains.pop()
 
         # ── Option sell: close long OR write/short an option ──────────────────
         elif t_type == "OPTION_SELL":

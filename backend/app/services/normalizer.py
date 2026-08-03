@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from typing import Optional
 import logging
+import re
 from sqlalchemy.orm import Session
 
 from app.models.master import Account, Security, BrokerageTypeMapping
@@ -14,6 +15,24 @@ from app.models.options import OptionContract
 from app.services import fx_service
 
 logger = logging.getLogger(__name__)
+
+
+# Scotia/iTrade mutual-fund DRIP and fund-merger rows report a truncated whole-unit
+# Quantity while the true fractional remainder is only visible in the description text,
+# e.g. "REINVEST 06/30/26 @ $12.3741 PLUS FRACTIONS OF 0.466 BOOK VALUE $253.25". Left
+# unparsed, this understates quantity by up to ~1 unit per reinvestment event, compounding
+# over years of monthly DRIPs into a multi-unit drift from the broker's true position.
+_FRACTION_RE = re.compile(r"PLUS FRACTIONS OF\s+([\d.]+)", re.IGNORECASE)
+
+
+def _apply_fraction(quantity: Optional[Decimal], raw_description: Optional[str]) -> Optional[Decimal]:
+    if quantity is None or not raw_description:
+        return quantity
+    m = _FRACTION_RE.search(raw_description)
+    if not m:
+        return quantity
+    frac = Decimal(m.group(1))
+    return quantity - frac if quantity < 0 else quantity + frac
 
 
 # Canadian Alternative Trading Systems — execution venues only, not listing exchanges.
@@ -269,7 +288,7 @@ def normalize_itrade_row(db: Session, row: dict, account: Account) -> Optional[d
             fx_rate_override=fx_rate_override,
         )
 
-    quantity = row.get("quantity")
+    quantity = _apply_fraction(row.get("quantity"), row.get("raw_description"))
     price = row.get("price")
 
     return {

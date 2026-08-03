@@ -407,6 +407,18 @@ def commit_import(batch_id: int, db: Session = Depends(get_db)):
                 skipped += 1
                 continue
 
+            # Enforce the duplicate check at commit time — re-importing a broker file that
+            # overlaps a prior import (Scotia/iTrade exports are full cumulative history, not
+            # incremental) would otherwise silently double every overlapping transaction.
+            # "Check Duplicates" alone only sets error_message for the UI to show; without this
+            # gate, committing went ahead regardless. force_import (set via the row-edit
+            # endpoint's "Import anyway" action) is the explicit override for true look-alikes.
+            if not row.get("force_import") and check_duplicate(db, txn_dict):
+                rt.status = "SKIPPED"
+                rt.error_message = "Duplicate transaction"
+                skipped += 1
+                continue
+
             # Create transaction
             txn = Transaction(**txn_dict, raw_import_id=rt.id)
             db.add(txn)

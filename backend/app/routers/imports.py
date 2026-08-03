@@ -521,6 +521,71 @@ def check_duplicates_preview(batch_id: int, db: Session = Depends(get_db)):
     return {"checked": checked, "duplicates_found": duplicates_found}
 
 
+@router.post("/{batch_id}/check-securities")
+def check_securities_preview(batch_id: int, db: Session = Depends(get_db)):
+    """
+    Pre-check all PENDING rows for securities that would land with no exchange set —
+    the #1 cause of "unpriced holdings" showing up in Data Health after a commit (a price
+    refresh can't tell which market to fetch from without one). Reuses normalize_*_row's
+    existing get_or_create_security() call (same as check-duplicates above already does),
+    so this surfaces the exact same Security rows the commit itself would create/touch —
+    no separate ticker-parsing logic to keep in sync.
+
+    Non-blocking: doesn't stop commit, just flags names for the "Check Securities" panel
+    (frontend Yahoo-search picker) to offer a fix for before the user commits.
+    """
+    batch = db.get(ImportBatch, batch_id)
+    if not batch:
+        raise HTTPException(status_code=404, detail="Import batch not found")
+    if batch.status == "COMMITTED":
+        raise HTTPException(status_code=400, detail="Batch already committed")
+
+    brokerage = db.get(Brokerage, batch.brokerage_id)
+    raw_txns = db.query(RawTransaction).filter(
+        RawTransaction.import_batch_id == batch_id,
+        RawTransaction.status == "PENDING",
+    ).all()
+
+    from app.models.master import Security
+
+    seen: dict[int, dict] = {}
+    for rt in raw_txns:
+        try:
+            row = rt.raw_data
+            typed_row = _cast_row_types(row)
+            account = _find_account(db, row, batch, brokerage)
+            if not account:
+                continue
+
+            row_format = typed_row.get("brokerage", "")
+            if row_format in ("SCOTIAWEALTH", "OLYMPIA") or (brokerage and brokerage.code == "ITRADE"):
+                txn_dict = normalize_itrade_row(db, typed_row, account)
+            else:
+                txn_dict = normalize_ibkr_row(db, typed_row, account)
+
+            if not txn_dict or not txn_dict.get("security_id"):
+                continue
+
+            sec_id = txn_dict["security_id"]
+            if sec_id in seen:
+                continue
+            sec = db.get(Security, sec_id)
+            if sec and sec.is_option:
+                continue   # option contracts don't need their own exchange fixed here
+            if sec and (sec.exchange or "").strip():
+                continue   # already has one — nothing to fix
+            if sec:
+                seen[sec_id] = {
+                    "security_id": sec.id, "ticker": sec.ticker,
+                    "name": sec.name, "currency": sec.currency,
+                }
+        except Exception as e:
+            logger.exception("Error checking security for row %d: %s", rt.row_number, e)
+
+    db.commit()   # persist any securities get_or_create_security had to create
+    return {"needs_fix": list(seen.values())}
+
+
 @router.post("/{batch_id}/remap-types")
 def remap_types(batch_id: int, db: Session = Depends(get_db)):
     """

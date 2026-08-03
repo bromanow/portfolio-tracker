@@ -8,15 +8,18 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getImports, getAccounts, getSecurities, uploadFile, getImportPreview,
   commitImport, rejectImport, deleteImport, deleteAllImports, updateRawRow, remapImportTypes,
-  checkImportDuplicates,
+  checkImportDuplicates, checkImportSecurities, searchYahooSecurities, fetchSecurityYahooInfo,
   getMyFlexConfig, syncMyFlexAccounts, uploadFlexXml, saveMyFlexConfig, deleteMyFlexConfig,
   createTransaction,
 } from '../api/client'
-import type { ImportBatch, Account, Security, IBKRFlexConfig, FlexConfigIn, ImportDetail, Transaction } from '../api/client'
+import type {
+  ImportBatch, Account, Security, IBKRFlexConfig, FlexConfigIn, ImportDetail, Transaction,
+  SecurityNeedsFix, YahooSearchResult,
+} from '../api/client'
 import {
   Upload, CheckCircle, XCircle, AlertCircle, Eye, Trash2,
   AlertTriangle, Edit2, X, SkipForward, RotateCcw, RefreshCw,
-  ChevronDown, ChevronRight, Database, Loader2, Plus,
+  ChevronDown, ChevronRight, Database, Loader2, Plus, Search,
 } from 'lucide-react'
 
 const STATUS_COLORS: Record<string, string> = {
@@ -875,6 +878,53 @@ export default function Import() {
     onSuccess: () => refetchPreview(),
   })
 
+  // ── Check Securities: unpriced-holdings prevention ─────────────────────────
+  // Runs the same "does this security have an exchange?" check Data Health does, but
+  // pre-commit — so a security a price refresh could never resolve gets caught before
+  // it lands as another row in the Unpriced Holdings list, not after.
+  const [needsFixList, setNeedsFixList] = useState<SecurityNeedsFix[] | null>(null)
+  const checkSecMutation = useMutation({
+    mutationFn: (id: number) => checkImportSecurities(id),
+    onSuccess: (data) => setNeedsFixList(data.needs_fix),
+  })
+
+  interface YahooPicker {
+    secId: number
+    query: string
+    results: YahooSearchResult[]
+    loading: boolean
+    error: string | null
+    applyMsg: string | null
+  }
+  const [yahooPicker, setYahooPicker] = useState<YahooPicker | null>(null)
+
+  const openYahooPicker = (sec: SecurityNeedsFix) => {
+    setYahooPicker({ secId: sec.security_id, query: sec.ticker, results: [], loading: true, error: null, applyMsg: null })
+    searchYahooSecurities(sec.ticker)
+      .then(r => setYahooPicker(p => p && p.secId === sec.security_id ? { ...p, results: r, loading: false } : p))
+      .catch(() => setYahooPicker(p => p && p.secId === sec.security_id ? { ...p, loading: false, error: 'Search failed' } : p))
+  }
+
+  const runYahooSearch = (query: string) => {
+    if (!yahooPicker || !query.trim()) return
+    setYahooPicker(p => p ? { ...p, query, results: [], loading: true, error: null } : p)
+    searchYahooSecurities(query.trim())
+      .then(r => setYahooPicker(p => p ? { ...p, results: r, loading: false } : p))
+      .catch(() => setYahooPicker(p => p ? { ...p, loading: false, error: 'Search failed' } : p))
+  }
+
+  const fetchYahooMut = useMutation({
+    mutationFn: ({ id, symbol }: { id: number; symbol?: string }) => fetchSecurityYahooInfo(id, symbol),
+    onSuccess: (data, { id }) => {
+      const fields = Object.keys(data.updated || {}).join(', ')
+      const msg = data.success ? `✓ Fixed: ${fields || 'nothing new'}` : (data.message || 'Failed')
+      setYahooPicker(p => p ? { ...p, applyMsg: msg, loading: false } : p)
+      // Once fixed, drop it from the outstanding list so the panel shrinks as you go.
+      if (data.success) setNeedsFixList(list => list ? list.filter(s => s.security_id !== id) : list)
+    },
+    onError: () => setYahooPicker(p => p ? { ...p, applyMsg: 'Error applying info', loading: false } : p),
+  })
+
   const rowMutation = useMutation({
     mutationFn: ({ rowId, updates }: { rowId: number; updates: Record<string, unknown> }) =>
       updateRawRow(previewBatchId!, rowId, updates),
@@ -1236,6 +1286,15 @@ export default function Import() {
                         </span>
                       )}
                       <button
+                        onClick={() => checkSecMutation.mutate(previewBatchId)}
+                        disabled={checkSecMutation.isPending}
+                        title="Pre-check for securities with no exchange set — the main cause of unpriced holdings"
+                        className="flex items-center gap-1.5 text-sm border border-blue-300 text-blue-600 rounded px-3 py-1.5 hover:bg-blue-50 disabled:opacity-50"
+                      >
+                        <Search className={`h-4 w-4 ${checkSecMutation.isPending ? 'animate-spin' : ''}`} />
+                        {checkSecMutation.isPending ? 'Checking…' : 'Check Securities'}
+                      </button>
+                      <button
                         onClick={() => commitMutation.mutate(previewBatchId)}
                         disabled={commitMutation.isPending}
                         className="flex items-center gap-1.5 text-sm bg-green-600 text-white rounded px-3 py-1.5 hover:bg-green-700 disabled:opacity-50"
@@ -1247,6 +1306,40 @@ export default function Import() {
                   )}
                 </div>
               </div>
+
+              {/* Securities needing a fix (no exchange set) — non-blocking, dismissable */}
+              {needsFixList && needsFixList.length > 0 && (
+                <div className="mx-4 mb-3 border border-blue-200 bg-blue-50 dark:bg-blue-950/30 dark:border-blue-900 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <p className="text-sm font-medium text-blue-800 dark:text-blue-300">
+                      {needsFixList.length} security{needsFixList.length === 1 ? '' : 'ies'} would have no exchange set — likely to show up as "unpriced" after import
+                    </p>
+                    <button onClick={() => setNeedsFixList(null)} className="text-blue-500 hover:text-blue-700">
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                  <div className="space-y-1">
+                    {needsFixList.map(s => (
+                      <div key={s.security_id} className="flex items-center justify-between bg-card border border-border rounded px-3 py-1.5 text-sm">
+                        <span>
+                          <span className="font-mono font-medium">{s.ticker}</span>
+                          {s.name && <span className="text-muted-foreground ml-2">{s.name}</span>}
+                        </span>
+                        <button
+                          onClick={() => openYahooPicker(s)}
+                          className="flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700 border border-blue-300 rounded px-2 py-1"
+                        >
+                          <Search className="h-3 w-3" /> Find on Yahoo
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-blue-700 dark:text-blue-400">
+                    This won't stop you from committing — some securities (mortgages, notes, manual holdings) genuinely
+                    have no exchange. Fix the ones that should have one, or dismiss this and commit anyway.
+                  </p>
+                </div>
+              )}
 
               {/* Row table */}
               <div className="overflow-x-auto max-h-[32rem] overflow-y-auto">
@@ -1555,6 +1648,88 @@ export default function Import() {
           </div>
         </div>
       )}
+
+      {/* Yahoo Finance picker — fix a security flagged by Check Securities */}
+      {yahooPicker && (() => {
+        const pickerSec = needsFixList?.find(s => s.security_id === yahooPicker.secId)
+        return (
+          <div className="fixed inset-0 z-50 flex items-start justify-center pt-24 bg-black/30" onClick={() => setYahooPicker(null)}>
+            <div className="bg-card rounded-xl shadow-2xl w-[520px] max-h-[480px] flex flex-col" onClick={e => e.stopPropagation()}>
+              <div className="flex items-center justify-between px-4 py-3 border-b">
+                <div className="flex items-center gap-2">
+                  <Search className="h-4 w-4 text-blue-500" />
+                  <span className="font-semibold text-sm text-foreground">
+                    Yahoo Finance — {pickerSec?.ticker}
+                  </span>
+                </div>
+                <button onClick={() => setYahooPicker(null)} className="text-muted-foreground hover:text-muted-foreground"><X className="h-4 w-4" /></button>
+              </div>
+
+              <div className="px-4 py-2 border-b flex gap-2 items-center">
+                <Search className="h-4 w-4 text-muted-foreground shrink-0" />
+                <input
+                  autoFocus
+                  className="bg-background text-foreground flex-1 text-sm outline-none"
+                  placeholder="Search ticker or company name…"
+                  value={yahooPicker.query}
+                  onChange={e => setYahooPicker(p => p ? { ...p, query: e.target.value } : p)}
+                  onKeyDown={e => { if (e.key === 'Enter') runYahooSearch(yahooPicker.query) }}
+                />
+                <button
+                  onClick={() => runYahooSearch(yahooPicker.query)}
+                  disabled={yahooPicker.loading}
+                  className="text-xs bg-blue-100 text-blue-700 px-2 py-1 rounded hover:bg-blue-200 disabled:opacity-50"
+                >
+                  {yahooPicker.loading ? '…' : 'Search'}
+                </button>
+              </div>
+
+              <div className="overflow-y-auto flex-1">
+                {yahooPicker.loading && (
+                  <div className="text-center text-muted-foreground text-sm py-6">Searching Yahoo Finance…</div>
+                )}
+                {yahooPicker.error && (
+                  <div className="text-center text-red-500 dark:text-red-400 text-sm py-6">{yahooPicker.error}</div>
+                )}
+                {!yahooPicker.loading && !yahooPicker.error && yahooPicker.results.length === 0 && (
+                  <div className="text-center text-muted-foreground text-sm py-6">No results</div>
+                )}
+                {yahooPicker.results.map(r => (
+                  <button
+                    key={r.symbol}
+                    onClick={() => {
+                      setYahooPicker(p => p ? { ...p, loading: true, applyMsg: null } : p)
+                      fetchYahooMut.mutate({ id: yahooPicker.secId, symbol: r.symbol })
+                    }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-blue-50 border-b border-border flex items-center gap-3"
+                  >
+                    <div className="w-20 shrink-0">
+                      <span className="font-mono font-semibold text-sm text-primary">{r.symbol}</span>
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="text-sm text-foreground truncate">{r.name || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{r.quote_type}</div>
+                    </div>
+                    <div className="text-right shrink-0">
+                      <div className="text-xs font-medium text-muted-foreground">{r.exchange || '—'}</div>
+                      <div className="text-xs text-muted-foreground">{r.currency}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+
+              {yahooPicker.applyMsg && (
+                <div className={`px-4 py-2 text-xs border-t ${
+                  yahooPicker.applyMsg.startsWith('✓') ? 'bg-green-50 text-green-600 dark:text-green-400' : 'bg-red-50 text-red-600 dark:text-red-400'
+                } flex justify-between items-center`}>
+                  <span>{yahooPicker.applyMsg}</span>
+                  <button onClick={() => setYahooPicker(null)} className="text-xs underline ml-4">Close</button>
+                </div>
+              )}
+            </div>
+          </div>
+        )
+      })()}
     </div>
   )
 }

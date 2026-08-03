@@ -1,4 +1,5 @@
 import { useState, useMemo, useEffect, useRef, useCallback } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useDropzone } from 'react-dropzone'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check, RefreshCw, Sparkles, Search, FileText, Upload, ExternalLink, Loader2 } from 'lucide-react'
@@ -68,6 +69,14 @@ function SecurityPicker({ securities, value, onChange, placeholder }: {
 
 export default function SecuritiesTab() {
   const qc = useQueryClient()
+  // Deep link from Data Health's "Fix in Securities" — /admin?tab=securities&ids=1,2,3
+  // narrows the list to exactly the flagged securities. Cleared locally (not by editing
+  // the URL) so paging/sorting the filtered set doesn't fight the router.
+  const [searchParams] = useSearchParams()
+  const idsParam = searchParams.get('ids')
+  const [idFilter, setIdFilter] = useState<Set<number> | null>(
+    idsParam ? new Set(idsParam.split(',').map(Number).filter(n => !isNaN(n))) : null,
+  )
   const [search, setSearch] = useState('')
   const { data: securities = [] } = useQuery({
     queryKey: ['securities', search],
@@ -286,6 +295,14 @@ export default function SecuritiesTab() {
 
   return (
     <div className="space-y-4">
+      {idFilter && (
+        <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 rounded-lg px-4 py-2.5 text-sm">
+          <span>Showing {idFilter.size} {idFilter.size === 1 ? 'security' : 'securities'} flagged by Data Health.</span>
+          <button onClick={() => setIdFilter(null)} className="text-xs font-medium underline hover:no-underline">
+            Clear filter
+          </button>
+        </div>
+      )}
       {deleteId && (
         <ConfirmDialog
           title="Delete Security"
@@ -424,6 +441,7 @@ export default function SecuritiesTab() {
               const today = new Date().toISOString().slice(0, 10)
               // Client-side filtering on top of server search
               let filtered = (securities as Security[]).filter(s => {
+                if (idFilter && !idFilter.has(s.id)) return false
                 if (assetClassFilter && s.asset_class !== assetClassFilter) return false
                 const opt = s.asset_class === 'OPTION' ? parseOptionTicker(s.ticker) : null
                 if (underlyingFilter) {

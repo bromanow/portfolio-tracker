@@ -776,6 +776,15 @@ export const updateRawRow = (batchId: number, rowId: number, updates: Record<str
 export const checkImportDuplicates = (batchId: number) =>
   api.post<{ checked: number; duplicates_found: number }>(`/imports/${batchId}/check-duplicates`).then(r => r.data)
 
+export interface SecurityNeedsFix {
+  security_id: number
+  ticker: string
+  name: string | null
+  currency: string | null
+}
+export const checkImportSecurities = (batchId: number) =>
+  api.post<{ needs_fix: SecurityNeedsFix[] }>(`/imports/${batchId}/check-securities`).then(r => r.data)
+
 // ─── Admin ────────────────────────────────────────────────────────────────────
 export interface Brokerage {
   id: number

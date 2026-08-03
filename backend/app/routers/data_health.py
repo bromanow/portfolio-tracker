@@ -175,7 +175,10 @@ def data_health(db: Session = Depends(get_db), current_user: User = Depends(get_
     checks = [
         _check("unpriced", "Unpriced holdings", "warning", unpriced,
                "Held securities with no market price — carried at cost, so value and P&L are approximate.",
-               {"label": "Fix in Securities", "route": "/admin?tab=securities"}),
+               {"label": "Fix in Securities", "route": (
+                   "/admin?tab=securities&ids=" + ",".join(str(u["security_id"]) for u in unpriced)
+                   if unpriced else "/admin?tab=securities"
+               )}),
         _check("expired_options", "Expired options still open", "warning", expired_options,
                f"Options that expired in the last {EXPIRED_WINDOW_DAYS} days with a non-zero position and no "
                f"recorded expiry/assignment — their premium or loss isn't realized yet."

@@ -109,6 +109,21 @@ def test_negative_quantity_buy_cannot_take_position_negative():
 
 # ── SELL ───────────────────────────────────────────────────────────────────────
 
+def test_positive_quantity_sell_cancels_a_prior_sell():
+    """Mirror of the BUY-cancel case: a SELL row with positive quantity (iTrade's
+    'AS OF ... to cxl sell') reverses the sell immediately before it. It must restore
+    both quantity and ACB, and remove the realized gain the original sell recorded."""
+    txns = [
+        FakeTxn(1, date(2024, 1, 1), "BUY", quantity=D(100), cad_amount=D(-1000)),
+        FakeTxn(2, date(2024, 11, 15), "SELL", quantity=D(-19), cad_amount=D(11397.96)),
+        FakeTxn(3, date(2024, 11, 19), "SELL", quantity=D(19), cad_amount=D(-11397.96)),
+    ]
+    result = calc(txns)
+    assert result["quantity"] == D(100)
+    assert result["total_acb_cad"] == D(1000)
+    assert result["realized_gains"] == []
+
+
 def test_sell_realizes_gain_at_pooled_acb():
     txns = [
         FakeTxn(1, date(2024, 1, 1), "BUY", quantity=D(100), cad_amount=D(-1000)),

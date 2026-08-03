@@ -39,7 +39,11 @@ Return ONLY valid JSON (no markdown, no code fences) matching exactly this shape
   "holdings": [
     {
       "name": string,           // fund / security name
-      "code": string|null,      // fund code or ticker symbol if shown, else null
+      "code": string|null,      // ONLY the short fund code or ticker symbol (e.g. "4143", "AAPL"),
+                                //   never the fund name. If the statement shows code and name
+                                //   combined in one cell/line (e.g. "4143 ML Fidelity Bond Plus
+                                //   Inst b1*"), extract ONLY the leading code ("4143") here and put
+                                //   the rest in "name". null if no separate code is shown.
       "units": number|null,     // units / shares held
       "unit_price": number|null,// price per unit
       "value": number,          // market / ending value of the holding
@@ -64,6 +68,27 @@ Rules:
 
 def is_configured() -> bool:
     return bool(os.environ.get("GEMINI_API_KEY", "").strip())
+
+
+def _clean_code(raw_code: Optional[str], name: str) -> Optional[str]:
+    """Defensive normalization: even with an explicit prompt, the model occasionally
+    returns the whole "code + name" cell as the code (seen on a Manulife statement
+    where that column is one combined string). If the code contains embedded
+    whitespace, keep only its leading token — the actual fund/ticker code is always
+    a short prefix, never a multi-word name."""
+    if not raw_code:
+        return None
+    c = raw_code.strip()
+    if " " not in c:
+        return c
+    head = c.split(" ", 1)[0]
+    # Only trust the leading token if it looks like a real code (short, and either
+    # the whole name starts with it or it's alphanumeric/digits) — otherwise fall
+    # back to no code (name-based ticker key) rather than risk chopping a
+    # legitimately multi-word ticker/ISIN.
+    if len(head) <= 10 and (name.strip().startswith(c) or head.isalnum()):
+        return head
+    return None
 
 
 def _dec(v) -> Optional[Decimal]:
@@ -142,9 +167,10 @@ def parse_statement(pdf_bytes: bytes) -> dict:
         value = _dec(h.get("value"))
         if value is None:
             continue
+        name = (h.get("name") or "Holding").strip()
         holdings.append({
-            "name": (h.get("name") or "Holding").strip(),
-            "code": (str(h.get("code")).strip() if h.get("code") else None),
+            "name": name,
+            "code": _clean_code(str(h.get("code")).strip() if h.get("code") else None, name),
             "units": _dec(h.get("units")) or Decimal("0"),
             "unit_price": _dec(h.get("unit_price")),
             "value": value,

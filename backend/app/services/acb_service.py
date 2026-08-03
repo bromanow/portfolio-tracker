@@ -119,6 +119,17 @@ def _apply_txn(lot: "ACBLot", txn, db, security_id, realized_gains: list, _txn_p
             cost = abs(cad_amount)
             if qty > ZERO:
                 lot.buy(qty, cost)
+            elif qty < ZERO:
+                # Broker "cancel prior buy" adjustment (e.g. iTrade "AS OF ... to cxl buy") —
+                # a BUY row with negative quantity that reverses an earlier buy of the same
+                # size, refunding the cash. Undo it symmetrically rather than ignoring it
+                # (ignoring it left the cancelled shares permanently in the position).
+                cancel_qty = abs(qty)
+                lot.quantity -= cancel_qty
+                lot.total_acb -= cost
+                if lot.quantity <= ZERO:
+                    lot.quantity = ZERO
+                    lot.total_acb = ZERO
 
         # ── Option buy: open long OR buy-to-close a short ──────────────────────
         elif t_type == "OPTION_BUY":

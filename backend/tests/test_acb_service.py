@@ -83,6 +83,30 @@ def test_two_buys_average_the_acb_per_share():
     assert result["acb_per_share_cad"] == D(12)
 
 
+def test_negative_quantity_buy_cancels_a_prior_buy():
+    """Some brokers (e.g. iTrade) report a cancelled trade as a same-day-ish BUY row
+    with negative quantity and a positive cad_amount refund, e.g. raw_description
+    'AS OF ... to cxl buy'. It must fully reverse the buy it cancels, not be ignored."""
+    txns = [
+        FakeTxn(1, date(2024, 11, 15), "BUY", quantity=D(6), cad_amount=D(-6737.97)),
+        FakeTxn(2, date(2024, 11, 19), "BUY", quantity=D(-6), cad_amount=D(6737.97)),
+        FakeTxn(3, date(2024, 11, 20), "BUY", quantity=D(2), cad_amount=D(-2020.77)),
+    ]
+    result = calc(txns)
+    assert result["quantity"] == D(2)
+    assert result["total_acb_cad"] == D(2020.77)
+
+
+def test_negative_quantity_buy_cannot_take_position_negative():
+    txns = [
+        FakeTxn(1, date(2024, 1, 1), "BUY", quantity=D(2), cad_amount=D(-200)),
+        FakeTxn(2, date(2024, 1, 2), "BUY", quantity=D(-6), cad_amount=D(600)),
+    ]
+    result = calc(txns)
+    assert result["quantity"] == ZERO
+    assert result["total_acb_cad"] == ZERO
+
+
 # ── SELL ───────────────────────────────────────────────────────────────────────
 
 def test_sell_realizes_gain_at_pooled_acb():

@@ -395,6 +395,7 @@ def screen_stock_universe(db: Session, params: BuildParams, progress_cb=None) ->
         "us_candidates_scanned": len(us_universe),
         "errors": ca_errors + us_errors,
         "data_source": ca_meta["data_source"],
+        "market_open": ca_meta.get("market_open", True),
     }
 
 

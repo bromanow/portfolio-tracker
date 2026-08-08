@@ -586,6 +586,27 @@ def _scan_ticker_live(
 
 # ── Shared multi-ticker scan (data-source selection + iteration) ──────────────
 
+def _market_open_now(now=None) -> bool:
+    """Rough US equity regular-hours check (Mon–Fri, 9:30–16:00 ET). Used only to decide whether
+    IBeam's live option snapshots will carry open interest / volume: when the market is closed
+    those fields come back 0, so the min-OI/min-volume filters reject every contract. When closed
+    we prefer yfinance, which reports the LAST session's OI/volume. Market holidays aren't handled
+    here — the per-ticker yfinance fallback covers those. `now` (an ET datetime) is injectable
+    for testing."""
+    from datetime import datetime, time as _dtime
+    if now is None:
+        try:
+            from zoneinfo import ZoneInfo
+            now = datetime.now(ZoneInfo("America/New_York"))
+        except Exception:
+            # No tz database — approximate ET as UTC-4. Fine for the weekday + rough-hours gate.
+            from datetime import timezone, timedelta
+            now = datetime.now(timezone(timedelta(hours=-4)))
+    if now.weekday() >= 5:      # Saturday / Sunday
+        return False
+    return _dtime(9, 30) <= now.time() <= _dtime(16, 0)
+
+
 def scan_tickers(
     tickers: list[str],
     db: Session,
@@ -630,28 +651,46 @@ def scan_tickers(
     except Exception:
         pass
 
+    # When the market is closed (weekends/overnight), IBeam/IBKR live snapshots carry no open
+    # interest or volume, so the min-OI/min-volume filters would reject every contract. yfinance
+    # reports the LAST session's OI/volume, so we scan with it instead and skip the live sources.
+    market_open = _market_open_now()
+    use_ibeam = ibeam_available and market_open
+    use_ibkr  = ibkr_connected and market_open and not use_ibeam
+
     data_mode = (
-        "IBeam Client Portal REST API (live Greeks)"  if ibeam_available else
-        "local IB Gateway (live Greeks)"              if ibkr_connected  else
+        "IBeam Client Portal REST API (live Greeks)"       if use_ibeam else
+        "local IB Gateway (live Greeks)"                   if use_ibkr  else
+        "yfinance (last-session OI/volume, market closed)" if (ibeam_available or ibkr_connected) else
         "yfinance (delayed, Black-Scholes Greeks)"
     )
-    logger.info("scan_tickers: using %s for %d tickers", data_mode, len(tickers))
+    logger.info("scan_tickers: using %s for %d tickers (market_open=%s)", data_mode, len(tickers), market_open)
 
     hv_cache: dict[str, Optional[float]] = {}
     all_opportunities: list[dict] = []
     errors: list[str] = []
 
-    if ibeam_available:
+    def _yf_fallback(ticker: str) -> list[dict]:
+        """Live source returned nothing (holiday, priming miss, or no live OI/vol) — retry the
+        ticker via yfinance, which has the last session's data."""
+        try:
+            return _scan_ticker(ticker, db, portfolio_map, hv_cache, params)
+        except Exception:
+            return []
+
+    if use_ibeam:
         for i, ticker in enumerate(tickers, 1):
             if progress_cb: progress_cb(i, len(tickers), ticker)
             try:
                 opps = _scan_ticker_live(ticker, db, portfolio_map, hv_cache, params, ib=None)
+                if not opps:
+                    opps = _yf_fallback(ticker)   # holiday / priming miss safety net
                 all_opportunities.extend(opps)
             except Exception as exc:
                 logger.exception("scan_tickers IBeam: error for %s", ticker)
                 errors.append(f"{ticker}: {exc}")
 
-    elif ibkr_connected:
+    elif use_ibkr:
         from app.services.ibkr_service import IBKRScannerSession
         try:
             with IBKRScannerSession() as ib:
@@ -659,15 +698,17 @@ def scan_tickers(
                     if progress_cb: progress_cb(i, len(tickers), ticker)
                     try:
                         opps = _scan_ticker_live(ticker, db, portfolio_map, hv_cache, params, ib=ib)
+                        if not opps:
+                            opps = _yf_fallback(ticker)
                         all_opportunities.extend(opps)
                     except Exception as exc:
                         logger.exception("scan_tickers IBKR: error for %s", ticker)
                         errors.append(f"{ticker}: {exc}")
         except Exception as exc:
             logger.warning("Local IBKR session failed (%s) — falling back to yfinance", exc)
-            ibkr_connected = False
+            use_ibkr = False
 
-    if not ibeam_available and not ibkr_connected:
+    if not use_ibeam and not use_ibkr:
         for i, ticker in enumerate(tickers, 1):
             if progress_cb: progress_cb(i, len(tickers), ticker)
             try:
@@ -678,13 +719,14 @@ def scan_tickers(
                 errors.append(f"{ticker}: {exc}")
 
     data_source = (
-        "ibkr_ibeam" if ibeam_available else
-        "ibkr"       if ibkr_connected  else
+        "ibkr_ibeam" if use_ibeam else
+        "ibkr"       if use_ibkr  else
         "yfinance"
     )
     return all_opportunities, errors, {
         "ibeam_available": ibeam_available,
         "ibkr_connected": ibkr_connected,
+        "market_open": market_open,
         "data_source": data_source,
     }
 

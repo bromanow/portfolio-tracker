@@ -1580,6 +1580,7 @@ export interface ScreenResult {
   us_candidates_scanned: number
   errors: string[]
   data_source: string
+  market_open?: boolean
 }
 
 export const screenStockUniverse = (params?: ProposeParams) =>

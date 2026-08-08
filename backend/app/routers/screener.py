@@ -100,6 +100,22 @@ def get_status(db: Session = Depends(get_db)):
     }
 
 
+@router.post("/sync-index")
+def sync_index(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Refresh S&P 500 / TSX 60 membership from Wikipedia and reconcile the screener universe
+    now, instead of waiting for the quarterly scheduler job. Admin only. Aborts without any DB
+    change if a scrape looks broken (see index_universe_service)."""
+    from fastapi import HTTPException
+    from app.services.index_universe_service import sync_index_universe
+
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    try:
+        return sync_index_universe(db)
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"Index sync failed: {exc}")
+
+
 @router.post("/seed-universe", status_code=201)
 def seed_universe(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Create (or flag existing) Security rows for every ticker in the static universe list,

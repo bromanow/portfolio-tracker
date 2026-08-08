@@ -165,6 +165,7 @@ def _run_migrations(eng):
         ("scanner_results",  "dividend_yield",           "FLOAT"),
         ("ibkr_flex_configs", "last_sync_details",        "TEXT"),
         ("securities",        "in_screener_universe",     "BOOLEAN DEFAULT FALSE"),
+        ("securities",        "index_member",             "BOOLEAN DEFAULT FALSE"),
         ("securities",        "interest_rate",            "NUMERIC(10, 6)"),
         ("clients",           "is_demo",                  "BOOLEAN DEFAULT FALSE"),
         ("personal_asset_details", "address_street",       "VARCHAR(255)"),
@@ -185,6 +186,24 @@ def _run_migrations(eng):
                 conn.execute(text(f"ALTER TABLE {table} ADD COLUMN {col} {col_type}"))
                 conn.commit()
                 log.info("Migration applied: added %s.%s", table, col)
+
+        # One-time baseline for the quarterly index-universe sync: mark the tickers in the
+        # curated static S&P 500 / TSX 60 lists as index members, so the sync can tell real
+        # index constituents (safe to auto-drop when they leave the index) apart from names a
+        # user added to the screener by hand (must never be auto-dropped). Runs only while no
+        # rows are flagged yet, so it's a harmless no-op once the sync has taken over.
+        try:
+            already = conn.execute(text("SELECT COUNT(*) FROM securities WHERE index_member = TRUE")).scalar()
+            if not already:
+                from app.data.screener_universe import SP500, TSX60
+                conn.execute(
+                    text("UPDATE securities SET index_member = TRUE WHERE ticker = ANY(:tk)"),
+                    {"tk": list(SP500) + list(TSX60)},
+                )
+                conn.commit()
+                log.info("Migration: seeded index_member baseline from static SP500/TSX60 lists")
+        except Exception:
+            log.exception("index_member baseline backfill skipped")
 
 
 def _create_admin_user():

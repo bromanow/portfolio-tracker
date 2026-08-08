@@ -243,6 +243,22 @@ def _run_weekly_fundamentals_refresh() -> str:
         db.close()
 
 
+def _run_quarterly_index_sync() -> str:
+    """Refresh S&P 500 / TSX 60 membership from Wikipedia and reconcile the screener universe.
+    A broken scrape aborts before any DB write (see index_universe_service), so this can only
+    add/drop real constituents, never wipe the universe. User-added screener names are left
+    untouched (only index_member rows are auto-dropped)."""
+    from app.database import SessionLocal
+    from app.services.index_universe_service import sync_index_universe
+
+    db = SessionLocal()
+    try:
+        result = sync_index_universe(db)
+        return str(result)
+    finally:
+        db.close()
+
+
 def _run_nightly_snapshot_refresh() -> str:
     """Refresh mv_snapshot_monthly after the snapshot recompute populates new rows."""
     from app.database import SessionLocal
@@ -400,11 +416,23 @@ def start_scheduler():
         misfire_grace_time=3600,
     )
 
+    # Index membership (S&P 500 / TSX 60 constituents) — quarterly, a week or so after the
+    # mid-Mar/Jun/Sep/Dec index rebalances take effect, so the roster stays current without a
+    # manual edit. Cheap (two Wikipedia fetches) and self-aborting on a bad scrape.
+    _scheduler.add_job(
+        _logged("Index universe sync", _run_quarterly_index_sync),
+        CronTrigger(month="1,4,7,10", day=8, hour=6, minute=0, timezone="UTC"),
+        id="quarterly_index_sync",
+        name="Quarterly S&P 500 / TSX 60 constituent sync",
+        replace_existing=True,
+        misfire_grace_time=6 * 3600,
+    )
+
     _scheduler.start()
     logger.info(
         "Scheduler started — BOC FX 00:05 ET, Plaid 00:00 ET, IBKR sync 00:15 ET, "
         "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam watchdog every 10 min, "
-        "fundamentals refresh Sun 01:30 ET (Plaid: %s)",
+        "fundamentals refresh Sun 01:30 ET, index sync quarterly (Plaid: %s)",
         freq if plaid_trigger is not None else "off (manual only)",
     )
 

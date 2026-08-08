@@ -57,6 +57,12 @@ class Security(Base):
     fetch_ticker_override: Mapped[Optional[str]] = mapped_column(String(50), nullable=True)
     description: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     in_screener_universe: Mapped[bool] = mapped_column(Boolean, default=False)
+    # True when this ticker is a current S&P 500 / TSX 60 constituent, maintained by the
+    # quarterly index-universe sync. Distinct from in_screener_universe, which is the broader
+    # "show in the screener" flag (index members PLUS any names a user added by hand). The sync
+    # only ever adds/drops rows it owns (index_member=True), so user-added names are never
+    # auto-removed. See services/index_universe_service.py.
+    index_member: Mapped[bool] = mapped_column(Boolean, default=False)
 
     # Manually-maintained annual coupon/interest rate, stored as a percentage (e.g. 8.5 = 8.5%),
     # matching MarketPrice.dividend_yield's convention. For securities with no live market-data

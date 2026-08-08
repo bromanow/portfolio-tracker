@@ -485,8 +485,22 @@ def scan_ticker_ibeam(
         batch = option_meta[batch_start: batch_start + BATCH]
         conids = [c for c, _, _ in batch]
 
-        snap = _cp_snapshot(conids)
-        time.sleep(_CP_RATE_DELAY)
+        # IBKR Client Portal snapshots "prime" on the first call(s): the first 1-2 polls
+        # come back with the conid registered but no bid/ask/greeks yet, and only the 3rd
+        # or so poll returns quotes. A single snapshot therefore reads bid=0 for every
+        # option and drops them all (line ~512) — which is why Canadian (and cold-cache)
+        # scans returned 0 contracts. Poll a few times and merge fields until the quotes
+        # populate for most conids.
+        snap: dict = {}
+        for _attempt in range(4):
+            partial = _cp_snapshot(conids)
+            for _cid, _fields in (partial or {}).items():
+                if isinstance(_fields, dict):
+                    snap.setdefault(_cid, {}).update(_fields)
+            _have_bid = sum(1 for c in conids if _f(snap.get(str(c), {}), 84) is not None)
+            if _have_bid >= max(1, int(len(conids) * 0.8)):
+                break
+            time.sleep(_CP_RATE_DELAY)
 
         for opt_conid, strike, maturity in batch:
             item = snap.get(str(opt_conid), {})

@@ -25,7 +25,8 @@ def _performance_excluded_account_ids(db: Session, include_other_assets: bool) -
       PERSONAL brokerage): hidden by default so Performance tracks the investment
       portfolio only; included when the caller opts in via include_other_assets.
     """
-    from app.models.master import Account, Brokerage, Client
+    from app.models.master import Account, Brokerage
+    from app.models.clients import Client
     from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
 
     excluded: set[int] = set()

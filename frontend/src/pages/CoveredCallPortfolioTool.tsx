@@ -4,14 +4,15 @@ import {
   proposeCoveredCallPortfolio, getProposeJob, adoptCoveredCallPortfolio,
   screenStockUniverse, getScreenJob,
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
-  sellToOpen, rollCoveredCall, closeCoveredCall, updateCoveredCallHolding, getCoveredCallSummary,
+  sellToOpen, rollCoveredCall, closeCoveredCall, updateCoveredCallHolding,
+  deleteCoveredCallHolding, deleteCoveredCallPortfolio, getCoveredCallSummary,
   getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar,
 } from '../api/client'
 import type {
   ProposeParams, ProposeResult, ScreenResult, CoveredCallScreenRow, CoveredCallPick,
   Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry,
 } from '../api/client'
-import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Loader2, Sparkles, Search, CheckSquare, Square } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Loader2, Sparkles, Search, CheckSquare, Square, Trash2 } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -695,7 +696,7 @@ export default function CoveredCallPortfolioTool() {
                   {expandedId === p.id ? <ChevronUp className="h-4 w-4 text-muted-foreground" /> : <ChevronDown className="h-4 w-4 text-muted-foreground" />}
                 </button>
                 {expandedId === p.id && expanded && (
-                  <PortfolioDetail portfolio={expanded} />
+                  <PortfolioDetail portfolio={expanded} onDeleted={() => { setExpandedId(null); refetchPortfolios() }} />
                 )}
               </div>
             ))}
@@ -710,12 +711,20 @@ export default function CoveredCallPortfolioTool() {
 
 // ─── Portfolio detail: summary, per-holding trade management, REAL-mode matching ──
 
-function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail }) {
+function PortfolioDetail({ portfolio, onDeleted }: { portfolio: CoveredCallPortfolioDetail; onDeleted: () => void }) {
   const qc = useQueryClient()
+  const [deleting, setDeleting] = useState(false)
   const invalidate = () => {
     qc.invalidateQueries({ queryKey: ['covered-call-portfolio', portfolio.id] })
     qc.invalidateQueries({ queryKey: ['covered-call-summary', portfolio.id] })
     qc.invalidateQueries({ queryKey: ['covered-call-unmatched', portfolio.id] })
+    qc.invalidateQueries({ queryKey: ['covered-call-calendar'] })
+  }
+  const deletePortfolio = async () => {
+    if (!window.confirm(`Delete "${portfolio.name}" and all its holdings? This can't be undone.`)) return
+    setDeleting(true)
+    try { await deleteCoveredCallPortfolio(portfolio.id); onDeleted() }
+    finally { setDeleting(false) }
   }
 
   const { data: summary } = useQuery({
@@ -730,6 +739,15 @@ function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail 
 
   return (
     <div className="pb-4 pl-2 space-y-4">
+      <div className="flex justify-end">
+        <button
+          onClick={deletePortfolio}
+          disabled={deleting}
+          className="flex items-center gap-1.5 text-xs text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 rounded px-2 py-1 disabled:opacity-50"
+        >
+          <Trash2 className="h-3.5 w-3.5" /> {deleting ? 'Deleting…' : 'Delete portfolio'}
+        </button>
+      </div>
       {summary && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2">
           <span>Premium collected: <span className="font-semibold text-foreground">{fmtMoney(summary.total_premium_collected)}</span></span>
@@ -829,6 +847,12 @@ function HoldingRow({ portfolioId, mode, holding, onChanged }: {
       onChanged(); reset()
     } finally { setSubmitting(false) }
   }
+  const deleteHolding = async () => {
+    if (!window.confirm(`Remove ${holding.ticker ?? 'this holding'} from the portfolio?`)) return
+    setSubmitting(true)
+    try { await deleteCoveredCallHolding(portfolioId, holding.id); onChanged() }
+    finally { setSubmitting(false) }
+  }
 
   return (
     <div className="text-sm border border-border/60 rounded-lg px-3 py-2 space-y-2">
@@ -858,20 +882,26 @@ function HoldingRow({ portfolioId, mode, holding, onChanged }: {
           )}
           {holding.status === 'CLOSED' && <span className="text-xs px-1.5 py-0.5 rounded bg-accent text-muted-foreground">Closed</span>}
         </span>
-        {openLeg ? (
-          <span className="text-xs text-muted-foreground tabular-nums text-right whitespace-nowrap">
-            Short ${fmt(openLeg.strike)} exp {openLeg.expiry_date}
-            {openLeg.premium_per_contract != null && ` @ ${fmtMoney(openLeg.premium_per_contract, holding.currency)}`}
-            {openLeg.premium_per_contract != null && (
-              <span className="block text-[11px] text-emerald-600 dark:text-emerald-400">
-                Premium {fmtMoney(openLeg.premium_per_contract * (openLeg.contracts ?? 1) * 100, holding.currency)}
-                {' '}({openLeg.contracts ?? 1}×)
-              </span>
-            )}
-          </span>
-        ) : (
-          <span className="text-xs text-muted-foreground">No open call</span>
-        )}
+        <div className="flex items-center gap-2">
+          {openLeg ? (
+            <span className="text-xs text-muted-foreground tabular-nums text-right whitespace-nowrap">
+              Short ${fmt(openLeg.strike)} exp {openLeg.expiry_date}
+              {openLeg.premium_per_contract != null && ` @ ${fmtMoney(openLeg.premium_per_contract, holding.currency)}`}
+              {openLeg.premium_per_contract != null && (
+                <span className="block text-[11px] text-emerald-600 dark:text-emerald-400">
+                  Premium {fmtMoney(openLeg.premium_per_contract * (openLeg.contracts ?? 1) * 100, holding.currency)}
+                  {' '}({openLeg.contracts ?? 1}×)
+                </span>
+              )}
+            </span>
+          ) : (
+            <span className="text-xs text-muted-foreground">No open call</span>
+          )}
+          <button onClick={deleteHolding} disabled={submitting} title="Remove this holding"
+            className="p-1 rounded text-muted-foreground hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/30 disabled:opacity-50">
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
       </div>
 
       {holding.status === 'ACTIVE' && (
@@ -945,10 +975,17 @@ function dteColor(dte: number): string {
 function ExpiryCalendar() {
   const today = new Date()
   const [view, setView] = useState({ y: today.getFullYear(), m: today.getMonth() })
+  const [portfolioFilter, setPortfolioFilter] = useState('')   // '' = all portfolios
   const { data: entries } = useQuery({ queryKey: ['covered-call-calendar'], queryFn: getCoveredCallCalendar })
 
+  // Distinct portfolios present in the calendar, for the filter dropdown.
+  const portfolioOptions = Array.from(
+    new Map((entries ?? []).map(e => [e.portfolio_id, e.portfolio_name])).entries()
+  ).map(([id, name]) => ({ id, name }))
+
+  const filtered = (entries ?? []).filter(e => !portfolioFilter || String(e.portfolio_id) === portfolioFilter)
   const byDate = new Map<string, CoveredCallCalendarEntry[]>()
-  for (const e of entries ?? []) {
+  for (const e of filtered) {
     const list = byDate.get(e.expiry_date) ?? []
     list.push(e)
     byDate.set(e.expiry_date, list)
@@ -978,6 +1015,17 @@ function ExpiryCalendar() {
       <div className="flex items-center justify-between">
         <h3 className="text-sm font-semibold text-foreground">Expiry Calendar</h3>
         <div className="flex items-center gap-2">
+          {portfolioOptions.length > 1 && (
+            <select
+              value={portfolioFilter}
+              onChange={e => setPortfolioFilter(e.target.value)}
+              className="bg-background text-foreground border border-border rounded px-2 py-1 text-xs"
+              title="Filter the calendar to one portfolio"
+            >
+              <option value="">All portfolios</option>
+              {portfolioOptions.map(p => <option key={p.id} value={String(p.id)}>{p.name}</option>)}
+            </select>
+          )}
           <button onClick={() => shiftMonth(-1)} className="p-1 rounded text-muted-foreground hover:text-foreground hover:bg-accent">
             <ChevronLeft className="h-4 w-4" />
           </button>

@@ -424,6 +424,38 @@ def update_holding(portfolio_id: int, holding_id: int, body: UpdateHoldingReques
     }
 
 
+@router.delete("/{portfolio_id}/holdings/{holding_id}")
+def delete_holding(portfolio_id: int, holding_id: int, db: Session = Depends(get_db)):
+    """Remove a single holding (and its option trades) from a portfolio. For REAL portfolios
+    this only deletes the strategy metadata — the linked real Transaction rows are untouched."""
+    from app.models.covered_call import CoveredCallTrade
+
+    holding = _get_holding(db, portfolio_id, holding_id)
+    db.query(CoveredCallTrade).filter(CoveredCallTrade.holding_id == holding_id).delete(synchronize_session=False)
+    db.delete(holding)
+    db.commit()
+    return {"deleted_holding_id": holding_id}
+
+
+@router.delete("/{portfolio_id}")
+def delete_portfolio(portfolio_id: int, db: Session = Depends(get_db)):
+    """Delete an entire portfolio — its holdings and option trades. Real ledger untouched
+    (option trades only carry a link to the real Transaction, which is not deleted)."""
+    from app.models.covered_call import CoveredCallPortfolio, CoveredCallHolding, CoveredCallTrade
+
+    portfolio = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.id == portfolio_id).first()
+    if portfolio is None:
+        raise HTTPException(status_code=404, detail="Portfolio not found")
+
+    holding_ids = [h.id for h in db.query(CoveredCallHolding).filter(CoveredCallHolding.portfolio_id == portfolio_id).all()]
+    if holding_ids:
+        db.query(CoveredCallTrade).filter(CoveredCallTrade.holding_id.in_(holding_ids)).delete(synchronize_session=False)
+    db.query(CoveredCallHolding).filter(CoveredCallHolding.portfolio_id == portfolio_id).delete(synchronize_session=False)
+    db.delete(portfolio)
+    db.commit()
+    return {"deleted_portfolio_id": portfolio_id}
+
+
 @router.post("/{portfolio_id}/holdings/{holding_id}/sell-to-open")
 def sell_to_open(portfolio_id: int, holding_id: int, body: SellToOpenRequest, db: Session = Depends(get_db)):
     """Start a new roll chain — sell a call against a holding with no currently open leg."""

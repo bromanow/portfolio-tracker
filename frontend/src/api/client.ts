@@ -1668,6 +1668,11 @@ export const updateCoveredCallHolding = (portfolioId: number, holdingId: number,
 }) => api.patch<{ id: number; shares: number | null; cost_basis_per_share: number | null }>(
   `/covered-call-portfolio/${portfolioId}/holdings/${holdingId}`, data).then(r => r.data)
 
+export const deleteCoveredCallHolding = (portfolioId: number, holdingId: number) =>
+  api.delete(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}`).then(r => r.data)
+export const deleteCoveredCallPortfolio = (portfolioId: number) =>
+  api.delete(`/covered-call-portfolio/${portfolioId}`).then(r => r.data)
+
 export interface CoveredCallSummary {
   portfolio_id: number
   total_premium_collected: number

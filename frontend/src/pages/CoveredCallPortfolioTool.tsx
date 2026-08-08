@@ -72,6 +72,7 @@ interface FormState {
   min_delta: number   // 0 = no floor
   max_delta: number   // 1 = no cap (delta can't exceed 1)
   min_iv_pct: number  // 0 = no floor
+  dynamic_universe: boolean  // rank full S&P 500 / TSX 60 vs. curated static list
 }
 
 const DEFAULT_FORM: FormState = {
@@ -79,6 +80,7 @@ const DEFAULT_FORM: FormState = {
   min_option_oi: 50, min_option_vol: 3, min_avg_stock_vol: 250_000,
   min_div_yield: 0, min_annual_yield_pct: 0,
   min_delta: 0, max_delta: 1, min_iv_pct: 0,
+  dynamic_universe: true,
 }
 
 function NumField({ label, value, onChange, step = 1, title }: {
@@ -311,8 +313,22 @@ export default function CoveredCallPortfolioTool() {
           <NumField label="Min option volume" value={form.min_option_vol} onChange={v => setForm(f => ({ ...f, min_option_vol: v }))} />
           <NumField label="Min avg stock volume" value={form.min_avg_stock_vol} onChange={v => setForm(f => ({ ...f, min_avg_stock_vol: v }))} step={10000} />
         </div>
+        <label className="flex items-start gap-2 cursor-pointer">
+          <input
+            type="checkbox" checked={form.dynamic_universe}
+            onChange={e => setForm(f => ({ ...f, dynamic_universe: e.target.checked }))}
+            className="mt-0.5 h-4 w-4 rounded border-border accent-primary"
+          />
+          <span>
+            <span className="text-sm font-medium text-foreground">Rank the full S&amp;P 500 / TSX 60 by liquidity, volatility &amp; yield</span>
+            <span className="block text-xs text-muted-foreground">
+              On: scores the entire in-app screener universe (~460 large caps) and scans the strongest covered-call
+              candidates. Off: uses only the hand-curated shortlist. Either way, any extra tickers below are included.
+            </span>
+          </span>
+        </label>
         <label className="flex flex-col gap-1">
-          <span className="text-xs text-muted-foreground">Extra candidate tickers (comma-separated, optional — appended to the curated CA/US lists)</span>
+          <span className="text-xs text-muted-foreground">Extra candidate tickers (comma-separated, optional — appended to the candidate lists)</span>
           <input
             type="text" value={extraTickers} onChange={e => setExtraTickers(e.target.value)}
             placeholder="e.g. SHOP.TO, PLTR"

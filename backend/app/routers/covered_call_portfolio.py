@@ -46,6 +46,11 @@ class ProposeRequest(BaseModel):
     num_ca: int = 5
     num_us: int = 10
     extra_tickers: Optional[list[str]] = None
+    # Data-driven candidate universe: rank the full in-screener-universe by liquidity,
+    # volatility & yield instead of the hand-curated static lists. Defaults ON.
+    dynamic_universe: bool = True
+    us_pool: int = 100
+    ca_pool: int = 40
     # Step 2 of the two-step flow — an explicit ticker list approved in /screen. When set,
     # only these tickers are scanned (num_ca/num_us/extra_tickers are ignored).
     tickers: Optional[list[str]] = None
@@ -108,6 +113,7 @@ def _spawn_propose(req: ProposeRequest) -> dict:
                 min_delta=req.min_delta, max_delta=req.max_delta, min_iv_pct=req.min_iv_pct,
                 num_ca=req.num_ca, num_us=req.num_us, extra_tickers=req.extra_tickers,
                 tickers=req.tickers,
+                dynamic_universe=req.dynamic_universe, us_pool=req.us_pool, ca_pool=req.ca_pool,
             )
 
             def _progress(done, total, ticker):
@@ -160,6 +166,7 @@ def _spawn_screen(req: ProposeRequest) -> dict:
                 min_annual_yield_pct=req.min_annual_yield_pct,
                 min_delta=req.min_delta, max_delta=req.max_delta, min_iv_pct=req.min_iv_pct,
                 extra_tickers=req.extra_tickers,
+                dynamic_universe=req.dynamic_universe, us_pool=req.us_pool, ca_pool=req.ca_pool,
             )
 
             def _progress(done, total, ticker):

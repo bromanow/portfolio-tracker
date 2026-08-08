@@ -1493,6 +1493,11 @@ export interface ProposeParams {
   num_ca?: number
   num_us?: number
   extra_tickers?: string[]
+  /** Rank the full in-screener-universe (S&P 500 / TSX 60) by liquidity, volatility & yield
+   *  instead of the hand-curated static candidate list. Defaults ON. */
+  dynamic_universe?: boolean
+  us_pool?: number
+  ca_pool?: number
   /** Step 2 of the two-step flow — an explicit ticker list approved in Step 1 (screen).
    *  When set, num_ca/num_us/extra_tickers are ignored; only these tickers are scanned. */
   tickers?: string[]

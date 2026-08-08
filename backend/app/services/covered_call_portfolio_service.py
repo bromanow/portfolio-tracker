@@ -53,6 +53,14 @@ class BuildParams:
     # extra_tickers) and returns every one of them (num_ca/num_us caps don't apply — the
     # approved list IS the chosen set).
     tickers: Optional[list[str]] = None
+    # Data-driven universe (default): instead of the hand-curated ~110-name static list,
+    # rank the app's full screener universe (S&P 500 + TSX 60, ~460 names) by a covered-call
+    # candidacy score — liquidity + volatility + dividend yield, all from stored fundamentals —
+    # and scan the top `us_pool` US + `ca_pool` CA names. Set dynamic_universe=False to fall
+    # back to the curated static list.
+    dynamic_universe: bool = True
+    us_pool: int = 100
+    ca_pool: int = 40
 
     def to_scan_params(self) -> ScanParams:
         return ScanParams(
@@ -101,6 +109,93 @@ def _best_per_ticker(
     return list(best.values())
 
 
+def _pct_ranks(values: list[Optional[float]]) -> list[Optional[float]]:
+    """Percentile rank (0..1) of each value among the non-None values — robust to the heavy
+    right-skew of things like average volume. None stays None."""
+    present = sorted(v for v in values if v is not None)
+    n = len(present)
+    if n == 0:
+        return [None] * len(values)
+    import bisect
+    out: list[Optional[float]] = []
+    for v in values:
+        if v is None:
+            out.append(None)
+        else:
+            # fraction of values <= v
+            out.append(bisect.bisect_right(present, v) / n)
+    return out
+
+
+def build_candidate_universe(
+    db: Session,
+    us_limit: int = 100,
+    ca_limit: int = 40,
+    min_avg_volume: float = 250_000,
+) -> tuple[list[str], list[str]]:
+    """Data-driven candidate universe for covered calls.
+
+    Ranks the app's screener universe (the ~460 S&P 500 + TSX 60 equities flagged
+    in_screener_universe, with stored fundamentals) by a covered-call candidacy score and
+    returns (ca_tickers, us_tickers) — the top names by score, CA suffixed with ".TO" for
+    the scan/yfinance. The score blends, via percentile rank across the universe:
+      • liquidity  (avg_volume)      — tight option spreads; the #1 practical requirement
+      • volatility (beta, IV proxy)  — richer option premium (the point of covered calls)
+      • dividend yield               — a yield floor under the premium (a bonus)
+    Names below the liquidity floor are dropped. Falls back to the curated static list when
+    no fundamentals are available (fresh DB / SQLite tests).
+    """
+    from app.models.master import Security, SecurityFundamentals
+
+    rows = (
+        db.query(Security, SecurityFundamentals)
+        .join(SecurityFundamentals, SecurityFundamentals.security_id == Security.id)
+        .filter(
+            Security.in_screener_universe.is_(True),
+            Security.active.is_(True),
+            Security.asset_class == "EQUITY",
+        )
+        .all()
+    )
+
+    def _rank(subset: list, limit: int, is_ca: bool) -> list[str]:
+        cands = []
+        for s, f in subset:
+            av = float(f.avg_volume) if f.avg_volume is not None else None
+            if av is None or av < min_avg_volume:
+                continue
+            beta = float(f.beta) if f.beta is not None else None
+            dy = float(f.dividend_yield) if f.dividend_yield is not None else 0.0
+            cands.append([s.ticker, av, beta, dy])
+        if not cands:
+            return []
+        av_pct = _pct_ranks([c[1] for c in cands])
+        beta_pct = _pct_ranks([c[2] for c in cands])
+        dy_pct = _pct_ranks([c[3] for c in cands])
+        scored = []
+        for i, c in enumerate(cands):
+            score = (
+                0.45 * (av_pct[i] or 0.0)
+                + 0.35 * (beta_pct[i] if beta_pct[i] is not None else 0.5)  # neutral if beta missing
+                + 0.20 * (dy_pct[i] or 0.0)
+            )
+            scored.append((score, c[0]))
+        scored.sort(key=lambda x: -x[0])
+        out = []
+        for _, tkr in scored[:limit]:
+            out.append(f"{tkr}.TO" if (is_ca and not tkr.upper().endswith((".TO", ".V"))) else tkr)
+        return out
+
+    us = _rank([(s, f) for s, f in rows if (s.currency or "").upper() == "USD"], us_limit, False)
+    ca = _rank([(s, f) for s, f in rows if (s.currency or "").upper() == "CAD"], ca_limit, True)
+
+    if not us and not ca:
+        logger.info("build_candidate_universe: no fundamentals — falling back to curated static list")
+        return list(CA_CANDIDATES), list(US_CANDIDATES)
+    logger.info("build_candidate_universe: ranked %d US + %d CA candidates", len(us), len(ca))
+    return ca, us
+
+
 def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
     """
     Scan the CA and US candidate universes separately (so the geographic split is
@@ -115,8 +210,13 @@ def build_portfolio(db: Session, params: BuildParams, progress_cb=None) -> dict:
         us_universe = [t for t in params.tickers if t not in ca_universe]
         num_ca, num_us = len(ca_universe), len(us_universe)
     else:
-        ca_universe = list(CA_CANDIDATES)
-        us_universe = list(US_CANDIDATES)
+        if params.dynamic_universe:
+            ca_universe, us_universe = build_candidate_universe(
+                db, params.us_pool, params.ca_pool, min_avg_volume=params.min_avg_stock_vol,
+            )
+        else:
+            ca_universe = list(CA_CANDIDATES)
+            us_universe = list(US_CANDIDATES)
         if params.extra_tickers:
             for t in params.extra_tickers:
                 tu = t.strip().upper()
@@ -247,8 +347,13 @@ def screen_stock_universe(db: Session, params: BuildParams, progress_cb=None) ->
     Unlike build_portfolio, this returns EVERY qualifying ticker — no num_ca/num_us cap."""
     scan_params = params.to_scan_params()
 
-    ca_universe = list(CA_CANDIDATES)
-    us_universe = list(US_CANDIDATES)
+    if params.dynamic_universe:
+        ca_universe, us_universe = build_candidate_universe(
+            db, params.us_pool, params.ca_pool, min_avg_volume=params.min_avg_stock_vol,
+        )
+    else:
+        ca_universe = list(CA_CANDIDATES)
+        us_universe = list(US_CANDIDATES)
     if params.extra_tickers:
         for t in params.extra_tickers:
             tu = t.strip().upper()

@@ -478,6 +478,24 @@ function PerformanceInner() {
     staleTime: 5 * 60 * 1000,
   })
 
+  // Whole-portfolio YTD time-weighted return, always over YTD regardless of the chart's
+  // selected period — so the "YTD Return" card matches the chart's % methodology (rather
+  // than the value-weighted average of per-account Modified Dietz, which over-weights the
+  // largest/winning accounts and counts internal transfers as external flows).
+  const ytdStart = `${new Date().getFullYear()}-01-01`
+  const ytdTwrQ = useQuery({
+    queryKey: ['perf-ytd-twr', chartAccountIds, includeOtherAssets, ytdStart],
+    queryFn: () => api.get<TimelineResponse>('/portfolio/performance/timeline', {
+      params: {
+        group_by: 'total',
+        from_date: ytdStart,
+        ...(chartAccountIds ? { account_ids: chartAccountIds } : {}),
+        ...(includeOtherAssets ? { include_other_assets: true } : {}),
+      },
+    }).then(r => r.data),
+    staleTime: 5 * 60 * 1000,
+  })
+
   // True from the moment Recompute is clicked until the BACKGROUND job actually
   // finishes — not just while the POST is in flight. compute-snapshots returns a
   // job_id in ~1s but the real work runs in a background thread, so without this the
@@ -790,17 +808,15 @@ function PerformanceInner() {
   const bestAcct  = sorted1Y[0]
   const worstAcct = sorted1Y[sorted1Y.length - 1]
   const latestDate = points.length ? points[points.length - 1].date : null
-  // YTD card: value-weighted average of the per-account Modified Dietz YTD returns,
-  // so the card matches the table (and excludes transfers/deposits) rather than the
-  // naive (end−start)/start over the chart timeline.
+  // YTD card: whole-portfolio time-weighted return over YTD — the SAME methodology the
+  // chart's % view uses (see ytdTwrQ), so the headline number ties out with the chart
+  // instead of drifting from it.
   const ytdPct = useMemo(() => {
-    const weighted = scopedReturns.reduce(
-      (s, r) => { const v = r.returns['YTD']; return v != null ? s + v * r.current_value : s }, 0)
-    const tw = scopedReturns
-      .filter(r => r.returns['YTD'] != null)
-      .reduce((s, r) => s + r.current_value, 0)
-    return tw > 0 ? weighted / tw : null
-  }, [scopedReturns])
+    const pts = ytdTwrQ.data?.points ?? []
+    if (!pts.length) return null
+    const r = pts[pts.length - 1].returns?.['Total']
+    return typeof r === 'number' && isFinite(r) ? r : null
+  }, [ytdTwrQ.data])
 
   // Window stats: annualized (time-weighted) return + max drawdown over the visible
   // window. We chain per-step returns net of external cash flows so deposits/withdrawals

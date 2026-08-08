@@ -1745,6 +1745,16 @@ export const seedScreenerUniverse = () =>
   api.post<{ universe_tickers: number; newly_flagged: number; job_id: string; status: string; already_running: boolean }>('/screener/seed-universe', {}).then(r => r.data)
 export const refreshScreenerUniverse = () =>
   api.post<{ job_id: string; status: string; already_running: boolean }>('/screener/refresh', {}).then(r => r.data)
+export interface IndexSyncResult {
+  us_constituents: number
+  ca_constituents: number
+  added: string[]
+  dropped: string[]
+  added_count: number
+  dropped_count: number
+}
+export const syncScreenerIndex = () =>
+  api.post<IndexSyncResult>('/screener/sync-index', {}).then(r => r.data)
 export const getScreenerResults = (filters: ScreenerFilters = {}) =>
   api.get<ScreenerResult[]>('/screener/results', { params: filters }).then(r => r.data)
 export const getScreenerSectors = () =>

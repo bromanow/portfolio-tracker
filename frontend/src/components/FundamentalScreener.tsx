@@ -2,10 +2,10 @@ import { useState, useMemo, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
   getScreenerStatus, seedScreenerUniverse, refreshScreenerUniverse, getScreenerResults,
-  getScreenerSectors, getPriceJob,
+  getScreenerSectors, getPriceJob, syncScreenerIndex,
 } from '../api/client'
-import type { ScreenerResult } from '../api/client'
-import { RefreshCw, Database, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle } from 'lucide-react'
+import type { ScreenerResult, IndexSyncResult } from '../api/client'
+import { RefreshCw, Database, ChevronUp, ChevronDown, ChevronsUpDown, AlertTriangle, ListChecks } from 'lucide-react'
 import TickerLink from './TickerLink'
 
 // ─── Formatters ───────────────────────────────────────────────────────────────
@@ -154,6 +154,11 @@ export default function FundamentalScreener() {
     mutationFn: refreshScreenerUniverse,
     onSuccess: d => { if (d.job_id) setJobId(d.job_id) },
   })
+  const [indexSync, setIndexSync] = useState<IndexSyncResult | null>(null)
+  const syncMut = useMutation({
+    mutationFn: syncScreenerIndex,
+    onSuccess: d => { setIndexSync(d); qc.invalidateQueries({ queryKey: ['screener-status'] }) },
+  })
   const isRefreshing = status?.refreshing || jobStatus?.status === 'running'
 
   const queryParams = useMemo(() => ({
@@ -213,17 +218,50 @@ export default function FundamentalScreener() {
             </button>
           )}
           {!noUniverseYet && (
-            <button
-              onClick={() => refreshMut.mutate()}
-              disabled={isRefreshing || refreshMut.isPending}
-              className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-60 shadow-sm"
-            >
-              <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
-              {isRefreshing ? 'Refreshing…' : 'Refresh Data'}
-            </button>
+            <>
+              <button
+                onClick={() => syncMut.mutate()}
+                disabled={syncMut.isPending}
+                title="Refresh S&P 500 / TSX 60 membership from the index lists — adds new constituents, drops departed ones (also runs automatically every quarter)"
+                className="flex items-center gap-2 px-4 py-2 bg-card border border-border text-foreground text-sm font-medium rounded-lg hover:bg-muted/50 disabled:opacity-60 shadow-sm"
+              >
+                <ListChecks className={`h-4 w-4 ${syncMut.isPending ? 'animate-pulse' : ''}`} />
+                {syncMut.isPending ? 'Syncing index…' : 'Sync Index'}
+              </button>
+              <button
+                onClick={() => refreshMut.mutate()}
+                disabled={isRefreshing || refreshMut.isPending}
+                className="flex items-center gap-2 px-4 py-2 bg-primary text-white text-sm font-medium rounded-lg hover:bg-primary/90 disabled:opacity-60 shadow-sm"
+              >
+                <RefreshCw className={`h-4 w-4 ${isRefreshing ? 'animate-spin' : ''}`} />
+                {isRefreshing ? 'Refreshing…' : 'Refresh Data'}
+              </button>
+            </>
           )}
         </div>
       </div>
+
+      {syncMut.isError && (
+        <div className="flex items-start gap-2 bg-red-50 dark:bg-red-950/30 border border-red-200 dark:border-red-900 rounded-lg px-4 py-3 text-sm text-red-700 dark:text-red-400">
+          <AlertTriangle className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>Index sync failed — the universe was left unchanged. {(syncMut.error as any)?.response?.data?.detail ?? 'Try again shortly.'}</div>
+        </div>
+      )}
+      {indexSync && !syncMut.isPending && (
+        <div className="flex items-start gap-2 bg-emerald-50 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-900 rounded-lg px-4 py-3 text-sm text-emerald-800 dark:text-emerald-300">
+          <ListChecks className="h-4 w-4 flex-shrink-0 mt-0.5" />
+          <div>
+            Index synced: <strong>{indexSync.us_constituents}</strong> S&amp;P 500 + <strong>{indexSync.ca_constituents}</strong> TSX 60.{' '}
+            {indexSync.added_count === 0 && indexSync.dropped_count === 0
+              ? 'No membership changes.'
+              : <>
+                  {indexSync.added_count > 0 && <>Added {indexSync.added_count}{indexSync.added.length ? ` (${indexSync.added.slice(0, 12).join(', ')}${indexSync.added.length > 12 ? '…' : ''})` : ''}. </>}
+                  {indexSync.dropped_count > 0 && <>Dropped {indexSync.dropped_count}{indexSync.dropped.length ? ` (${indexSync.dropped.slice(0, 12).join(', ')}${indexSync.dropped.length > 12 ? '…' : ''})` : ''}.</>}
+                </>}
+            {' '}New names get their fundamentals on the next <strong>Refresh Data</strong>.
+          </div>
+        </div>
+      )}
 
       {isRefreshing && (
         <div className="flex items-center gap-2 bg-primary/10 border border-primary/20 rounded-lg px-4 py-2.5 text-sm text-primary">

@@ -403,7 +403,7 @@ def start_scheduler():
     _scheduler.start()
     logger.info(
         "Scheduler started — BOC FX 00:05 ET, Plaid 00:00 ET, IBKR sync 00:15 ET, "
-        "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam health check 09:00 ET, "
+        "snapshot recompute 00:35 ET, view refresh 01:00 ET, IBeam watchdog every 10 min, "
         "fundamentals refresh Sun 01:30 ET (Plaid: %s)",
         freq if plaid_trigger is not None else "off (manual only)",
     )

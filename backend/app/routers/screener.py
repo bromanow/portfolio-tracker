@@ -100,20 +100,56 @@ def get_status(db: Session = Depends(get_db)):
     }
 
 
+def _backfill_screener_metadata(db2, job_id) -> dict:
+    """Fetch name/sector/industry/exchange from Yahoo for every universe security missing a
+    name. Shared by seed-universe and sync-index: any ticker newly flagged into the universe
+    starts as a bare ticker (get_or_create_security stores no name), so without this it shows
+    in the screener with a blank name/sector until backfilled."""
+    from app.routers.securities import _apply_yahoo_info
+    from app.services.price_service import fetch_security_info
+
+    missing = (
+        db2.query(Security)
+        .filter(Security.in_screener_universe == True, Security.name.is_(None))  # noqa: E712
+        .all()
+    )
+    updated = skipped = 0
+    for sec in missing:
+        try:
+            info = fetch_security_info(sec)
+            if info is None:
+                skipped += 1
+                continue
+            _apply_yahoo_info(sec, info, db2)
+            updated += 1
+        except Exception:
+            skipped += 1
+        finally:
+            db2.commit()
+    return {"metadata_updated": updated, "metadata_skipped": skipped}
+
+
 @router.post("/sync-index")
 def sync_index(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     """Refresh S&P 500 / TSX 60 membership from Wikipedia and reconcile the screener universe
     now, instead of waiting for the quarterly scheduler job. Admin only. Aborts without any DB
-    change if a scrape looks broken (see index_universe_service)."""
+    change if a scrape looks broken (see index_universe_service). After reconciling, kicks off a
+    background job to backfill name/sector for the newly-added constituents (they arrive as bare
+    tickers), so they don't show up blank in the screener."""
     from fastapi import HTTPException
+    from app.routers.prices import _spawn_job
     from app.services.index_universe_service import sync_index_universe
 
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     try:
-        return sync_index_universe(db)
+        summary = sync_index_universe(db)
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"Index sync failed: {exc}")
+
+    # Backfill name/sector/exchange for any nameless universe securities (the ones just added).
+    job = _spawn_job("screener_seed_metadata", _backfill_screener_metadata)
+    return {**summary, **job}
 
 
 @router.post("/seed-universe", status_code=201)
@@ -144,31 +180,7 @@ def seed_universe(current_user: User = Depends(get_current_user), db: Session = 
         added += 1
     db.commit()
 
-    def _backfill(db2, job_id):
-        from app.routers.securities import _apply_yahoo_info
-        from app.services.price_service import fetch_security_info
-
-        missing = (
-            db2.query(Security)
-            .filter(Security.in_screener_universe == True, Security.name.is_(None))  # noqa: E712
-            .all()
-        )
-        updated = skipped = 0
-        for sec in missing:
-            try:
-                info = fetch_security_info(sec)
-                if info is None:
-                    skipped += 1
-                    continue
-                _apply_yahoo_info(sec, info, db2)
-                updated += 1
-            except Exception:
-                skipped += 1
-            finally:
-                db2.commit()
-        return {"metadata_updated": updated, "metadata_skipped": skipped}
-
-    job = _spawn_job("screener_seed_metadata", _backfill)
+    job = _spawn_job("screener_seed_metadata", _backfill_screener_metadata)
     return {"universe_tickers": added, "newly_flagged": flagged, **job}
 
 

@@ -173,7 +173,12 @@ export default function FundamentalScreener() {
   const [indexSync, setIndexSync] = useState<IndexSyncResult | null>(null)
   const syncMut = useMutation({
     mutationFn: syncScreenerIndex,
-    onSuccess: d => { setIndexSync(d); qc.invalidateQueries({ queryKey: ['screener-status'] }) },
+    onSuccess: d => {
+      setIndexSync(d)
+      qc.invalidateQueries({ queryKey: ['screener-status'] })
+      // Poll the name/sector backfill job so the table refreshes once new constituents are named.
+      if (d.job_id) setJobId(d.job_id)
+    },
   })
   const isRefreshing = status?.refreshing || jobStatus?.status === 'running'
 
@@ -285,7 +290,7 @@ export default function FundamentalScreener() {
                   {indexSync.added_count > 0 && <>Added {indexSync.added_count}{indexSync.added.length ? ` (${indexSync.added.slice(0, 12).join(', ')}${indexSync.added.length > 12 ? '…' : ''})` : ''}. </>}
                   {indexSync.dropped_count > 0 && <>Dropped {indexSync.dropped_count}{indexSync.dropped.length ? ` (${indexSync.dropped.slice(0, 12).join(', ')}${indexSync.dropped.length > 12 ? '…' : ''})` : ''}.</>}
                 </>}
-            {' '}New names get their fundamentals on the next <strong>Refresh Data</strong>.
+            {' '}Fetching company names &amp; sectors for new constituents in the background — then hit <strong>Refresh Data</strong> for their fundamentals.
           </div>
         </div>
       )}

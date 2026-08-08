@@ -1769,6 +1769,8 @@ export interface IndexSyncResult {
   dropped: string[]
   added_count: number
   dropped_count: number
+  job_id?: string   // background job backfilling name/sector for newly-added constituents
+  status?: string
 }
 export const syncScreenerIndex = () =>
   api.post<IndexSyncResult>('/screener/sync-index', {}).then(r => r.data)

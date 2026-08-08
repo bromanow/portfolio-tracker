@@ -100,12 +100,17 @@ function NumField({ label, value, onChange, step = 1, title }: {
 //     unreliable for this app in prior testing — a manual recursive setTimeout
 //     is used instead, mirroring Header.tsx's price-refresh job poll) ────────
 
-// Persist the last completed Screen/Propose result to localStorage so it survives a
-// logout (which unmounts this page and clears the React Query cache) or a browser refresh —
-// the user gets their last scan back on return instead of a blank tool. localStorage is
+// The Screen/Propose scans are BACKEND background jobs — they keep running server-side even
+// if you leave the page. We persist BOTH the in-flight job id AND the last completed result
+// to localStorage so the tool reconnects to a still-running job (and shows the result when it
+// finishes) after you navigate away and back, or log out/in, or refresh. localStorage is
 // device-local and untouched by logout's queryClient.clear().
 const CC_SCREEN_KEY = 'cc-last-screen-result'
 const CC_PROPOSE_KEY = 'cc-last-propose-result'
+const CC_SCREEN_JOB_KEY = 'cc-active-screen-jobid'
+const CC_PROPOSE_JOB_KEY = 'cc-active-propose-jobid'
+
+type JobState<T> = { status: string; result?: T; error?: string; progress?: any }
 
 function loadPersisted<T>(key: string): { status: string; result: T } | undefined {
   try {
@@ -114,61 +119,59 @@ function loadPersisted<T>(key: string): { status: string; result: T } | undefine
   } catch { /* corrupt/blocked storage → just start fresh */ }
   return undefined
 }
-function savePersisted(key: string, result: unknown) {
-  try { localStorage.setItem(key, JSON.stringify(result)) } catch { /* quota/private mode */ }
+function lsSet(key: string, value: string | null) {
+  try { if (value === null) localStorage.removeItem(key); else localStorage.setItem(key, value) } catch { /* quota/private mode */ }
 }
 
-function useProposeJob() {
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [job, setJob] = useState<{ status: string; result?: ProposeResult; error?: string; progress?: any } | undefined>(
-    () => loadPersisted<ProposeResult>(CC_PROPOSE_KEY),
-  )
+// Generic hook: tracks one background job, resuming it across unmounts/logins via localStorage.
+function usePersistentJob<T>(
+  fetchJob: (id: string) => Promise<JobState<T>>,
+  resultKey: string,
+  jobKey: string,
+) {
+  const [jobId, setJobIdState] = useState<string | null>(() => { try { return localStorage.getItem(jobKey) } catch { return null } })
+  const [job, setJob] = useState<JobState<T> | undefined>(() => loadPersisted<T>(resultKey))
+
+  const setJobId = (id: string | null) => { setJobIdState(id); lsSet(jobKey, id) }
 
   useEffect(() => {
     if (!jobId) return   // no active job — keep whatever (possibly rehydrated) result is shown
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
+    let errors = 0
     const poll = async () => {
-      let data
-      try { data = await getProposeJob(jobId) } catch { if (!cancelled) timer = setTimeout(poll, 1500); return }
+      let data: JobState<T>
+      try {
+        data = await fetchJob(jobId)
+      } catch {
+        // The job may have expired (e.g. backend restarted). Give it a few tries, then stop
+        // and fall back to the last persisted result rather than polling a dead id forever.
+        errors += 1
+        if (errors >= 5) { lsSet(jobKey, null); return }
+        if (!cancelled) timer = setTimeout(poll, 1500)
+        return
+      }
       if (cancelled) return
+      errors = 0
       setJob(data)
-      if (data.status === 'done' && data.result) savePersisted(CC_PROPOSE_KEY, data.result)
-      if (data.status === 'running') timer = setTimeout(poll, 1500)
+      if (data.status === 'running') {
+        timer = setTimeout(poll, 1500)
+      } else {
+        // Terminal (done / error) — save the result and drop the active id so we don't re-poll.
+        if (data.status === 'done' && data.result) lsSet(resultKey, JSON.stringify(data.result))
+        lsSet(jobKey, null)
+      }
     }
     poll()
     return () => { cancelled = true; clearTimeout(timer) }
-  }, [jobId])
+  }, [jobId, fetchJob, resultKey, jobKey])
 
-  const clear = () => { setJobId(null); setJob(undefined); try { localStorage.removeItem(CC_PROPOSE_KEY) } catch { /* ignore */ } }
+  const clear = () => { setJobId(null); setJob(undefined); lsSet(resultKey, null) }
   return { jobId, setJobId, job, clear }
 }
 
-function useScreenJob() {
-  const [jobId, setJobId] = useState<string | null>(null)
-  const [job, setJob] = useState<{ status: string; result?: ScreenResult; error?: string; progress?: any } | undefined>(
-    () => loadPersisted<ScreenResult>(CC_SCREEN_KEY),
-  )
-
-  useEffect(() => {
-    if (!jobId) return
-    let cancelled = false
-    let timer: ReturnType<typeof setTimeout>
-    const poll = async () => {
-      let data
-      try { data = await getScreenJob(jobId) } catch { if (!cancelled) timer = setTimeout(poll, 1500); return }
-      if (cancelled) return
-      setJob(data)
-      if (data.status === 'done' && data.result) savePersisted(CC_SCREEN_KEY, data.result)
-      if (data.status === 'running') timer = setTimeout(poll, 1500)
-    }
-    poll()
-    return () => { cancelled = true; clearTimeout(timer) }
-  }, [jobId])
-
-  const clear = () => { setJobId(null); setJob(undefined); try { localStorage.removeItem(CC_SCREEN_KEY) } catch { /* ignore */ } }
-  return { jobId, setJobId, job, clear }
-}
+function useProposeJob() { return usePersistentJob<ProposeResult>(getProposeJob, CC_PROPOSE_KEY, CC_PROPOSE_JOB_KEY) }
+function useScreenJob() { return usePersistentJob<ScreenResult>(getScreenJob, CC_SCREEN_KEY, CC_SCREEN_JOB_KEY) }
 
 // ─── Main tool ────────────────────────────────────────────────────────────────
 

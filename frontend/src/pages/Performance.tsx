@@ -23,6 +23,7 @@ interface TimelinePoint {
   date: string
   values: Record<string, number>
   invested: Record<string, number>
+  returns?: Record<string, number>   // cumulative time-weighted return % per label (for the % view)
 }
 interface ChartEventItem {
   type: 'DEPOSIT' | 'WITHDRAWAL' | 'TRANSFER_IN' | 'TRANSFER_OUT' | 'JOURNAL'
@@ -595,6 +596,17 @@ function PerformanceInner() {
     return row
   }), [points, labels, showInvested])
 
+  // Backend-computed cumulative time-weighted return % per label, keyed by chart date.
+  // Used by the % view so deposits/withdrawals don't distort the line (naive value
+  // indexing would show a withdrawal as a loss).
+  const returnsByDate = useMemo(() => {
+    const m: Record<string, Record<string, number>> = {}
+    for (const p of points) {
+      if (p.returns) m[p.date.slice(0, 10)] = p.returns
+    }
+    return m
+  }, [points])
+
   // ── Benchmark index comparison ────────────────────────────────────────────────
   // Fetch raw index closes over the visible date range, then rebase each so it
   // starts at the portfolio's total value on the first chart date — i.e. "what your
@@ -686,8 +698,17 @@ function PerformanceInner() {
       }
     return chartDataWithIndices.map(row => {
       const next: Record<string, string | number> = { date: row.date as string }
+      const dayReturns = returnsByDate[row.date as string]
       for (const k of Object.keys(row)) {
         if (k === 'date') continue
+        // Portfolio series: use the backend's cash-flow-adjusted time-weighted return
+        // (Modified-Dietz-style) so deposits/withdrawals don't distort the line. Benchmark
+        // indices aren't in `returns`, so they fall through to plain start-rebasing below.
+        if (dayReturns && k in dayReturns) {
+          const r = dayReturns[k]
+          if (typeof r === 'number' && isFinite(r)) next[k] = r
+          continue
+        }
         const v = row[k]
         const b = base[k]
         // Skip zeros entirely (not just before open): a value of 0 means the account is empty
@@ -698,7 +719,7 @@ function PerformanceInner() {
       }
       return next
     })
-  }, [chartDataWithIndices, axisMode])
+  }, [chartDataWithIndices, axisMode, returnsByDate])
 
   // Auto-fit the Y axis to the visible data (with a little headroom) instead of
   // pinning it to zero, so movement in the lines is actually legible.
@@ -933,7 +954,7 @@ function PerformanceInner() {
               <button
                 onClick={() => setAxisMode('indexed')}
                 className={`px-2.5 py-1 border-l border-border ${axisMode === 'indexed' ? 'bg-primary text-white' : 'text-muted-foreground hover:bg-muted/50'}`}
-                title="Indexed — each series rebased to its start as % change, for comparing differently-sized accounts"
+                title="% return — cash-flow-adjusted (time-weighted) return since the window start, so deposits and withdrawals don't distort the line. Lets you compare differently-sized accounts."
               >
                 %
               </button>

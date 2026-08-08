@@ -1755,6 +1755,9 @@ def get_performance_timeline(
     # NOTE: deliberately NO from_date filter — the baseline must include all capital
     # contributed before the visible window so the line starts at the right level.
     contrib_deltas: dict[str, list[tuple[date, D]]] = defaultdict(list)
+    # External cash flows ONLY (no opening balances) — used to neutralise deposits/
+    # withdrawals when computing the time-weighted return series for the % view.
+    flow_deltas: dict[str, list[tuple[date, D]]] = defaultdict(list)
     for t in contrib_q.all():
         acct = accounts.get(t.account_id)
         if acct is None:
@@ -1775,14 +1778,25 @@ def get_performance_timeline(
             # cad_amount is stored signed (inflows +, outflows −). Internal transfers and
             # Norbert's-Gambit / fund-switch journal pairs net to zero within a label.
             amt = D(str(t.cad_amount or 0))
+            if amt != 0:
+                flow_deltas[_group_label(acct)].append((td, amt))
         if amt == 0:
             continue
         contrib_deltas[_group_label(acct)].append((td, amt))
     for _lbl in contrib_deltas:
         contrib_deltas[_lbl].sort(key=lambda x: x[0])
+    for _lbl in flow_deltas:
+        flow_deltas[_lbl].sort(key=lambda x: x[0])
 
     contrib_running: dict[str, D] = defaultdict(D)
     contrib_ptr: dict[str, int] = defaultdict(int)
+    # Cumulative time-weighted-return state per label, for the % view. Each snapshot-to-
+    # snapshot sub-period return neutralises the net external cash flow in that period —
+    # r = (V_end − CF) / V_start − 1 — so deposits/withdrawals don't read as gains/losses.
+    flow_ptr: dict[str, int] = defaultdict(int)
+    twr_factor: dict[str, float] = defaultdict(lambda: 1.0)   # ∏(1 + r) so far
+    prev_val: dict[str, float] = {}
+    twr_started: set[str] = set()
     points = []
     for snap_date in sorted(agg.keys()):
         # Advance each label's cumulative contributed capital up to this snapshot date.
@@ -1792,7 +1806,7 @@ def get_performance_timeline(
                 contrib_running[_lbl] += _deltas[_i][1]
                 _i += 1
             contrib_ptr[_lbl] = _i
-        point: dict = {"date": snap_date.isoformat(), "values": {}, "invested": {}}
+        point: dict = {"date": snap_date.isoformat(), "values": {}, "invested": {}, "returns": {}}
         for label in labels_sorted:
             # Clamp the aggregated group total to zero — after CAD+USD sub-accounts
             # have been summed, any remaining negative is a genuine data artifact. Skip
@@ -1800,8 +1814,30 @@ def get_performance_timeline(
             # negative when liabilities exceed assets.
             raw_mv = agg[snap_date].get(label, D(0))
             mv = raw_mv if label in unclamped_labels else max(raw_mv, D(0))
-            point["values"][label] = float(mv)
+            v_cur = float(mv)
+            point["values"][label] = v_cur
             point["invested"][label] = float(contrib_running.get(label, D(0)))
+
+            # ── Time-weighted cumulative return for this label ──
+            # Net external cash flow since the previous snapshot (signed: in +, out −).
+            cf = 0.0
+            _fd = flow_deltas.get(label)
+            if _fd:
+                _j = flow_ptr[label]
+                while _j < len(_fd) and _fd[_j][0] <= snap_date:
+                    cf += float(_fd[_j][1])
+                    _j += 1
+                flow_ptr[label] = _j
+            v_prev = prev_val.get(label)
+            if label in twr_started and v_prev is not None and v_prev > 0:
+                r = (v_cur - cf) / v_prev - 1.0
+                twr_factor[label] *= (1.0 + r)
+            # An account "starts" its return series the first day it holds real value.
+            if v_cur > 0:
+                twr_started.add(label)
+            if label in twr_started:
+                point["returns"][label] = (twr_factor[label] - 1.0) * 100.0
+            prev_val[label] = v_cur
         points.append(point)
 
     # ── Cash-flow events (deposits, withdrawals, transfers) ───────────────────

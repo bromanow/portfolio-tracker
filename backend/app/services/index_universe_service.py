@@ -60,13 +60,18 @@ def _norm_us(sym: str) -> str:
 
 
 def _norm_ca(sym: str) -> str:
-    """TSX 60 symbols on Wikipedia are bare (RY, ATD); occasionally with a .TO/.TSX suffix.
-    We store bare tickers with exchange=TSX, so strip any suffix."""
+    """TSX 60 symbols on Wikipedia are bare (RY, ATD), sometimes with a .TO/.TSX suffix, and
+    dual-class names carry a class dot (RCI.B, CTC.A). We store bare tickers with exchange=TSX
+    and the class share with a DASH (RCI-B) — matching both the existing rows and yfinance's
+    format (RCI-B.TO) — so: strip the exchange suffix first, then turn the remaining class dot
+    into a dash. Without the dot→dash step the sync creates a duplicate 'RCI.B' and orphans the
+    real 'RCI-B'."""
     s = sym.upper().strip()
     for suffix in (".TO", ".TSX", ".TSXV", ".V"):
         if s.endswith(suffix):
             s = s[: -len(suffix)]
-    return s
+            break
+    return s.replace(".", "-")
 
 
 def fetch_index_constituents() -> tuple[set[str], set[str]]:

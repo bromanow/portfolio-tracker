@@ -47,6 +47,9 @@ def test_normalization():
     assert _norm_us(" aapl ") == "AAPL"
     assert _norm_ca("SHOP.TO") == "SHOP"     # TSX suffix stripped
     assert _norm_ca("ry") == "RY"
+    assert _norm_ca("RCI.B") == "RCI-B"      # class dot → dash (matches yfinance + existing rows)
+    assert _norm_ca("CTC.A") == "CTC-A"
+    assert _norm_ca("RCI.B.TO") == "RCI-B"   # suffix stripped first, then dot→dash
 
 
 def test_sync_adds_drops_and_preserves_user_names(db):

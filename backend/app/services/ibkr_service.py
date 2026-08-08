@@ -424,7 +424,11 @@ def scan_ticker_ibeam(
     # ── Steps 2 + 3: strikes → option conIds ─────────────────────────────────
     option_meta: list[tuple[int, float, str]] = []   # (conid, strike, maturityDate YYYYMMDD)
 
-    opt_exchange = "MX" if is_canadian else exchange   # Canadian options trade on MX
+    # Canadian equity options trade on the Montreal Exchange, whose IBKR Client-Portal
+    # exchange CODE is "CDE" (Canadian Derivatives Exchange) — NOT "MX". Querying "MX"
+    # (or "TSX") returns HTTP 503 and zero strikes even with the market-data entitlement;
+    # "CDE" returns the real chain. This is why the covered-call screener found 0 CA names.
+    opt_exchange = "CDE" if is_canadian else exchange
 
     for month in target_months:
         try:
@@ -578,7 +582,7 @@ def fetch_option_price_ibeam(
         return None
 
     clean = underlying.split(".")[0]
-    opt_exchange = "MX" if is_canadian else "SMART"
+    opt_exchange = "CDE" if is_canadian else "SMART"   # Montreal Exchange = "CDE" in IBKR CP API, not "MX"
     right = "C" if option_type.upper() == "CALL" else "P"
     month = expiry.strftime("%b%y").upper()   # e.g. "JAN25"
 

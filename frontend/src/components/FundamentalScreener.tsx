@@ -408,7 +408,7 @@ export default function FundamentalScreener() {
                           ) : <span className="text-muted-foreground/50">—</span>}
                         </td>
                         <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">
-                          <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-foreground" />
+                          <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-primary" />
                         </td>
                         <td className="px-3 py-2 whitespace-nowrap">
                           <span

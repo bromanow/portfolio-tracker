@@ -1,7 +1,7 @@
 import { useState } from 'react'
 import { Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '../../context/AuthContext'
-import { usePreference } from '../../hooks/usePreference'
+import { useValuePreference } from '../../hooks/usePreference'
 import { changePassword, updateMyPreferences } from '../../api/client'
 
 // ─── My Account Tab ──────────────────────────────────────────────────────────
@@ -21,15 +21,27 @@ function ToggleSwitch({ on, onClick, disabled }: { on: boolean; onClick: () => v
 }
 
 // A per-browser preference — stored only in this device's localStorage.
-function PrefToggle({ prefKey, label, hint }: { prefKey: Parameters<typeof usePreference>[0]; label: string; hint: string }) {
-  const [on, setOn] = usePreference(prefKey)
+// Auto-logout duration picker (device-local): Off / 10 min / 30 min / 1 hour.
+function IdleLogoutSelect() {
+  const [minutes, setMinutes] = useValuePreference('idleLogoutMinutes', 'off')
   return (
-    <label className="flex items-start gap-3 cursor-pointer">
-      <ToggleSwitch on={on} onClick={() => setOn(!on)} />
+    <label className="flex items-start justify-between gap-3">
       <span>
-        <span className="text-sm font-medium text-foreground">{label}</span>
-        <span className="block text-xs text-muted-foreground">{hint}</span>
+        <span className="text-sm font-medium text-foreground">Log out after inactivity</span>
+        <span className="block text-xs text-muted-foreground">
+          Automatically signs you out after a period with no mouse or keyboard activity. Applies to this browser.
+        </span>
       </span>
+      <select
+        value={minutes}
+        onChange={e => setMinutes(e.target.value)}
+        className="shrink-0 bg-background text-foreground border border-border rounded-md px-2 py-1 text-sm"
+      >
+        <option value="off">Off</option>
+        <option value="10">10 minutes</option>
+        <option value="30">30 minutes</option>
+        <option value="60">1 hour</option>
+      </select>
     </label>
   )
 }
@@ -119,9 +131,7 @@ export default function MyAccountTab() {
       {/* Preferences */}
       <div className="bg-card border border-border rounded-xl p-5 space-y-3">
         <h2 className="text-sm font-semibold text-foreground">Preferences</h2>
-        <PrefToggle prefKey="idleLogout"
-          label="Log out after 10 minutes of inactivity"
-          hint="Automatically signs you out if there's no mouse or keyboard activity." />
+        <IdleLogoutSelect />
         <ServerPrefToggle field="refresh_prices_on_login"
           label="Refresh prices automatically on login"
           hint="Kicks off a market-price refresh once each time you sign in. Applies to this account on every device." />

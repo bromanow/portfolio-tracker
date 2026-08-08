@@ -100,12 +100,32 @@ function NumField({ label, value, onChange, step = 1, title }: {
 //     unreliable for this app in prior testing — a manual recursive setTimeout
 //     is used instead, mirroring Header.tsx's price-refresh job poll) ────────
 
+// Persist the last completed Screen/Propose result to localStorage so it survives a
+// logout (which unmounts this page and clears the React Query cache) or a browser refresh —
+// the user gets their last scan back on return instead of a blank tool. localStorage is
+// device-local and untouched by logout's queryClient.clear().
+const CC_SCREEN_KEY = 'cc-last-screen-result'
+const CC_PROPOSE_KEY = 'cc-last-propose-result'
+
+function loadPersisted<T>(key: string): { status: string; result: T } | undefined {
+  try {
+    const raw = localStorage.getItem(key)
+    if (raw) return { status: 'done', result: JSON.parse(raw) as T }
+  } catch { /* corrupt/blocked storage → just start fresh */ }
+  return undefined
+}
+function savePersisted(key: string, result: unknown) {
+  try { localStorage.setItem(key, JSON.stringify(result)) } catch { /* quota/private mode */ }
+}
+
 function useProposeJob() {
   const [jobId, setJobId] = useState<string | null>(null)
-  const [job, setJob] = useState<{ status: string; result?: ProposeResult; error?: string; progress?: any } | undefined>()
+  const [job, setJob] = useState<{ status: string; result?: ProposeResult; error?: string; progress?: any } | undefined>(
+    () => loadPersisted<ProposeResult>(CC_PROPOSE_KEY),
+  )
 
   useEffect(() => {
-    if (!jobId) { setJob(undefined); return }
+    if (!jobId) return   // no active job — keep whatever (possibly rehydrated) result is shown
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -113,21 +133,25 @@ function useProposeJob() {
       try { data = await getProposeJob(jobId) } catch { if (!cancelled) timer = setTimeout(poll, 1500); return }
       if (cancelled) return
       setJob(data)
+      if (data.status === 'done' && data.result) savePersisted(CC_PROPOSE_KEY, data.result)
       if (data.status === 'running') timer = setTimeout(poll, 1500)
     }
     poll()
     return () => { cancelled = true; clearTimeout(timer) }
   }, [jobId])
 
-  return { jobId, setJobId, job }
+  const clear = () => { setJobId(null); setJob(undefined); try { localStorage.removeItem(CC_PROPOSE_KEY) } catch { /* ignore */ } }
+  return { jobId, setJobId, job, clear }
 }
 
 function useScreenJob() {
   const [jobId, setJobId] = useState<string | null>(null)
-  const [job, setJob] = useState<{ status: string; result?: ScreenResult; error?: string; progress?: any } | undefined>()
+  const [job, setJob] = useState<{ status: string; result?: ScreenResult; error?: string; progress?: any } | undefined>(
+    () => loadPersisted<ScreenResult>(CC_SCREEN_KEY),
+  )
 
   useEffect(() => {
-    if (!jobId) { setJob(undefined); return }
+    if (!jobId) return
     let cancelled = false
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
@@ -135,13 +159,15 @@ function useScreenJob() {
       try { data = await getScreenJob(jobId) } catch { if (!cancelled) timer = setTimeout(poll, 1500); return }
       if (cancelled) return
       setJob(data)
+      if (data.status === 'done' && data.result) savePersisted(CC_SCREEN_KEY, data.result)
       if (data.status === 'running') timer = setTimeout(poll, 1500)
     }
     poll()
     return () => { cancelled = true; clearTimeout(timer) }
   }, [jobId])
 
-  return { jobId, setJobId, job }
+  const clear = () => { setJobId(null); setJob(undefined); try { localStorage.removeItem(CC_SCREEN_KEY) } catch { /* ignore */ } }
+  return { jobId, setJobId, job, clear }
 }
 
 // ─── Main tool ────────────────────────────────────────────────────────────────
@@ -152,7 +178,7 @@ export default function CoveredCallPortfolioTool() {
   const [extraTickers, setExtraTickers] = useState('')
   const { jobId: screenJobId, setJobId: setScreenJobId, job: screenJob } = useScreenJob()
   const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set())
-  const { jobId, setJobId, job } = useProposeJob()
+  const { jobId, setJobId, job, clear: clearPropose } = useProposeJob()
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [mode, setMode] = useState<'SIMULATED' | 'REAL'>('SIMULATED')
   const [accountId, setAccountId] = useState<number | ''>('')
@@ -189,7 +215,7 @@ export default function CoveredCallPortfolioTool() {
   }, [result])
 
   const runScreen = async () => {
-    setJobId(null)   // clear any stale Step 2 result — it no longer matches a fresh screen
+    clearPropose()   // clear any stale Step 2 result (+ its persisted copy) — it no longer matches a fresh screen
     const params: ProposeParams = {
       ...form,
       extra_tickers: extraTickers.split(',').map(t => t.trim().toUpperCase()).filter(Boolean),

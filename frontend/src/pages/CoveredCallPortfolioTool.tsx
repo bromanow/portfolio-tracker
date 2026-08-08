@@ -68,6 +68,7 @@ interface FormState {
   min_option_vol: number
   min_avg_stock_vol: number
   min_div_yield: number
+  max_stock_price: number   // 0 = no cap; capital per covered call = price × 100
   min_annual_yield_pct: number
   min_delta: number   // 0 = no floor
   max_delta: number   // 1 = no cap (delta can't exceed 1)
@@ -78,7 +79,7 @@ interface FormState {
 const DEFAULT_FORM: FormState = {
   min_dte: 14, max_dte: 60, min_otm_pct: 0.5, max_otm_pct: 25,
   min_option_oi: 50, min_option_vol: 3, min_avg_stock_vol: 250_000,
-  min_div_yield: 0, min_annual_yield_pct: 0,
+  min_div_yield: 0, max_stock_price: 0, min_annual_yield_pct: 0,
   min_delta: 0, max_delta: 1, min_iv_pct: 0,
   dynamic_universe: true,
 }
@@ -254,6 +255,7 @@ export default function CoveredCallPortfolioTool() {
   const { jobId, setJobId, job, clear: clearPropose } = useProposeJob()
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
   const [pickSort, setPickSort] = useState<SortState>({ key: 'score', dir: 'desc' })
+  const [ratingFilter, setRatingFilter] = useState('')   // '' = all; else Best/Good/Fair/Avoid
   const [mode, setMode] = useState<'SIMULATED' | 'REAL'>('SIMULATED')
   const [accountId, setAccountId] = useState<number | ''>('')
   const [portfolioName, setPortfolioName] = useState('Covered Call Portfolio')
@@ -337,8 +339,9 @@ export default function CoveredCallPortfolioTool() {
     }
   }
 
-  const caPicks = result?.picks.filter(p => p.currency === 'CAD') ?? []
-  const usPicks = result?.picks.filter(p => p.currency !== 'CAD') ?? []
+  const ratedPicks = (result?.picks ?? []).filter(p => !ratingFilter || p.recommendation === ratingFilter)
+  const caPicks = ratedPicks.filter(p => p.currency === 'CAD')
+  const usPicks = ratedPicks.filter(p => p.currency !== 'CAD')
 
   return (
     <div className="space-y-6">
@@ -381,6 +384,8 @@ export default function CoveredCallPortfolioTool() {
           <NumField label="Min option open interest" value={form.min_option_oi} onChange={v => setForm(f => ({ ...f, min_option_oi: v }))} />
           <NumField label="Min option volume" value={form.min_option_vol} onChange={v => setForm(f => ({ ...f, min_option_vol: v }))} />
           <NumField label="Min avg stock volume" value={form.min_avg_stock_vol} onChange={v => setForm(f => ({ ...f, min_avg_stock_vol: v }))} step={10000} />
+          <NumField label="Max stock price $" value={form.max_stock_price} onChange={v => setForm(f => ({ ...f, max_stock_price: v }))} step={25}
+            title="Skip names above this share price — a covered call needs 100 shares, so capital per contract = price × 100 (e.g. $500 cap ≈ $50k per call). 0 = no cap." />
         </div>
         <label className="flex items-start gap-2 cursor-pointer">
           <input
@@ -520,10 +525,24 @@ export default function CoveredCallPortfolioTool() {
                 </span>
               )}
             </h3>
-            <div className="flex items-center gap-4">
-              {result.picks.length > 0 && (
+            <div className="flex items-center gap-3 flex-wrap">
+              <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                Rating
+                <select
+                  value={ratingFilter}
+                  onChange={e => setRatingFilter(e.target.value)}
+                  className="bg-background text-foreground border border-border rounded px-1.5 py-1 text-xs"
+                >
+                  <option value="">All</option>
+                  <option value="Best">Best</option>
+                  <option value="Good">Good</option>
+                  <option value="Fair">Fair</option>
+                  <option value="Avoid">Avoid</option>
+                </select>
+              </label>
+              {ratedPicks.length > 0 && (
                 <SelectAllButton
-                  allTickers={result.picks.map(p => p.ticker)}
+                  allTickers={ratedPicks.map(p => p.ticker)}
                   selected={selectedPicks}
                   setSelected={setSelectedPicks}
                 />
@@ -531,6 +550,21 @@ export default function CoveredCallPortfolioTool() {
               <span className="text-xs text-muted-foreground">via {result.data_source}</span>
             </div>
           </div>
+
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer hover:text-foreground select-none">How is the Score calculated?</summary>
+            <div className="mt-2 space-y-1 bg-muted/40 rounded-lg p-3 leading-relaxed">
+              <p>Score starts from the contract's <strong>annualized premium yield</strong>, then multiplies by quality factors:</p>
+              <ul className="list-disc ml-4 space-y-0.5">
+                <li><strong>Strike distance</strong> (delta): 0.20–0.30 is ideal (×1.15); too close to the money — higher assignment risk — is penalized (delta &gt; 0.45 → ×0.70).</li>
+                <li><strong>IV richness</strong> (implied vs. the stock's own 30-day realized vol): IV/HV ≥ 1.5 → ×1.30; cheaper-than-realized → ×0.80.</li>
+                <li><strong>Days to expiry</strong>: 28–40 DTE is the theta sweet spot (×1.00); outside it is trimmed.</li>
+                <li><strong>Liquidity</strong>: open interest ≥ 2000 → ×1.15; thin (&lt;100) → ×0.85.</li>
+                <li><strong>Bid/ask spread</strong>: tight (&lt;5%) → ×1.10; wide (&gt;25%) → ×0.80.</li>
+              </ul>
+              <p>The <strong>Rating</strong> buckets the final score: Best (≥18 &amp; good delta), Good (≥10), Fair (≥5), else Avoid. Hover any Score badge for that contract's specific reasons.</p>
+            </div>
+          </details>
 
           {[{ label: 'Canadian', picks: caPicks }, { label: 'US', picks: usPicks }].map(group => group.picks.length > 0 && (
             <div key={group.label} className="space-y-2">

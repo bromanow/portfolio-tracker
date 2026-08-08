@@ -43,6 +43,8 @@ class ScanParams:
     min_otm_pct:       float = 0.5
     max_otm_pct:       float = 25.0
     min_div_yield:     float = 0.0    # minimum company annual dividend yield %
+    max_stock_price:   float = 0.0    # skip names above this share price (0 = no cap); a $900
+                                      # stock needs $90k to write one 100-share covered call
     min_rating:        str   = "Avoid"  # minimum rating to save: Best/Good/Fair/Avoid
 
 
@@ -331,6 +333,10 @@ def _scan_ticker(
         logger.debug("Skipping %s: no price", ticker)
         return []
 
+    if params.max_stock_price and current_price > params.max_stock_price:
+        logger.debug("Skipping %s: price %.2f > max %.2f", ticker, current_price, params.max_stock_price)
+        return []
+
     currency = info.get("currency", "USD")
     company_name = info.get("longName") or info.get("shortName") or ticker
 
@@ -495,6 +501,11 @@ def _scan_ticker_live(
         )
 
     if not raw:
+        return []
+
+    underlying_price = raw[0].get("current_price")
+    if params.max_stock_price and underlying_price and underlying_price > params.max_stock_price:
+        logger.debug("Skipping %s: price %.2f > max %.2f", ticker, underlying_price, params.max_stock_price)
         return []
 
     company_name = ticker

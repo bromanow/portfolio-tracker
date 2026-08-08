@@ -35,6 +35,8 @@ class BuildParams:
     min_option_vol: int = 3
     min_avg_stock_vol: int = 250_000
     min_div_yield: float = 0.0
+    max_stock_price: float = 0.0   # skip names above this share price (0 = no cap) — capital per
+                                   # 100-share covered call = price × 100
     min_annual_yield_pct: float = 0.0   # the "target return" floor, annualized premium yield
     # Aggressiveness dial: delta is the real lever (0.15-0.25 conservative, 0.35-0.50 aggressive)
     # — exact on the IBKR live path, Black-Scholes-estimated on the yfinance fallback. Left
@@ -72,6 +74,7 @@ class BuildParams:
             min_otm_pct=self.min_otm_pct,
             max_otm_pct=self.max_otm_pct,
             min_div_yield=self.min_div_yield,
+            max_stock_price=self.max_stock_price,
             min_rating="Avoid",   # keep everything meeting the hard filters; rank by score after
         )
 

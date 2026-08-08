@@ -1694,6 +1694,10 @@ def get_performance_timeline(
     agg: dict[date, dict[str, D]] = defaultdict(lambda: defaultdict(D))
     inv_agg: dict[date, dict[str, D]] = defaultdict(lambda: defaultdict(D))
     all_labels: set[str] = set()
+    from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
+    personal_brokerage_ids = {b.id for b in db.query(Brokerage).filter(Brokerage.code == PERSONAL_BROKERAGE_CODE).all()}
+    personal_only_labels: set[str] = set()
+    non_personal_labels: set[str] = set()
 
     for row in rows:
         acct = accounts.get(row.account_id)
@@ -1705,6 +1709,13 @@ def get_performance_timeline(
             continue
         label = _group_label(acct)
         all_labels.add(label)
+        # A label is "purely other-assets" only if EVERY account feeding it is a personal
+        # (Other Assets) account — those may net negative (liabilities > assets) and must
+        # not be clamped to zero. Any non-personal contribution disqualifies the label.
+        if acct.brokerage_id in personal_brokerage_ids:
+            personal_only_labels.add(label)
+        else:
+            non_personal_labels.add(label)
         # Accumulate raw (signed) totals — clamp happens after aggregation so that
         # offsetting negatives across CAD/USD sub-accounts cancel before the floor.
         securities_mv = D(str(row.market_value_cad or 0))
@@ -1714,6 +1725,8 @@ def get_performance_timeline(
         agg[row.snapshot_date][label] += mv
         inv_agg[row.snapshot_date][label] += iv
 
+    # Labels whose value may be negative (all-personal) → skip the zero clamp for those.
+    unclamped_labels = personal_only_labels - non_personal_labels
     labels_sorted = sorted(all_labels)
 
     # ── Contributed-capital baseline (the dashed "invested" line) ────────────────
@@ -1782,8 +1795,11 @@ def get_performance_timeline(
         point: dict = {"date": snap_date.isoformat(), "values": {}, "invested": {}}
         for label in labels_sorted:
             # Clamp the aggregated group total to zero — after CAD+USD sub-accounts
-            # have been summed, any remaining negative is a genuine data artifact.
-            mv = max(agg[snap_date].get(label, D(0)), D(0))
+            # have been summed, any remaining negative is a genuine data artifact. Skip
+            # the clamp for all-personal (Other Assets) labels, which can legitimately be
+            # negative when liabilities exceed assets.
+            raw_mv = agg[snap_date].get(label, D(0))
+            mv = raw_mv if label in unclamped_labels else max(raw_mv, D(0))
             point["values"][label] = float(mv)
             point["invested"][label] = float(contrib_running.get(label, D(0)))
         points.append(point)
@@ -1930,11 +1946,18 @@ def get_performance_returns(
         ex  = by_group[key][row.snapshot_date]
         by_group[key][row.snapshot_date] = (ex[0] + mv, ex[1] + inc, ex[2] + inv)
 
-    # Clamp aggregated group totals to zero (after CAD+USD sub-accounts summed).
+    # Clamp aggregated group totals to zero (after CAD+USD sub-accounts summed) — but NOT
+    # for "Other Assets" accounts: a personal account whose liabilities (mortgage/HELOC)
+    # exceed its assets legitimately has negative net worth, and clamping it to zero would
+    # overstate the total (and break the tie-out with the Net Worth page). group key is
+    # (logical_name, brokerage_id, account_type).
+    from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
+    _personal_bids = {b.id for b in db.query(Brokerage).filter(Brokerage.code == PERSONAL_BROKERAGE_CODE).all()}
     for key in by_group:
+        is_personal = key[1] in _personal_bids
         for d in by_group[key]:
             mv, inc, inv = by_group[key][d]
-            by_group[key][d] = (max(mv, D(0)), inc, inv)
+            by_group[key][d] = (mv if is_personal else max(mv, D(0)), inc, inv)
 
     # ── External cash flows per group (for Modified Dietz return) ────────────────
     # Deposits, withdrawals and inter-account transfers are capital movements, not

@@ -299,6 +299,8 @@ def get_security_yahoo_detail(security_id: int, db: Session = Depends(get_db)):
     return {
         "available": True,
         "symbol": sym,
+        "current_price": _v("currentPrice") or _v("regularMarketPrice"),
+        "price_currency": (info.get("currency") or sec.currency or "").upper() or None,
         "market_cap": _v("marketCap"),
         "enterprise_value": _v("enterpriseValue"),
         "shares_outstanding": _v("sharesOutstanding"),
@@ -401,6 +403,78 @@ def get_security_price_history(
         for hp in rows
         if hp.close_price is not None
     ]
+
+
+@router.get("/{security_id}/price-history-live")
+def get_security_price_history_live(
+    security_id: int,
+    period: str = Query("1y"),
+    db: Session = Depends(get_db),
+):
+    """Split/dividend-adjusted price history fetched LIVE from Yahoo, plus split events.
+
+    Unlike /price-history (which serves the local historical_prices table — deliberately stored
+    UNADJUSTED so cost-basis/ACB uses true traded prices), this is display-only for the security
+    card's chart: it fetches live so it (a) works for names we don't hold and have no stored
+    history for, and (b) is split-adjusted so the line has no artificial gaps at splits. Split
+    dates are returned separately so the chart can mark them.
+
+    CAD conversion uses today's FX rate applied across the window (a small drift vs. per-day
+    rates, acceptable for a research chart — the shape and splits are what matter)."""
+    import math
+    import yfinance as yf
+    from app.services.price_service import _yahoo_candidates
+    from app.services.fx_service import get_rate
+    from app.models.prices import MarketPrice
+
+    sec = db.get(Security, security_id)
+    if not sec:
+        raise HTTPException(status_code=404, detail="Security not found")
+
+    mp = db.query(MarketPrice).filter(MarketPrice.security_id == security_id).first()
+    candidates = _yahoo_candidates(sec, mp.fetch_ticker if mp else None)
+    if not candidates:
+        return {"available": False, "reason": "No Yahoo ticker available", "points": [], "splits": []}
+
+    sym = candidates[0]
+    yperiod = {"1m": "1mo", "3m": "3mo", "6m": "6mo", "1y": "1y", "3y": "3y", "5y": "5y"}.get(period, "1y")
+    try:
+        t = yf.Ticker(sym)
+        hist = t.history(period=yperiod, auto_adjust=True)
+        raw_splits = t.splits
+    except Exception as exc:
+        return {"available": False, "reason": str(exc), "points": [], "splits": []}
+    if hist is None or hist.empty:
+        return {"available": False, "reason": f"No history for {sym}", "points": [], "splits": []}
+
+    native_ccy = (sec.currency or "USD").upper()
+    usd_cad = None
+    if native_ccy != "CAD":
+        try:
+            usd_cad = get_rate(db, date.today(), native_ccy, "CAD")
+        except Exception:
+            usd_cad = None
+
+    points = []
+    for idx, row in hist.iterrows():
+        close = row.get("Close")
+        if close is None or (isinstance(close, float) and math.isnan(close)):
+            continue
+        d = idx.date().isoformat() if hasattr(idx, "date") else str(idx)[:10]
+        close = float(close)
+        close_cad = close * float(usd_cad) if usd_cad else (close if native_ccy == "CAD" else None)
+        points.append({"date": d, "close": round(close, 4),
+                       "close_cad": round(close_cad, 4) if close_cad is not None else None})
+
+    first_date = points[0]["date"] if points else None
+    splits = []
+    if raw_splits is not None and len(raw_splits) and first_date:
+        for ts, ratio in raw_splits.items():
+            ds = ts.date().isoformat() if hasattr(ts, "date") else str(ts)[:10]
+            if ds >= first_date and ratio and float(ratio) > 0:
+                splits.append({"date": ds, "ratio": float(ratio)})
+
+    return {"available": True, "symbol": sym, "currency": native_ccy, "points": points, "splits": splits}
 
 
 def _fundamentals_to_dict(f) -> dict:

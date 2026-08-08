@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import {
-  createChart, LineSeries, HistogramSeries, LineStyle, ColorType,
-  type IChartApi, type ISeriesApi, type Time,
+  createChart, createSeriesMarkers, LineSeries, HistogramSeries, LineStyle, ColorType,
+  type IChartApi, type ISeriesApi, type Time, type SeriesMarker,
 } from 'lightweight-charts'
 import { sma, rsi, macd, bollingerBands } from '../utils/technicalIndicators'
 
@@ -10,11 +10,17 @@ export interface ChartPoint {
   price: number
 }
 
+export interface ChartSplit {
+  date: string   // 'YYYY-MM-DD'
+  ratio: number  // e.g. 10 = 10-for-1
+}
+
 interface TechnicalChartProps {
   data: ChartPoint[]
   costBasis?: number | null
   currency?: string
   height?: number
+  splits?: ChartSplit[]
 }
 
 type ToggleKey = 'ma' | 'bollinger' | 'rsi' | 'macd'
@@ -26,7 +32,7 @@ const TOGGLES: { key: ToggleKey; label: string }[] = [
   { key: 'macd', label: 'MACD' },
 ]
 
-export default function TechnicalChart({ data, costBasis, currency = 'CAD', height = 280 }: TechnicalChartProps) {
+export default function TechnicalChart({ data, costBasis, currency = 'CAD', height = 280, splits = [] }: TechnicalChartProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const chartRef = useRef<IChartApi | null>(null)
   const [active, setActive] = useState<Set<ToggleKey>>(new Set())
@@ -74,6 +80,24 @@ export default function TechnicalChart({ data, costBasis, currency = 'CAD', heig
         price: costBasis, color: '#f97316', lineWidth: 1, lineStyle: LineStyle.Dashed,
         axisLabelVisible: true, title: 'Cost',
       })
+    }
+
+    // ── Stock-split markers ──────────────────────────────────────────────────
+    // Only mark splits that fall within the visible window (the prices are already
+    // split-adjusted, so this just flags where a split happened).
+    if (splits.length > 0) {
+      const first = data[0].date
+      const last = data[data.length - 1].date
+      const markers: SeriesMarker<Time>[] = splits
+        .filter(s => s.date >= first && s.date <= last)
+        .map(s => ({
+          time: s.date as Time,
+          position: 'belowBar',
+          color: '#8b5cf6',
+          shape: 'circle',
+          text: s.ratio >= 1 ? `${+s.ratio.toFixed(2)}:1 split` : `1:${+(1 / s.ratio).toFixed(2)} split`,
+        }))
+      if (markers.length > 0) createSeriesMarkers(priceSeries, markers)
     }
 
     if (active.has('ma')) {
@@ -152,7 +176,7 @@ export default function TechnicalChart({ data, costBasis, currency = 'CAD', heig
       chart.remove()
       chartRef.current = null
     }
-  }, [data, active, costBasis, currency, height])
+  }, [data, active, costBasis, currency, height, splits])
 
   return (
     <div>

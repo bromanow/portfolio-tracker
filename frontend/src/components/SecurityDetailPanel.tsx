@@ -2,9 +2,9 @@ import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown, FileText } from 'lucide-react'
 import TechnicalChart from './TechnicalChart'
-import type { ConsolidatedPosition, YahooDetail, PriceHistoryPoint, StoredFundamentals, SecuritySignals, Account, Security, Transaction, NoteDetails } from '../api/client'
+import type { ConsolidatedPosition, YahooDetail, LivePriceHistory, StoredFundamentals, SecuritySignals, Account, Security, Transaction, NoteDetails } from '../api/client'
 import {
-  getSecurityYahooDetail, getSecurityPriceHistory, getTransactions,
+  getSecurityYahooDetail, getSecurityPriceHistoryLive, getTransactions,
   getSecurityFundamentals, refreshSecurityFundamentals,
   getSecuritySignals, computeSecuritySignals,
   getAccounts, getSecurities, updateTransaction,
@@ -243,13 +243,16 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     onSuccess: () => qc.invalidateQueries({ queryKey: ['signals', secId] }),
   })
 
+  // Split/dividend-adjusted history fetched live from Yahoo — so the chart works for names we
+  // don't hold (no stored history) and has no artificial gaps at splits. Stored history stays
+  // unadjusted for cost-basis; this is display-only.
   const histQ = useQuery({
-    queryKey: ['price-history', secId, chartPeriod],
-    queryFn: () => getSecurityPriceHistory(secId!, chartPeriod),
+    queryKey: ['price-history-live', secId, chartPeriod],
+    queryFn: () => getSecurityPriceHistoryLive(secId!, chartPeriod),
     enabled: !!secId && tab === 'chart',
     staleTime: 10 * 60 * 1000,
   })
-  const priceHistory: PriceHistoryPoint[] = histQ.data ?? []
+  const priceHist: LivePriceHistory | undefined = histQ.data
 
   const txnQ = useQuery({
     queryKey: ['transactions-panel', secId],
@@ -343,16 +346,26 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
   const mktVal   = position.market_value_cad ? parseFloat(position.market_value_cad) : null
   const pnl      = position.unrealized_pnl_cad ? parseFloat(position.unrealized_pnl_cad) : null
   const pnlPct   = position.unrealized_pnl_pct ? parseFloat(position.unrealized_pnl_pct) : null
-  const price    = position.current_price_cad ? parseFloat(position.current_price_cad) : null
+  // Price: prefer the real held position; for names we don't hold, fall back to the live Yahoo
+  // quote (native currency) so the card still shows a current price.
+  const price    = position.current_price_cad ? parseFloat(position.current_price_cad)
+                 : (yahoo?.current_price ?? null)
   const priceNative = position.current_price ? parseFloat(position.current_price) : null
+  const priceIsNative = position.current_price_cad == null && yahoo?.current_price != null
+  const nativeCcyFallback = yahoo?.price_currency || nativeCurrency
   const dayChg   = position.day_change_pct ? parseFloat(position.day_change_pct) : null
 
-  // Chart data — prefer CAD prices, fall back to native
-  const chartData = priceHistory
+  // Chart data — split-adjusted live series; prefer CAD, fall back to native close.
+  const points = priceHist?.points ?? []
+  const chartData = points
     .filter(p => (p.close_cad ?? p.close) != null)
-    .map(p => ({ date: p.date, price: p.close_cad ?? p.close! }))
+    .map(p => ({ date: p.date, price: (p.close_cad ?? p.close)! }))
+  const chartSplits = priceHist?.splits ?? []
 
-  const chartCurrency = 'CAD'
+  // If every point is native (no CAD conversion available), label the chart in native currency.
+  const chartCurrency = points.length > 0 && points.every(p => p.close_cad == null)
+    ? (priceHist?.currency || 'USD')
+    : 'CAD'
   const TABS: { id: Tab; label: string }[] = [
     { id: 'overview', label: 'Overview' },
     { id: 'chart', label: 'Chart' },
@@ -406,9 +419,14 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
           {/* Price strip */}
           <div className="flex items-baseline gap-3 mt-2.5">
             {price != null && (
-              <span className="text-2xl font-bold text-foreground">{fmtCAD(price)}</span>
+              <span className="text-2xl font-bold text-foreground">
+                {priceIsNative ? fmtCur(price, nativeCcyFallback) : fmtCAD(price)}
+              </span>
             )}
-            {nativeCurrency !== 'CAD' && priceNative != null && (
+            {priceIsNative && (
+              <span className="text-xs text-muted-foreground">live quote</span>
+            )}
+            {!priceIsNative && nativeCurrency !== 'CAD' && priceNative != null && (
               <span className="text-sm text-muted-foreground">{fmtCur(priceNative, nativeCurrency)}</span>
             )}
             {dayChg != null && (
@@ -667,12 +685,21 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
                   <Loader2 className="h-5 w-5 animate-spin mr-2" /> Loading price history…
                 </div>
               ) : chartData.length === 0 ? (
-                <div className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+                <div className="flex flex-col items-center justify-center h-64 text-muted-foreground text-sm text-center">
                   No price history available for this period.
-                  <br />Run a historical price download from the Prices tab.
+                  {priceHist && !priceHist.available && priceHist.reason && (
+                    <span className="text-xs mt-1 text-muted-foreground/70">{priceHist.reason}</span>
+                  )}
                 </div>
               ) : (
-                <TechnicalChart data={chartData} costBasis={acbShare} currency={chartCurrency} height={280} />
+                <>
+                  <TechnicalChart data={chartData} costBasis={acbShare} currency={chartCurrency} height={280} splits={chartSplits} />
+                  {chartSplits.length > 0 && (
+                    <p className="text-xs text-muted-foreground mt-1.5">
+                      <span className="text-violet-500">●</span> Split-adjusted · marks {chartSplits.length === 1 ? 'a' : chartSplits.length} stock split{chartSplits.length === 1 ? '' : 's'} in this window
+                    </p>
+                  )}
+                </>
               )}
             </div>
           )}

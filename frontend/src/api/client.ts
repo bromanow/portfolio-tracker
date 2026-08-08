@@ -426,6 +426,8 @@ export interface YahooDetail {
   available: boolean
   reason?: string
   symbol?: string
+  current_price?: number | null
+  price_currency?: string | null
   market_cap?: number | null
   enterprise_value?: number | null
   shares_outstanding?: number | null
@@ -478,6 +480,19 @@ export interface PriceHistoryPoint {
   close: number | null
   close_cad: number | null
   currency: string | null
+}
+
+export interface SplitEvent {
+  date: string   // 'YYYY-MM-DD'
+  ratio: number  // e.g. 10 = 10-for-1
+}
+export interface LivePriceHistory {
+  available: boolean
+  reason?: string
+  symbol?: string
+  currency?: string
+  points: { date: string; close: number; close_cad: number | null }[]
+  splits: SplitEvent[]
 }
 
 export interface StoredFundamentals {
@@ -579,6 +594,8 @@ export const getSecurityYahooDetail = (id: number) =>
   api.get<YahooDetail>(`/securities/${id}/yahoo-detail`).then(r => r.data)
 export const getSecurityPriceHistory = (id: number, period = '1y') =>
   api.get<PriceHistoryPoint[]>(`/securities/${id}/price-history`, { params: { period } }).then(r => r.data)
+export const getSecurityPriceHistoryLive = (id: number, period = '1y') =>
+  api.get<LivePriceHistory>(`/securities/${id}/price-history-live`, { params: { period } }).then(r => r.data)
 export const getSecurityFundamentals = (id: number) =>
   api.get<StoredFundamentals>(`/securities/${id}/fundamentals`).then(r => r.data)
 export const refreshSecurityFundamentals = (id: number) =>

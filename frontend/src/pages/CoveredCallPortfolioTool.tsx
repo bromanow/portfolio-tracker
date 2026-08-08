@@ -329,8 +329,9 @@ export default function CoveredCallPortfolioTool() {
           <span>
             <span className="text-sm font-medium text-foreground">Rank the full S&amp;P 500 / TSX 60 by liquidity, volatility &amp; yield</span>
             <span className="block text-xs text-muted-foreground">
-              On: scores the entire in-app screener universe (~460 large caps) and scans the strongest covered-call
-              candidates. Off: uses only the hand-curated shortlist. Either way, any extra tickers below are included.
+              On: ranks the entire in-app universe (~465 large caps: 405 S&amp;P 500 + 60 TSX 60) by the score above, then
+              scans live option chains for the strongest ~140 (top 100 US + 40 CA) — that's the count the progress bar
+              shows. Off: uses only the hand-curated shortlist. Either way, any extra tickers below are included.
             </span>
           </span>
         </label>

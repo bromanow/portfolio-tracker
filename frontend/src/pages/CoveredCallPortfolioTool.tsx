@@ -4,7 +4,7 @@ import {
   proposeCoveredCallPortfolio, getProposeJob, adoptCoveredCallPortfolio,
   screenStockUniverse, getScreenJob,
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
-  sellToOpen, rollCoveredCall, closeCoveredCall, getCoveredCallSummary,
+  sellToOpen, rollCoveredCall, closeCoveredCall, updateCoveredCallHolding, getCoveredCallSummary,
   getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar,
 } from '../api/client'
 import type {
@@ -339,7 +339,20 @@ export default function CoveredCallPortfolioTool() {
     }
   }
 
-  const ratedPicks = (result?.picks ?? []).filter(p => !ratingFilter || p.recommendation === ratingFilter)
+  const ratedPicks = (result?.picks ?? [])
+    .filter(p => !ratingFilter || p.recommendation === ratingFilter)
+    .map(p => ({
+      ...p,
+      // Bid/ask spread as a % of the mid — a liquidity/fill-quality read.
+      spread_pct: p.bid != null && p.ask != null && p.bid + p.ask > 0
+        ? ((p.ask - p.bid) / ((p.ask + p.bid) / 2)) * 100
+        : null,
+      // Premium collected per contract at the midpoint = mid × 100 shares.
+      premium_collected: p.mid != null ? p.mid * 100 : null,
+    }))
+  const selectedPremium = ratedPicks
+    .filter(p => selectedPicks.has(p.ticker) && p.premium_collected != null)
+    .reduce((sum, p) => sum + (p.premium_collected ?? 0), 0)
   const caPicks = ratedPicks.filter(p => p.currency === 'CAD')
   const usPicks = ratedPicks.filter(p => p.currency !== 'CAD')
 
@@ -547,6 +560,11 @@ export default function CoveredCallPortfolioTool() {
                   setSelected={setSelectedPicks}
                 />
               )}
+              {selectedPicks.size > 0 && (
+                <span className="text-xs text-muted-foreground">
+                  Selected premium: <span className="font-semibold text-emerald-600 dark:text-emerald-400">{fmtMoney(selectedPremium)}</span>
+                </span>
+              )}
               <span className="text-xs text-muted-foreground">via {result.data_source}</span>
             </div>
           </div>
@@ -575,12 +593,18 @@ export default function CoveredCallPortfolioTool() {
                     <tr className="text-xs text-muted-foreground border-b border-border">
                       <th className="text-left py-1.5 pr-2"></th>
                       <SortTh label="Ticker" col="ticker" sort={pickSort} setSort={setPickSort} align="left" />
+                      <SortTh label="Name" col="company_name" sort={pickSort} setSort={setPickSort} align="left" />
                       <SortTh label="Price" col="current_price" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="Div Yield" col="dividend_yield" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="Strike" col="strike" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="Expiry" col="expiry_date" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="DTE" col="dte" sort={pickSort} setSort={setPickSort} />
-                      <SortTh label="Premium" col="mid" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Premium" col="mid" sort={pickSort} setSort={setPickSort} title="Mid price per share (bid/ask midpoint)" />
+                      <SortTh label="Prem $" col="premium_collected" sort={pickSort} setSort={setPickSort} title="Premium collected per contract at the midpoint = mid × 100 shares" />
+                      <SortTh label="Delta" col="delta" sort={pickSort} setSort={setPickSort} title="Call delta — strike distance / assignment odds. ~0.20-0.30 is the covered-call sweet spot." />
+                      <SortTh label="IV" col="iv_pct" sort={pickSort} setSort={setPickSort} title="Implied volatility of the option (%)" />
+                      <SortTh label="OI" col="open_interest" sort={pickSort} setSort={setPickSort} title="Open interest — contract liquidity" />
+                      <SortTh label="Spread" col="spread_pct" sort={pickSort} setSort={setPickSort} title="Bid/ask spread as % of mid — tighter fills cheaper" />
                       <SortTh label="Ann. Yield" col="annual_yield_pct" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="Score" col="score" sort={pickSort} setSort={setPickSort} />
                       <SortTh label="Rating" col="recommendation" sort={pickSort} setSort={setPickSort} align="left" />
@@ -593,12 +617,18 @@ export default function CoveredCallPortfolioTool() {
                           <input type="checkbox" checked={selectedPicks.has(p.ticker)} onChange={() => togglePick(p.ticker)} />
                         </td>
                         <td className="py-1.5 pr-2"><TickerLink ticker={p.ticker} /></td>
+                        <td className="py-1.5 pr-2 max-w-[180px] truncate text-muted-foreground" title={p.company_name ?? ''}>{p.company_name ?? '—'}</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums">{fmtMoney(p.current_price, p.currency)}</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums">{fmtPct(p.dividend_yield)}</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums">{fmt(p.strike)}</td>
                         <td className="py-1.5 pr-2 text-right">{p.expiry_date}</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums">{p.dte}d</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums">{fmtMoney(p.mid, p.currency)}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums font-medium text-emerald-600 dark:text-emerald-400">{p.premium_collected != null ? fmtMoney(p.premium_collected, p.currency) : '—'}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{p.delta != null ? p.delta.toFixed(2) : '—'}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{p.iv_pct != null ? `${p.iv_pct.toFixed(0)}%` : '—'}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{p.open_interest?.toLocaleString() ?? '—'}</td>
+                        <td className="py-1.5 pr-2 text-right tabular-nums">{p.spread_pct != null ? `${p.spread_pct.toFixed(1)}%` : '—'}</td>
                         <td className="py-1.5 pr-2 text-right tabular-nums font-medium">{fmtPct(p.annual_yield_pct)}</td>
                         <td className="py-1.5 pr-2 text-right"><ScoreBadge score={p.score} why={p.why} /></td>
                         <td className="py-1.5 pr-2"><RecommendationBadge rec={p.recommendation} /></td>
@@ -703,6 +733,9 @@ function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail 
       {summary && (
         <div className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground bg-muted/40 rounded px-3 py-2">
           <span>Premium collected: <span className="font-semibold text-foreground">{fmtMoney(summary.total_premium_collected)}</span></span>
+          {summary.total_cost_basis != null && (
+            <span title="Total capital in the underlying shares — Σ (shares × cost basis)">Underlying cost: <span className="font-semibold text-foreground">{fmtMoney(summary.total_cost_basis)}</span></span>
+          )}
           {summary.annualized_yield_on_capital_pct != null && (
             <span>Annualized yield on capital: <span className="font-semibold text-foreground">{fmtPct(summary.annualized_yield_on_capital_pct)}</span></span>
           )}
@@ -712,7 +745,7 @@ function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail 
 
       <div className="space-y-2">
         {portfolio.holdings.map(h => (
-          <HoldingRow key={h.id} portfolioId={portfolio.id} holding={h} onChanged={invalidate} />
+          <HoldingRow key={h.id} portfolioId={portfolio.id} mode={portfolio.mode} holding={h} onChanged={invalidate} />
         ))}
       </div>
 
@@ -741,8 +774,8 @@ function PortfolioDetail({ portfolio }: { portfolio: CoveredCallPortfolioDetail 
   )
 }
 
-function HoldingRow({ portfolioId, holding, onChanged }: {
-  portfolioId: number; holding: CoveredCallHolding; onChanged: () => void
+function HoldingRow({ portfolioId, mode, holding, onChanged }: {
+  portfolioId: number; mode: string; holding: CoveredCallHolding; onChanged: () => void
 }) {
   const [action, setAction] = useState<'sell' | 'roll' | 'close' | null>(null)
   const [strike, setStrike] = useState('')
@@ -752,6 +785,20 @@ function HoldingRow({ portfolioId, holding, onChanged }: {
   const [submitting, setSubmitting] = useState(false)
 
   const openLeg = holding.trades[0]?.trade_type === 'SELL_TO_OPEN' ? holding.trades[0] : null
+
+  // Editable position size (SIMULATED only): # contracts = shares / 100.
+  const currentContracts = holding.shares != null ? Math.round(holding.shares / 100) : 1
+  const [contracts, setContracts] = useState(String(currentContracts))
+  const editable = mode === 'SIMULATED' && holding.status === 'ACTIVE'
+  const shares = holding.shares ?? (parseInt(contracts, 10) || 0) * 100
+  const underlyingCost = holding.cost_basis_per_share != null ? shares * holding.cost_basis_per_share : null
+
+  const saveContracts = async (n: number) => {
+    if (!editable || n < 1 || n === currentContracts) return
+    setSubmitting(true)
+    try { await updateCoveredCallHolding(portfolioId, holding.id, { contracts: n }); onChanged() }
+    finally { setSubmitting(false) }
+  }
 
   const reset = () => { setAction(null); setStrike(''); setExpiry(''); setPremium(''); setClosePremium('') }
 
@@ -785,16 +832,42 @@ function HoldingRow({ portfolioId, holding, onChanged }: {
 
   return (
     <div className="text-sm border border-border/60 rounded-lg px-3 py-2 space-y-2">
-      <div className="flex items-center justify-between">
-        <span>
+      <div className="flex items-center justify-between gap-3">
+        <span className="flex items-center gap-2 flex-wrap">
           <TickerLink ticker={holding.ticker ?? ''} />
-          {holding.shares != null && <span className="ml-2 text-xs text-muted-foreground">{holding.shares} sh</span>}
-          {holding.status === 'CLOSED' && <span className="ml-2 text-xs px-1.5 py-0.5 rounded bg-accent text-muted-foreground">Closed</span>}
+          {editable ? (
+            <span className="inline-flex items-center gap-1 text-xs text-muted-foreground">
+              <input
+                type="number" min={1} value={contracts}
+                onChange={e => setContracts(e.target.value)}
+                onBlur={() => saveContracts(parseInt(contracts, 10) || 1)}
+                onKeyDown={e => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur() }}
+                disabled={submitting}
+                className="w-12 bg-background border border-border rounded px-1.5 py-0.5 text-xs text-right tabular-nums disabled:opacity-50"
+                title="Number of contracts held — 1 contract covers 100 shares"
+              />
+              contract{(parseInt(contracts, 10) || 1) === 1 ? '' : 's'} · {shares.toLocaleString()} sh
+            </span>
+          ) : (
+            holding.shares != null && <span className="text-xs text-muted-foreground">{holding.shares.toLocaleString()} sh</span>
+          )}
+          {underlyingCost != null && (
+            <span className="text-xs text-muted-foreground" title="Shares × cost basis per share">
+              · Underlying cost {fmtMoney(underlyingCost, holding.currency)}
+            </span>
+          )}
+          {holding.status === 'CLOSED' && <span className="text-xs px-1.5 py-0.5 rounded bg-accent text-muted-foreground">Closed</span>}
         </span>
         {openLeg ? (
-          <span className="text-xs text-muted-foreground tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums text-right whitespace-nowrap">
             Short ${fmt(openLeg.strike)} exp {openLeg.expiry_date}
             {openLeg.premium_per_contract != null && ` @ ${fmtMoney(openLeg.premium_per_contract, holding.currency)}`}
+            {openLeg.premium_per_contract != null && (
+              <span className="block text-[11px] text-emerald-600 dark:text-emerald-400">
+                Premium {fmtMoney(openLeg.premium_per_contract * (openLeg.contracts ?? 1) * 100, holding.currency)}
+                {' '}({openLeg.contracts ?? 1}×)
+              </span>
+            )}
           </span>
         ) : (
           <span className="text-xs text-muted-foreground">No open call</span>

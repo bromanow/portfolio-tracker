@@ -93,6 +93,11 @@ class MatchTransactionRequest(BaseModel):
     transaction_id: int
 
 
+class UpdateHoldingRequest(BaseModel):
+    contracts: Optional[int] = None            # each contract = 100 shares (SIMULATED sizing)
+    cost_basis_per_share: Optional[float] = None
+
+
 def _spawn_propose(req: ProposeRequest) -> dict:
     name = "covered_call_portfolio_propose"
     if background_jobs.is_running(name):
@@ -385,6 +390,38 @@ def _get_open_leg(db: Session, holding_id: int):
     if latest is not None and latest.trade_type == "SELL_TO_OPEN":
         return latest
     return None
+
+
+@router.patch("/{portfolio_id}/holdings/{holding_id}")
+def update_holding(portfolio_id: int, holding_id: int, body: UpdateHoldingRequest, db: Session = Depends(get_db)):
+    """Resize a SIMULATED holding: set the number of contracts held (shares = contracts × 100)
+    and, optionally, the cost basis per share. Scales every trade on the holding to the same
+    contract count so premium collected and cost basis stay consistent. REAL-mode holdings derive
+    their share count from the linked account, so contracts can't be set there."""
+    from app.models.covered_call import CoveredCallPortfolio, CoveredCallTrade
+
+    holding = _get_holding(db, portfolio_id, holding_id)
+    portfolio = db.query(CoveredCallPortfolio).filter(CoveredCallPortfolio.id == portfolio_id).first()
+
+    if body.contracts is not None:
+        if portfolio and portfolio.mode == "REAL":
+            raise HTTPException(status_code=400, detail="Real-mode share counts come from the account and can't be set here")
+        if body.contracts < 1:
+            raise HTTPException(status_code=400, detail="contracts must be at least 1")
+        holding.shares = body.contracts * 100
+        for t in db.query(CoveredCallTrade).filter(CoveredCallTrade.holding_id == holding_id).all():
+            t.contracts = body.contracts
+
+    if body.cost_basis_per_share is not None:
+        holding.cost_basis_per_share = body.cost_basis_per_share
+
+    db.commit()
+    db.refresh(holding)
+    return {
+        "id": holding.id,
+        "shares": float(holding.shares) if holding.shares is not None else None,
+        "cost_basis_per_share": float(holding.cost_basis_per_share) if holding.cost_basis_per_share is not None else None,
+    }
 
 
 @router.post("/{portfolio_id}/holdings/{holding_id}/sell-to-open")

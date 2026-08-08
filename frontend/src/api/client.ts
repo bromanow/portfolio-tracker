@@ -1663,6 +1663,11 @@ export const closeCoveredCall = (portfolioId: number, holdingId: number, data: {
   outcome: 'ASSIGNED' | 'EXPIRED_WORTHLESS'; trade_date?: string; notes?: string
 }) => api.post(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}/close`, data).then(r => r.data)
 
+export const updateCoveredCallHolding = (portfolioId: number, holdingId: number, data: {
+  contracts?: number; cost_basis_per_share?: number
+}) => api.patch<{ id: number; shares: number | null; cost_basis_per_share: number | null }>(
+  `/covered-call-portfolio/${portfolioId}/holdings/${holdingId}`, data).then(r => r.data)
+
 export interface CoveredCallSummary {
   portfolio_id: number
   total_premium_collected: number

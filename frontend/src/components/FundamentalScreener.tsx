@@ -41,6 +41,21 @@ function growthColor(n: number | null | undefined): string {
   return n >= 0 ? 'text-emerald-600 dark:text-emerald-400' : 'text-red-500 dark:text-red-400'
 }
 
+// Display exchange for a row. After a fundamentals refresh this is a real, normalized code
+// (NYSE, NASDAQ, TSX, TSX-V, AMEX…); for names not yet refreshed the exchange is null, so
+// fall back to a currency-derived region so every row still reads as CA vs US.
+function exchangeLabel(r: ScreenerResult): string {
+  if (r.exchange) return r.exchange
+  if (r.currency === 'CAD') return 'CA'
+  if (r.currency === 'USD') return 'US'
+  return '—'
+}
+// Canadian exchange codes (+ the CA fallback) → maple-leaf tint; everything else reads as US.
+const _CA_EXCHANGES = new Set(['TSX', 'TSX-V', 'TSXV', 'CSE', 'NEO', 'CA'])
+function isCanadian(r: ScreenerResult): boolean {
+  return r.currency === 'CAD' || _CA_EXCHANGES.has((r.exchange ?? '').toUpperCase())
+}
+
 // ─── Sort helpers ─────────────────────────────────────────────────────────────
 
 type SortDir = 'asc' | 'desc'
@@ -84,6 +99,7 @@ function SortTh({ label, col, sortCol, sortDir, onSort }: {
 
 interface Filters {
   sector: string
+  exchange: string
   minPe: string; maxPe: string
   minDebtEquity: string; maxDebtEquity: string
   minRoe: string; maxRoe: string
@@ -93,7 +109,7 @@ interface Filters {
 }
 
 const EMPTY_FILTERS: Filters = {
-  sector: '', minPe: '', maxPe: '', minDebtEquity: '', maxDebtEquity: '',
+  sector: '', exchange: '', minPe: '', maxPe: '', minDebtEquity: '', maxDebtEquity: '',
   minRoe: '', maxRoe: '', minRevGrowth: '', maxRevGrowth: '',
   minDivYield: '', maxDivYield: '', minMarketCapB: '',
 }
@@ -182,7 +198,18 @@ export default function FundamentalScreener() {
     enabled: (status?.with_fundamentals ?? 0) > 0,
   })
 
-  const results = useMemo(() => sortRows(rawResults, sortCol, sortDir), [rawResults, sortCol, sortDir])
+  // Distinct exchange labels present, for the filter dropdown (client-side — results are all
+  // loaded, so this is instant and needs no backend param).
+  const exchangeOptions = useMemo(
+    () => Array.from(new Set(rawResults.map(exchangeLabel))).filter(e => e !== '—').sort(),
+    [rawResults],
+  )
+  const results = useMemo(() => {
+    const filtered = filters.exchange
+      ? rawResults.filter(r => exchangeLabel(r) === filters.exchange)
+      : rawResults
+    return sortRows(filtered, sortCol, sortDir)
+  }, [rawResults, filters.exchange, sortCol, sortDir])
 
   const handleSort = (col: SortCol) => {
     if (col === sortCol) setSortDir(d => (d === 'asc' ? 'desc' : 'asc'))
@@ -305,6 +332,17 @@ export default function FundamentalScreener() {
                 {sectors.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </div>
+            <div>
+              <label className="text-xs text-muted-foreground block mb-1">Exchange</label>
+              <select
+                value={filters.exchange}
+                onChange={e => setFilters(f => ({ ...f, exchange: e.target.value }))}
+                className="bg-background text-foreground w-full border border-border rounded px-2 py-1.5 text-sm"
+              >
+                <option value="">All exchanges</option>
+                {exchangeOptions.map(e => <option key={e} value={e}>{e}</option>)}
+              </select>
+            </div>
             <NumField label="Min P/E" value={filters.minPe} onChange={v => setFilters(f => ({ ...f, minPe: v }))} />
             <NumField label="Max P/E" value={filters.maxPe} onChange={v => setFilters(f => ({ ...f, maxPe: v }))} />
             <NumField label="Min Debt/Equity" value={filters.minDebtEquity} onChange={v => setFilters(f => ({ ...f, minDebtEquity: v }))} />
@@ -341,6 +379,7 @@ export default function FundamentalScreener() {
                     <tr className="border-b border-border bg-muted/50 text-xs text-muted-foreground uppercase tracking-wide">
                       <SortTh label="Score" col="composite_score" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
                       <SortTh label="Ticker" col="ticker" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
+                      <th className="px-3 py-2.5 text-left">Exch</th>
                       <th className="px-3 py-2.5 text-left">Name</th>
                       <th className="px-3 py-2.5 text-left">Sector</th>
                       <SortTh label="Mkt Cap" col="market_cap" sortCol={sortCol} sortDir={sortDir} onSort={handleSort} />
@@ -371,6 +410,18 @@ export default function FundamentalScreener() {
                         <td className="px-3 py-2 font-mono font-medium whitespace-nowrap">
                           <TickerLink securityId={r.security_id} ticker={r.ticker} className="text-foreground" />
                         </td>
+                        <td className="px-3 py-2 whitespace-nowrap">
+                          <span
+                            title={isCanadian(r) ? 'Canadian listing' : 'US listing'}
+                            className={`inline-block px-1.5 py-0.5 rounded text-xs font-medium ${
+                              isCanadian(r)
+                                ? 'bg-red-100 text-red-700 dark:bg-red-950/40 dark:text-red-300'
+                                : 'bg-blue-100 text-blue-700 dark:bg-blue-950/40 dark:text-blue-300'
+                            }`}
+                          >
+                            {exchangeLabel(r)}
+                          </span>
+                        </td>
                         <td className="px-3 py-2 text-muted-foreground max-w-[220px] truncate" title={r.name ?? ''}>{r.name ?? '—'}</td>
                         <td className="px-3 py-2 text-muted-foreground whitespace-nowrap">{r.sector ?? '—'}</td>
                         <td className="px-3 py-2 text-right font-mono text-foreground">${fmtLarge(r.market_cap)}</td>
@@ -382,7 +433,7 @@ export default function FundamentalScreener() {
                       </tr>
                     ))}
                     {results.length === 0 && (
-                      <tr><td colSpan={10} className="px-4 py-10 text-center text-muted-foreground">No stocks match these filters.</td></tr>
+                      <tr><td colSpan={11} className="px-4 py-10 text-center text-muted-foreground">No stocks match these filters.</td></tr>
                     )}
                   </tbody>
                 </table>

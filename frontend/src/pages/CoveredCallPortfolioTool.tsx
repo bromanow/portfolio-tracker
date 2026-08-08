@@ -146,10 +146,17 @@ function usePersistentJob<T>(
       try {
         data = await fetchJob(jobId)
       } catch {
-        // The job may have expired (e.g. backend restarted). Give it a few tries, then stop
-        // and fall back to the last persisted result rather than polling a dead id forever.
+        // The job may have expired (e.g. backend restarted / redeployed). Give it a few tries,
+        // then stop and fall back to the last persisted result rather than polling a dead id
+        // forever. Crucially, if the job was mid-run when it vanished we must clear the stale
+        // 'running' state — otherwise `isScreening`/`isBusy` stay true and the Screen/Propose
+        // button is stuck disabled ("Screening…") with no way to retry.
         errors += 1
-        if (errors >= 5) { lsSet(jobKey, null); return }
+        if (errors >= 5) {
+          lsSet(jobKey, null)
+          if (!cancelled) setJob(prev => (prev?.status === 'running' ? loadPersisted<T>(resultKey) : prev))
+          return
+        }
         if (!cancelled) timer = setTimeout(poll, 1500)
         return
       }

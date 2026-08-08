@@ -153,6 +153,20 @@ def get_propose_job(job_id: str):
     return job
 
 
+@router.get("/pmcc")
+def pmcc_lookup(ticker: str, db: Session = Depends(get_db)):
+    """Synthetic covered call (Poor Man's Covered Call) finder for one ticker: a deep-ITM LEAPS
+    long leg + a near-term OTM short call, with capital/income economics. Non-registered only."""
+    from app.services.pmcc_service import find_pmcc
+    if not ticker or not ticker.strip():
+        raise HTTPException(status_code=400, detail="ticker is required")
+    try:
+        return find_pmcc(db, ticker.strip().upper())
+    except Exception as exc:
+        logger.exception("PMCC lookup failed for %s", ticker)
+        return {"available": False, "reason": str(exc)}
+
+
 def _spawn_screen(req: ProposeRequest) -> dict:
     name = "covered_call_portfolio_screen"
     if background_jobs.is_running(name):

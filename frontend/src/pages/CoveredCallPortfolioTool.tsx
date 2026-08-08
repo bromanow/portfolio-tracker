@@ -6,11 +6,11 @@ import {
   listCoveredCallPortfolios, getCoveredCallPortfolio, getAccounts,
   sellToOpen, rollCoveredCall, closeCoveredCall, updateCoveredCallHolding,
   deleteCoveredCallHolding, deleteCoveredCallPortfolio, getCoveredCallSummary,
-  getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar,
+  getUnmatchedTransactions, matchTransaction, getCoveredCallCalendar, getPmcc,
 } from '../api/client'
 import type {
   ProposeParams, ProposeResult, ScreenResult, CoveredCallScreenRow, CoveredCallPick,
-  Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry,
+  Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry, PmccResult,
 } from '../api/client'
 import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Loader2, Sparkles, Search, CheckSquare, Square, Trash2 } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
@@ -704,7 +704,115 @@ export default function CoveredCallPortfolioTool() {
         </div>
       )}
 
+      <SyntheticCoveredCallPanel />
+
       <ExpiryCalendar />
+    </div>
+  )
+}
+
+// ─── Synthetic Covered Call (Poor Man's Covered Call) ────────────────────────────
+function SyntheticCoveredCallPanel() {
+  const [ticker, setTicker] = useState('')
+  const [result, setResult] = useState<PmccResult | null>(null)
+  const [loading, setLoading] = useState(false)
+
+  const run = async () => {
+    const t = ticker.trim().toUpperCase()
+    if (!t) return
+    setLoading(true); setResult(null)
+    try { setResult(await getPmcc(t)) } catch { setResult({ available: false, reason: 'Lookup failed — try again.' }) }
+    finally { setLoading(false) }
+  }
+
+  const ccy = result?.currency
+  const e = result?.economics
+  const long = result?.long_leg
+  const short = result?.short_leg
+
+  const Tile = ({ label, value, tone }: { label: string; value: string; tone?: 'good' | 'bad' }) => (
+    <div className="bg-muted/40 rounded-lg px-3 py-2">
+      <div className="text-[11px] text-muted-foreground">{label}</div>
+      <div className={`text-sm font-semibold tabular-nums ${tone === 'good' ? 'text-emerald-600 dark:text-emerald-400' : tone === 'bad' ? 'text-red-600 dark:text-red-400' : 'text-foreground'}`}>{value}</div>
+    </div>
+  )
+
+  return (
+    <div className="bg-card border border-border rounded-xl p-5 space-y-4">
+      <div>
+        <h3 className="text-sm font-semibold text-foreground">Synthetic Covered Call (PMCC)</h3>
+        <p className="text-xs text-muted-foreground mt-0.5">
+          For high-priced stocks where 100 shares ties up too much capital: buy a deep-ITM LEAPS (~0.80 delta) as a
+          stock substitute, then sell a near-term call against it. <strong>Non-registered (margin) accounts only</strong> —
+          it's a diagonal spread, not permitted in RRSP/TFSA.
+        </p>
+      </div>
+
+      <div className="flex gap-2">
+        <input
+          type="text" value={ticker}
+          onChange={ev => setTicker(ev.target.value)}
+          onKeyDown={ev => { if (ev.key === 'Enter') run() }}
+          placeholder="Ticker, e.g. NVDA or SHOP.TO"
+          className="bg-background border border-border rounded px-2 py-1.5 text-sm w-56 focus:outline-none focus:border-primary/40"
+        />
+        <button
+          onClick={run} disabled={loading || !ticker.trim()}
+          className="flex items-center gap-2 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary/90 disabled:opacity-50"
+        >
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+          {loading ? 'Searching…' : 'Find PMCC'}
+        </button>
+      </div>
+
+      {result && !result.available && (
+        <p className="text-sm text-muted-foreground">{result.reason ?? 'No PMCC found for this ticker.'}</p>
+      )}
+
+      {result?.available && e && long && short && (
+        <div className="space-y-3">
+          <p className="text-xs text-muted-foreground">{result.ticker} @ {fmtMoney(result.underlying_price, ccy)}</p>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div className="border border-border/60 rounded-lg p-3 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-primary font-semibold">Buy — LEAPS (long stock substitute)</p>
+              <p className="text-sm text-foreground tabular-nums">${fmt(long.strike)}C · exp {long.expiry_date} · {long.dte}d</p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                Delta {long.delta?.toFixed(2)} · Ask {fmtMoney(long.ask, ccy)} · Extrinsic {fmtMoney(long.extrinsic, ccy)}
+              </p>
+            </div>
+            <div className="border border-border/60 rounded-lg p-3 space-y-1">
+              <p className="text-[11px] uppercase tracking-wide text-emerald-600 dark:text-emerald-400 font-semibold">Sell — near-term call (short)</p>
+              <p className="text-sm text-foreground tabular-nums">${fmt(short.strike)}C · exp {short.expiry_date} · {short.dte}d</p>
+              <p className="text-xs text-muted-foreground tabular-nums">
+                Delta {short.delta?.toFixed(2)} · Bid {fmtMoney(short.bid, ccy)} · {fmtPct(short.annual_yield_pct)} ann.
+              </p>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+            <Tile label="Net debit" value={fmtMoney(e.net_debit, ccy)} />
+            <Tile label="Covered-call capital" value={fmtMoney(e.covered_call_capital, ccy)} />
+            <Tile label="Capital saved" value={e.capital_savings_pct != null ? `${e.capital_savings_pct}%` : '—'} tone="good" />
+            <Tile label="Income yield (ann.)" value={e.income_yield_annual_pct != null ? `${e.income_yield_annual_pct}%` : '—'} tone="good" />
+            <Tile label="Breakeven" value={fmtMoney(e.breakeven, ccy)} />
+            <Tile label="Max profit" value={fmtMoney(e.max_profit, ccy)} tone={e.max_profit < 0 ? 'bad' : 'good'} />
+          </div>
+
+          {e.extrinsic_coverage_ratio != null && (
+            <p className="text-xs text-muted-foreground">
+              Extrinsic coverage {e.extrinsic_coverage_ratio}× — the short call's credit is {e.extrinsic_coverage_ratio}× the LEAPS's time-value bleed over the short's life{e.extrinsic_coverage_ratio >= 1 ? ' (theta-positive)' : ' (theta-negative — the short doesn\'t cover the LEAPS decay)'}.
+            </p>
+          )}
+          {e.max_profit < 0 && (
+            <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900 text-amber-800 dark:text-amber-300 rounded-lg px-3 py-2 text-xs">
+              <span>⚠</span>
+              <span>Negative max profit — the short strike is too close to the long strike relative to the net debit. Pick a lower net debit (higher-delta / deeper LEAPS) or a further-out short strike.</span>
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">{result.note}</p>
+        </div>
+      )}
     </div>
   )
 }

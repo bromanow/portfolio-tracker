@@ -1668,6 +1668,31 @@ export const updateCoveredCallHolding = (portfolioId: number, holdingId: number,
 }) => api.patch<{ id: number; shares: number | null; cost_basis_per_share: number | null }>(
   `/covered-call-portfolio/${portfolioId}/holdings/${holdingId}`, data).then(r => r.data)
 
+export interface PmccLeg {
+  expiry_date: string; dte: number; strike: number
+  bid: number | null; ask: number | null; mid: number | null
+  delta: number | null; iv_pct: number | null
+  intrinsic?: number; extrinsic?: number; annual_yield_pct?: number
+}
+export interface PmccResult {
+  available: boolean
+  reason?: string
+  ticker?: string
+  underlying_price?: number
+  currency?: string
+  long_leg?: PmccLeg
+  short_leg?: PmccLeg
+  economics?: {
+    long_debit: number; short_income: number; net_debit: number
+    covered_call_capital: number; capital_savings_pct: number | null
+    income_yield_annual_pct: number | null; breakeven: number
+    max_profit: number; extrinsic_coverage_ratio: number | null
+  }
+  note?: string
+}
+export const getPmcc = (ticker: string) =>
+  api.get<PmccResult>('/covered-call-portfolio/pmcc', { params: { ticker } }).then(r => r.data)
+
 export const deleteCoveredCallHolding = (portfolioId: number, holdingId: number) =>
   api.delete(`/covered-call-portfolio/${portfolioId}/holdings/${holdingId}`).then(r => r.data)
 export const deleteCoveredCallPortfolio = (portfolioId: number) =>

@@ -379,6 +379,7 @@ function PerformanceInner() {
   const [groupBy, setGroupBy]         = useState<GroupBy>('account_type')
   const [period, setPeriod]           = useState<Period>('ALL')
   const [showInvested, setShowInvested] = useState(false)
+  const [includeOtherAssets, setIncludeOtherAssets] = useState(false)  // default: investment portfolio only
   const [showFlows, setShowFlows] = useState(true)             // master on/off for cash-flow dots
   const [flowFilter, setFlowFilter] = useState<string[]>([])   // [] = show all cash-flow dots
   // 'value' = dollar axis auto-fitted to the data; 'indexed' = every series rebased
@@ -455,21 +456,24 @@ function PerformanceInner() {
   const toDate = customToDate || undefined
 
   const timelineQ = useQuery({
-    queryKey: ['perf-timeline', groupBy, fromDate, toDate, chartAccountIds],
+    queryKey: ['perf-timeline', groupBy, fromDate, toDate, chartAccountIds, includeOtherAssets],
     queryFn: () => api.get<TimelineResponse>('/portfolio/performance/timeline', {
       params: {
         group_by: groupBy,
         ...(fromDate ? { from_date: fromDate } : {}),
         ...(toDate   ? { to_date:   toDate   } : {}),
         ...(chartAccountIds ? { account_ids: chartAccountIds } : {}),
+        ...(includeOtherAssets ? { include_other_assets: true } : {}),
       },
     }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
   })
 
   const returnsQ = useQuery({
-    queryKey: ['perf-returns'],
-    queryFn: () => api.get<AccountReturn[]>('/portfolio/performance/returns').then(r => r.data),
+    queryKey: ['perf-returns', includeOtherAssets],
+    queryFn: () => api.get<AccountReturn[]>('/portfolio/performance/returns', {
+      params: { ...(includeOtherAssets ? { include_other_assets: true } : {}) },
+    }).then(r => r.data),
     staleTime: 5 * 60 * 1000,
   })
 
@@ -941,6 +945,10 @@ function PerformanceInner() {
             <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer">
               <input type="checkbox" checked={showFlows} onChange={e => setShowFlows(e.target.checked)} className="bg-background text-foreground rounded" />
               Show cash flows
+            </label>
+            <label className="flex items-center gap-1.5 text-xs text-muted-foreground cursor-pointer" title="Include real estate, insurance and other non-investment assets (net of liabilities). Off by default so this page tracks your investment portfolio only.">
+              <input type="checkbox" checked={includeOtherAssets} onChange={e => setIncludeOtherAssets(e.target.checked)} className="bg-background text-foreground rounded" />
+              Include other assets
             </label>
           </div>
         </div>

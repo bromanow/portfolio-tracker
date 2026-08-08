@@ -16,6 +16,33 @@ router = APIRouter(
 )
 
 
+def _performance_excluded_account_ids(db: Session, include_other_assets: bool) -> set[int]:
+    """Account IDs the Performance page should hide.
+
+    - Sample/demo client accounts: always hidden (they belong to the demo client and
+      should never surface in the real portfolio, matching the /accounts endpoint).
+    - "Other Assets" (real estate / insurance / other / liabilities under the synthetic
+      PERSONAL brokerage): hidden by default so Performance tracks the investment
+      portfolio only; included when the caller opts in via include_other_assets.
+    """
+    from app.models.master import Account, Brokerage, Client
+    from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
+
+    excluded: set[int] = set()
+    demo_client_ids = [c.id for c in db.query(Client).filter(Client.is_demo == True).all()]  # noqa: E712
+    if demo_client_ids:
+        excluded.update(
+            a.id for a in db.query(Account).filter(Account.client_id.in_(demo_client_ids)).all()
+        )
+    if not include_other_assets:
+        personal_bids = {b.id for b in db.query(Brokerage).filter(Brokerage.code == PERSONAL_BROKERAGE_CODE).all()}
+        if personal_bids:
+            excluded.update(
+                a.id for a in db.query(Account).filter(Account.brokerage_id.in_(personal_bids)).all()
+            )
+    return excluded
+
+
 @router.get("/positions")
 def get_positions(
     account_id: Optional[int] = Query(None),
@@ -1606,6 +1633,7 @@ def get_performance_timeline(
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
     account_ids: Optional[str] = Query(None),
+    include_other_assets: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1613,6 +1641,10 @@ def get_performance_timeline(
     Return pre-computed portfolio value timeline from portfolio_snapshots.
     group_by: total | brokerage | account_type | account
     Returns [{date, series: {label: value_cad}}] suitable for a multi-line chart.
+
+    Demo/sample accounts are always excluded. "Other Assets" (real estate, insurance,
+    liabilities) are excluded unless include_other_assets is set, so the chart tracks the
+    investment portfolio only by default.
     """
     from app.models.master import PortfolioSnapshot, Account, Brokerage
     from sqlalchemy import func as sqlfunc
@@ -1625,13 +1657,12 @@ def get_performance_timeline(
     accounts = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
 
-    # Real estate/insurance/other-asset/liability securities all live under the synthetic
-    # "Other Assets" brokerage (per-owner accounts created in personal_assets.py) — exclude
-    # those accounts so the Performance chart tracks investment performance only, matching
+    # Demo accounts are always hidden; "Other Assets" (real estate/insurance/other-asset/
+    # liability securities under the synthetic PERSONAL brokerage) are hidden unless the
+    # caller opts in — so the chart tracks investment performance only by default, matching
     # the Dashboard's Brokerage/Account table (crypto is unaffected — it lives in a real
     # brokerage like Coinsquare, not this one).
-    from app.routers.personal_assets import PERSONAL_BROKERAGE_CODE
-    personal_brokerage_ids = {b.id for b in db.query(Brokerage).filter(Brokerage.code == PERSONAL_BROKERAGE_CODE).all()}
+    excluded_account_ids = _performance_excluded_account_ids(db, include_other_assets)
 
     def _group_label(acct: Account) -> str:
         if group_by == "total":
@@ -1669,7 +1700,7 @@ def get_performance_timeline(
             continue
         if parsed_ids and row.account_id not in parsed_ids:
             continue
-        if acct.brokerage_id in personal_brokerage_ids:
+        if row.account_id in excluded_account_ids:
             continue
         label = _group_label(acct)
         all_labels.add(label)
@@ -1811,6 +1842,7 @@ def get_performance_timeline(
 @router.get("/performance/returns")
 def get_performance_returns(
     account_ids: Optional[str] = Query(None),
+    include_other_assets: bool = Query(False),
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
@@ -1818,12 +1850,17 @@ def get_performance_returns(
     Return period returns for each logical account from the snapshot table.
     CAD and USD sub-accounts with the same base name are combined into one row.
     Periods: 1M, 3M, 6M, YTD, 1Y, 3Y, inception.
+
+    Demo/sample accounts are always excluded. "Other Assets" (real estate, insurance,
+    liabilities) are excluded unless include_other_assets is set, so the default view is
+    the investment portfolio only.
     """
     from app.models.master import PortfolioSnapshot, Account, Brokerage
     from decimal import Decimal as D
 
     authorized_ids = parse_account_ids(account_ids, current_user, db)
     parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
+    excluded_ids = _performance_excluded_account_ids(db, include_other_assets)
 
     accounts = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
@@ -1831,6 +1868,8 @@ def get_performance_returns(
     q = db.query(PortfolioSnapshot)
     if parsed_ids:
         q = q.filter(PortfolioSnapshot.account_id.in_(parsed_ids))
+    if excluded_ids:
+        q = q.filter(PortfolioSnapshot.account_id.notin_(excluded_ids))
     rows = q.order_by(PortfolioSnapshot.snapshot_date).all()
 
     if not rows:

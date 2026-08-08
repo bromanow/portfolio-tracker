@@ -299,7 +299,12 @@ def compute_portfolio_snapshots(
     live_price_map: dict[int, Decimal] = {}
     if to_date >= today:
         for mp in db.query(MarketPrice).filter(MarketPrice.price_cad.isnot(None)).all():
-            if mp.price_cad and _d(mp.price_cad) > ZERO:
+            # Keep any non-zero price, including NEGATIVE ones: liabilities (mortgages,
+            # HELOCs) are priced negative so they subtract from the account's value. A
+            # `> ZERO` guard here silently dropped them, so the "today" snapshot fell back
+            # to positive ACB cost and ADDED the debt instead of subtracting it — inflating
+            # personal-asset accounts by 2× the liability.
+            if mp.price_cad and _d(mp.price_cad) != ZERO:
                 live_price_map[mp.security_id] = _d(mp.price_cad)
 
     def _get_price(sec_id: int, snap_date: date) -> Optional[Decimal]:

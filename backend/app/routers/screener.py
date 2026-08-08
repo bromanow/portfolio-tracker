@@ -75,6 +75,91 @@ def _composite_scores(fundamentals_rows: list[SecurityFundamentals]) -> dict[int
     return scores
 
 
+# Human labels + "good means" direction for the score-breakdown UI.
+_SCORE_METRIC_LABELS = {
+    "pe_ratio":         ("P/E ratio", "lower"),
+    "debt_to_equity":   ("Debt / equity", "lower"),
+    "return_on_equity": ("Return on equity", "higher"),
+    "revenue_growth":   ("Revenue growth", "higher"),
+    "dividend_yield":   ("Dividend yield", "higher"),
+}
+
+
+def _composite_score_breakdown(rows: list[SecurityFundamentals], target_id: int) -> Optional[dict]:
+    """Per-metric breakdown of the composite score for one security, computed against the
+    universe `rows` (so percentiles match the screener table exactly). Returns None if the
+    target isn't in `rows`."""
+    idx = next((i for i, f in enumerate(rows) if f.security_id == target_id), None)
+    if idx is None:
+        return None
+
+    # Percentile of each metric across the universe, inverted for "lower is better".
+    metric_pctl: dict[str, list[Optional[float]]] = {}
+    for metric, (attr, higher_is_better) in _SCORE_WEIGHTS.items():
+        raw = [float(getattr(f, attr)) if getattr(f, attr) is not None else None for f in rows]
+        pctl = _percentile_ranks(raw)
+        if not higher_is_better:
+            pctl = [100.0 - p if p is not None else None for p in pctl]
+        metric_pctl[metric] = pctl
+
+    weight_total = sum(_SCORE_WEIGHT_VALUES[m] for m in _SCORE_WEIGHTS
+                       if metric_pctl[m][idx] is not None)
+    weighted_sum = sum(metric_pctl[m][idx] * _SCORE_WEIGHT_VALUES[m]
+                       for m in _SCORE_WEIGHTS if metric_pctl[m][idx] is not None)
+
+    metrics = []
+    for metric, (attr, higher_is_better) in _SCORE_WEIGHTS.items():
+        label, good = _SCORE_METRIC_LABELS[metric]
+        raw_val = getattr(rows[idx], attr)
+        pctl = metric_pctl[metric][idx]
+        weight = _SCORE_WEIGHT_VALUES[metric]
+        included = pctl is not None
+        metrics.append({
+            "metric": metric,
+            "label": label,
+            "good_when": good,                                  # 'higher' | 'lower'
+            "raw_value": float(raw_val) if raw_val is not None else None,
+            "percentile": round(pctl, 1) if pctl is not None else None,  # 0-100 points earned
+            "weight": weight,                                   # nominal weight
+            "effective_weight": round(weight / weight_total * 100, 1) if (included and weight_total) else 0.0,
+            "contribution": round(pctl * weight / weight_total, 1) if (included and weight_total) else 0.0,
+            "included": included,
+        })
+
+    composite = round(weighted_sum / weight_total, 1) if weight_total else None
+    return {
+        "composite_score": composite,
+        "metrics": metrics,
+        "universe_size": len(rows),
+        "metrics_used": sum(1 for m in metrics if m["included"]),
+    }
+
+
+@router.get("/{security_id}/score-breakdown")
+def score_breakdown(security_id: int, db: Session = Depends(get_db)):
+    """Explain a security's composite score: per-metric raw value, universe percentile, weight,
+    and weighted contribution. Percentiles are ranked across the whole screener universe (same
+    population the screener table uses); if the security isn't a universe member it's ranked
+    within that population so it still gets a comparable score."""
+    target = db.query(SecurityFundamentals).filter(SecurityFundamentals.security_id == security_id).first()
+    if target is None:
+        return {"available": False, "reason": "No fundamentals for this security yet — run a screener refresh."}
+
+    rows = (
+        db.query(SecurityFundamentals)
+        .join(Security, Security.id == SecurityFundamentals.security_id)
+        .filter(Security.in_screener_universe == True)  # noqa: E712
+        .all()
+    )
+    if not any(f.security_id == security_id for f in rows):
+        rows = rows + [target]
+
+    bd = _composite_score_breakdown(rows, security_id)
+    if bd is None:
+        return {"available": False, "reason": "Could not rank this security."}
+    return {"available": True, **bd}
+
+
 @router.get("/status")
 def get_status(db: Session = Depends(get_db)):
     total = db.query(Security).filter(Security.in_screener_universe == True).count()  # noqa: E712

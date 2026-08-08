@@ -596,6 +596,28 @@ export const getSecurityPriceHistory = (id: number, period = '1y') =>
   api.get<PriceHistoryPoint[]>(`/securities/${id}/price-history`, { params: { period } }).then(r => r.data)
 export const getSecurityPriceHistoryLive = (id: number, period = '1y') =>
   api.get<LivePriceHistory>(`/securities/${id}/price-history-live`, { params: { period } }).then(r => r.data)
+
+export interface ScoreMetric {
+  metric: string
+  label: string
+  good_when: 'higher' | 'lower'
+  raw_value: number | null
+  percentile: number | null      // 0-100 points earned on this metric
+  weight: number                 // nominal weight (%)
+  effective_weight: number       // weight after renormalizing for missing metrics
+  contribution: number           // points this metric contributes to the composite
+  included: boolean
+}
+export interface ScoreBreakdown {
+  available: boolean
+  reason?: string
+  composite_score?: number | null
+  metrics?: ScoreMetric[]
+  universe_size?: number
+  metrics_used?: number
+}
+export const getSecurityScoreBreakdown = (id: number) =>
+  api.get<ScoreBreakdown>(`/screener/${id}/score-breakdown`).then(r => r.data)
 export const getSecurityFundamentals = (id: number) =>
   api.get<StoredFundamentals>(`/securities/${id}/fundamentals`).then(r => r.data)
 export const refreshSecurityFundamentals = (id: number) =>

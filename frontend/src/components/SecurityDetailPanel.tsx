@@ -2,9 +2,9 @@ import { useState, useMemo, Fragment } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { X, ExternalLink, TrendingUp, TrendingDown, Loader2, RefreshCw, Activity, Zap, ChevronUp, ChevronDown, ChevronsUpDown, FileText } from 'lucide-react'
 import TechnicalChart from './TechnicalChart'
-import type { ConsolidatedPosition, YahooDetail, LivePriceHistory, StoredFundamentals, SecuritySignals, Account, Security, Transaction, NoteDetails } from '../api/client'
+import type { ConsolidatedPosition, YahooDetail, LivePriceHistory, StoredFundamentals, SecuritySignals, Account, Security, Transaction, NoteDetails, ScoreBreakdown } from '../api/client'
 import {
-  getSecurityYahooDetail, getSecurityPriceHistoryLive, getTransactions,
+  getSecurityYahooDetail, getSecurityPriceHistoryLive, getSecurityScoreBreakdown, getTransactions,
   getSecurityFundamentals, refreshSecurityFundamentals,
   getSecuritySignals, computeSecuritySignals,
   getAccounts, getSecurities, updateTransaction,
@@ -64,7 +64,7 @@ function pnlClass(n: number | string | null | undefined) {
 }
 
 type ChartPeriod = '1m' | '3m' | '6m' | '1y' | '3y' | 'max'
-type Tab = 'overview' | 'chart' | 'fundamentals' | 'signals' | 'transactions' | 'news'
+type Tab = 'overview' | 'chart' | 'fundamentals' | 'score' | 'signals' | 'transactions' | 'news'
 
 
 // ─── RSI gauge ────────────────────────────────────────────────────────────────
@@ -201,6 +201,16 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     staleTime: 30 * 60 * 1000,
   })
   const funds: StoredFundamentals | undefined = fundsQ.data
+
+  // Composite-score breakdown (Score tab) — ranks this security's fundamentals across the
+  // screener universe, same as the Fundamental Screener's Score column.
+  const scoreQ = useQuery({
+    queryKey: ['score-breakdown', secId],
+    queryFn: () => getSecurityScoreBreakdown(secId!),
+    enabled: !!secId && !isOption && tab === 'score',
+    staleTime: 10 * 60 * 1000,
+  })
+  const score: ScoreBreakdown | undefined = scoreQ.data
 
   // Note details (structured notes etc.) — Overview section, only rendered if populated
   const noteQ = useQuery({
@@ -370,6 +380,7 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
     { id: 'overview', label: 'Overview' },
     { id: 'chart', label: 'Chart' },
     { id: 'fundamentals', label: 'Fundamentals' },
+    { id: 'score', label: 'Score' },
     { id: 'signals', label: 'Signals' },
     { id: 'transactions', label: 'Transactions' },
     { id: 'news', label: 'News' },
@@ -848,6 +859,97 @@ export default function SecurityDetailPanel({ position, allPositions, onClose }:
                       )}
                     </>
                   ) : null}
+                </>
+              )}
+            </div>
+          )}
+
+          {/* ── Score ── */}
+          {tab === 'score' && (
+            <div className="p-5 space-y-4">
+              {isOption ? (
+                <p className="text-sm text-muted-foreground">Composite score is not available for options.</p>
+              ) : scoreQ.isLoading ? (
+                <div className="flex items-center gap-2 text-muted-foreground text-sm"><Loader2 className="h-4 w-4 animate-spin" /> Ranking against the screener universe…</div>
+              ) : !score?.available || !score.metrics ? (
+                <p className="text-sm text-muted-foreground">
+                  {score?.reason ?? 'No score available — this security has no stored fundamentals yet.'}
+                </p>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3">
+                    <div className={`flex items-center justify-center h-12 w-12 rounded-lg text-lg font-bold tabular-nums ${
+                      (score.composite_score ?? 0) >= 70 ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-950/40 dark:text-emerald-300' :
+                      (score.composite_score ?? 0) >= 40 ? 'bg-primary/15 text-primary' :
+                                                           'bg-accent text-muted-foreground'
+                    }`}>
+                      {score.composite_score != null ? score.composite_score.toFixed(0) : '—'}
+                    </div>
+                    <div className="text-xs text-muted-foreground">
+                      <div className="text-sm font-medium text-foreground">Composite score {score.composite_score != null ? score.composite_score.toFixed(1) : '—'} / 100</div>
+                      Percentile-ranked vs. {score.universe_size ?? 0} screener stocks · {score.metrics_used ?? 0} of 5 metrics scored.
+                      Each metric earns 0–100 by where it ranks in the universe; the score is the weighted average.
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm min-w-[520px]">
+                      <thead>
+                        <tr className="border-b border-border text-xs text-muted-foreground uppercase tracking-wide">
+                          <th className="px-2 py-2 text-left">Metric</th>
+                          <th className="px-2 py-2 text-right">Value</th>
+                          <th className="px-2 py-2 text-left">Percentile (better →)</th>
+                          <th className="px-2 py-2 text-right">Weight</th>
+                          <th className="px-2 py-2 text-right">Points</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-border/60">
+                        {score.metrics.map(m => {
+                          const raw = m.raw_value == null ? '—'
+                            : m.metric === 'return_on_equity' || m.metric === 'revenue_growth' ? fmtPct(m.raw_value)
+                            : m.metric === 'dividend_yield' ? fmtPct(m.raw_value, true)
+                            : fmtNum(m.raw_value, 2)
+                          return (
+                            <tr key={m.metric} className={m.included ? '' : 'opacity-45'}>
+                              <td className="px-2 py-2">
+                                <span className="text-foreground">{m.label}</span>
+                                <span className="text-xs text-muted-foreground ml-1">({m.good_when})</span>
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono text-foreground">{raw}</td>
+                              <td className="px-2 py-2">
+                                {m.included && m.percentile != null ? (
+                                  <div className="flex items-center gap-2">
+                                    <div className="flex-1 h-2 rounded bg-muted overflow-hidden min-w-[80px]">
+                                      <div className="h-full bg-primary rounded" style={{ width: `${m.percentile}%` }} />
+                                    </div>
+                                    <span className="text-xs tabular-nums text-muted-foreground w-9 text-right">{m.percentile.toFixed(0)}</span>
+                                  </div>
+                                ) : <span className="text-xs text-muted-foreground">no data</span>}
+                              </td>
+                              <td className="px-2 py-2 text-right text-muted-foreground tabular-nums">
+                                {m.included ? `${m.effective_weight.toFixed(0)}%` : '—'}
+                              </td>
+                              <td className="px-2 py-2 text-right font-mono text-foreground tabular-nums">
+                                {m.included ? `+${m.contribution.toFixed(1)}` : '—'}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className="border-t border-border font-medium">
+                          <td className="px-2 py-2 text-foreground" colSpan={3}>Composite</td>
+                          <td className="px-2 py-2 text-right text-muted-foreground">100%</td>
+                          <td className="px-2 py-2 text-right font-mono text-foreground tabular-nums">{score.composite_score != null ? score.composite_score.toFixed(1) : '—'}</td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                  {(score.metrics_used ?? 5) < 5 && (
+                    <p className="text-xs text-muted-foreground">
+                      Metrics with no data are dropped and the remaining weights are rescaled to 100%, so the score is never penalized for missing data.
+                    </p>
+                  )}
                 </>
               )}
             </div>

@@ -11,7 +11,7 @@ import type {
   ProposeParams, ProposeResult, ScreenResult, CoveredCallScreenRow, CoveredCallPick,
   Account, CoveredCallHolding, CoveredCallPortfolioDetail, CoveredCallCalendarEntry,
 } from '../api/client'
-import { ChevronDown, ChevronUp, ChevronLeft, ChevronRight, Loader2, Sparkles, Search } from 'lucide-react'
+import { ChevronDown, ChevronUp, ChevronsUpDown, ChevronLeft, ChevronRight, Loader2, Sparkles, Search, CheckSquare, Square } from 'lucide-react'
 import TickerLink from '../components/TickerLink'
 
 // ─── Formatting helpers ───────────────────────────────────────────────────────
@@ -81,6 +81,66 @@ const DEFAULT_FORM: FormState = {
   min_div_yield: 0, min_annual_yield_pct: 0,
   min_delta: 0, max_delta: 1, min_iv_pct: 0,
   dynamic_universe: true,
+}
+
+// ─── Sortable-table helpers ─────────────────────────────────────────────────
+type SortDir = 'asc' | 'desc'
+interface SortState { key: string | null; dir: SortDir }
+
+function sortRows<T>(rows: T[], sort: SortState): T[] {
+  if (!sort.key) return rows
+  const key = sort.key
+  const mult = sort.dir === 'asc' ? 1 : -1
+  return [...rows].sort((a, b) => {
+    const av = (a as any)[key]
+    const bv = (b as any)[key]
+    const an = av == null || av === ''
+    const bn = bv == null || bv === ''
+    if (an && bn) return 0
+    if (an) return 1          // blanks always sort last, regardless of direction
+    if (bn) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * mult
+    return String(av).localeCompare(String(bv), undefined, { numeric: true, sensitivity: 'base' }) * mult
+  })
+}
+
+function SortTh({ label, col, sort, setSort, align = 'right', title }: {
+  label: string; col: string; sort: SortState; setSort: (s: SortState) => void
+  align?: 'left' | 'right'; title?: string
+}) {
+  const active = sort.key === col
+  const onClick = () => setSort(active ? { key: col, dir: sort.dir === 'asc' ? 'desc' : 'asc' } : { key: col, dir: 'desc' })
+  return (
+    <th
+      onClick={onClick}
+      title={title}
+      className={`py-1.5 pr-2 cursor-pointer select-none hover:text-foreground whitespace-nowrap ${align === 'left' ? 'text-left' : 'text-right'}`}
+    >
+      <span className={`inline-flex items-center gap-0.5 ${align === 'right' ? 'flex-row-reverse' : ''}`}>
+        {label}
+        {active
+          ? (sort.dir === 'asc' ? <ChevronUp className="h-3 w-3 text-primary" /> : <ChevronDown className="h-3 w-3 text-primary" />)
+          : <ChevronsUpDown className="h-3 w-3 opacity-30" />}
+      </span>
+    </th>
+  )
+}
+
+// Select-all toggle: on when every ticker is already selected; clicking flips all on/off.
+function SelectAllButton({ allTickers, selected, setSelected }: {
+  allTickers: string[]; selected: Set<string>; setSelected: (s: Set<string>) => void
+}) {
+  const allOn = allTickers.length > 0 && allTickers.every(t => selected.has(t))
+  return (
+    <button
+      type="button"
+      onClick={() => setSelected(allOn ? new Set() : new Set(allTickers))}
+      className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground hover:text-foreground"
+    >
+      {allOn ? <CheckSquare className="h-3.5 w-3.5 text-primary" /> : <Square className="h-3.5 w-3.5" />}
+      {allOn ? 'Deselect all' : 'Select all'}
+    </button>
+  )
 }
 
 function NumField({ label, value, onChange, step = 1, title }: {
@@ -190,8 +250,10 @@ export default function CoveredCallPortfolioTool() {
   const [extraTickers, setExtraTickers] = useState('')
   const { jobId: screenJobId, setJobId: setScreenJobId, job: screenJob } = useScreenJob()
   const [selectedStocks, setSelectedStocks] = useState<Set<string>>(new Set())
+  const [screenSort, setScreenSort] = useState<SortState>({ key: 'best_score', dir: 'desc' })
   const { jobId, setJobId, job, clear: clearPropose } = useProposeJob()
   const [selectedPicks, setSelectedPicks] = useState<Set<string>>(new Set())
+  const [pickSort, setPickSort] = useState<SortState>({ key: 'score', dir: 'desc' })
   const [mode, setMode] = useState<'SIMULATED' | 'REAL'>('SIMULATED')
   const [accountId, setAccountId] = useState<number | ''>('')
   const [portfolioName, setPortfolioName] = useState('Covered Call Portfolio')
@@ -361,7 +423,16 @@ export default function CoveredCallPortfolioTool() {
             <h3 className="text-sm font-semibold text-foreground">
               {screenResult.ca.length} CA + {screenResult.us.length} US stocks qualify
             </h3>
-            <span className="text-xs text-muted-foreground">via {screenResult.data_source}</span>
+            <div className="flex items-center gap-4">
+              {(screenResult.ca.length + screenResult.us.length) > 0 && (
+                <SelectAllButton
+                  allTickers={[...screenResult.ca, ...screenResult.us].map(r => r.ticker)}
+                  selected={selectedStocks}
+                  setSelected={setSelectedStocks}
+                />
+              )}
+              <span className="text-xs text-muted-foreground">via {screenResult.data_source}</span>
+            </div>
           </div>
 
           {screenResult.market_open === false && (
@@ -386,19 +457,20 @@ export default function CoveredCallPortfolioTool() {
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b border-border">
                       <th className="text-left py-1.5 pr-2"></th>
-                      <th className="text-left py-1.5 pr-2">Ticker</th>
-                      <th className="text-right py-1.5 pr-2">Price</th>
-                      <th className="text-right py-1.5 pr-2">Div Yield</th>
-                      <th className="text-right py-1.5 pr-2">Contracts</th>
-                      <th className="text-right py-1.5 pr-2">Total OI</th>
-                      <th className="text-right py-1.5 pr-2">Best IV</th>
-                      <th className="text-right py-1.5 pr-2">Best Yield</th>
-                      <th className="text-right py-1.5 pr-2">Best Score</th>
-                      <th className="text-right py-1.5 pr-2" title="Median score across all its qualifying contracts — a consistently good name, not a one-off lucky strike">Median Score</th>
+                      <SortTh label="Ticker" col="ticker" sort={screenSort} setSort={setScreenSort} align="left" />
+                      <SortTh label="Price" col="current_price" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Div Yield" col="dividend_yield" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Contracts" col="contracts_found" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Total OI" col="total_open_interest" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Best IV" col="best_iv_pct" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Best Yield" col="best_annual_yield_pct" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Best Score" col="best_score" sort={screenSort} setSort={setScreenSort} />
+                      <SortTh label="Median Score" col="median_score" sort={screenSort} setSort={setScreenSort}
+                        title="Median score across all its qualifying contracts — a consistently good name, not a one-off lucky strike" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {group.rows.map(r => (
+                    {sortRows(group.rows, screenSort).map(r => (
                       <tr key={r.ticker}>
                         <td className="py-1.5 pr-2">
                           <input type="checkbox" checked={selectedStocks.has(r.ticker)} onChange={() => toggleStock(r.ticker)} />
@@ -448,7 +520,16 @@ export default function CoveredCallPortfolioTool() {
                 </span>
               )}
             </h3>
-            <span className="text-xs text-muted-foreground">via {result.data_source}</span>
+            <div className="flex items-center gap-4">
+              {result.picks.length > 0 && (
+                <SelectAllButton
+                  allTickers={result.picks.map(p => p.ticker)}
+                  selected={selectedPicks}
+                  setSelected={setSelectedPicks}
+                />
+              )}
+              <span className="text-xs text-muted-foreground">via {result.data_source}</span>
+            </div>
           </div>
 
           {[{ label: 'Canadian', picks: caPicks }, { label: 'US', picks: usPicks }].map(group => group.picks.length > 0 && (
@@ -459,20 +540,20 @@ export default function CoveredCallPortfolioTool() {
                   <thead>
                     <tr className="text-xs text-muted-foreground border-b border-border">
                       <th className="text-left py-1.5 pr-2"></th>
-                      <th className="text-left py-1.5 pr-2">Ticker</th>
-                      <th className="text-right py-1.5 pr-2">Price</th>
-                      <th className="text-right py-1.5 pr-2">Div Yield</th>
-                      <th className="text-right py-1.5 pr-2">Strike</th>
-                      <th className="text-right py-1.5 pr-2">Expiry</th>
-                      <th className="text-right py-1.5 pr-2">DTE</th>
-                      <th className="text-right py-1.5 pr-2">Premium</th>
-                      <th className="text-right py-1.5 pr-2">Ann. Yield</th>
-                      <th className="text-right py-1.5 pr-2">Score</th>
-                      <th className="text-left py-1.5 pr-2">Rating</th>
+                      <SortTh label="Ticker" col="ticker" sort={pickSort} setSort={setPickSort} align="left" />
+                      <SortTh label="Price" col="current_price" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Div Yield" col="dividend_yield" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Strike" col="strike" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Expiry" col="expiry_date" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="DTE" col="dte" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Premium" col="mid" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Ann. Yield" col="annual_yield_pct" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Score" col="score" sort={pickSort} setSort={setPickSort} />
+                      <SortTh label="Rating" col="recommendation" sort={pickSort} setSort={setPickSort} align="left" />
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-border/60">
-                    {group.picks.map(p => (
+                    {sortRows(group.picks, pickSort).map(p => (
                       <tr key={p.ticker}>
                         <td className="py-1.5 pr-2">
                           <input type="checkbox" checked={selectedPicks.has(p.ticker)} onChange={() => togglePick(p.ticker)} />

@@ -152,7 +152,6 @@ def build_candidate_universe(
         .join(SecurityFundamentals, SecurityFundamentals.security_id == Security.id)
         .filter(
             Security.in_screener_universe.is_(True),
-            Security.active.is_(True),
             Security.asset_class == "EQUITY",
         )
         .all()

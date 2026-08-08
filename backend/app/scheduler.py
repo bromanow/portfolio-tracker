@@ -11,6 +11,7 @@ from typing import Optional
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.triggers.interval import IntervalTrigger
 
 logger = logging.getLogger(__name__)
 
@@ -129,12 +130,41 @@ def _run_nightly_snapshot_recompute() -> str:
 _ibeam_down_alerted = False
 
 
-def _run_ibeam_health_check() -> str:
-    """
-    Email the admin if the IBeam container has gone missing (e.g. removed by the weekly
-    docker-prune cleanup while it was intentionally stopped between sessions — see
-    ibeam_control.py). Starting/restarting from the app UI can't fix that; only a Coolify
-    redeploy recreates the container, and nobody's watching the backend daily for it.
+def _ibeam_gateway_alive() -> Optional[bool]:
+    """Best-effort probe of the IBeam gateway process itself (not just the Docker container).
+    Catches the 'zombie' state where Docker says the container is running but IBeam's internal
+    auth process has silently died. Returns True (reachable), False (process dead / connection
+    refused), or None (can't tell — no base URL configured, or an auth-level response we
+    shouldn't act on). We deliberately treat an unauthenticated-but-responding gateway as
+    "alive" (None-ish → not a restart trigger): that needs a human 2FA, and restart-looping
+    on it would just thrash."""
+    import os
+    base = os.environ.get("IBEAM_BASE_URL", "").rstrip("/")
+    if not base:
+        return None
+    try:
+        import requests, urllib3
+        urllib3.disable_warnings()
+        r = requests.get(f"{base}/v1/api/tickle", verify=False, timeout=8)
+        # Any HTTP response (even 401/500) means the gateway process is up and listening.
+        return True
+    except Exception:
+        # Connection refused / timeout / DNS → the gateway process is not answering.
+        return False
+
+
+def _run_ibeam_watchdog() -> str:
+    """Watchdog: keep the IBeam container alive and auto-recover it.
+
+    IBeam dies in a few ways — the docker 'restart: unless-stopped' policy only covers a
+    hard crash, not these:
+      • container stopped (was stopped between sessions) → gets pruned overnight if left
+        stopped, so we START it back immediately;
+      • container 'running' but the internal auth process is dead (zombie) → we RESTART it;
+      • container pruned entirely / gateway up but not authenticated → can't fix without a
+        redeploy or a human 2FA, so we escalate ONE email (deduped) and clear it on recovery.
+    Runs every few minutes so a stopped container is revived long before the nightly
+    docker-prune can delete it.
     """
     global _ibeam_down_alerted
     from app.services import ibeam_control, email_service
@@ -143,32 +173,56 @@ def _run_ibeam_health_check() -> str:
         return "skipped — ibeam-control not configured"
 
     status = ibeam_control.get_status()
-    is_down = status is None or "error" in status
+    reachable = status is not None and "error" not in status
+    cstatus = (status or {}).get("status") if reachable else None
 
-    if is_down and not _ibeam_down_alerted:
+    action = None
+    if reachable and cstatus == "running":
+        # Container is up — check the gateway process isn't a zombie.
+        if _ibeam_gateway_alive() is False:
+            ibeam_control.restart()
+            action = "restarted zombie (container up, gateway dead)"
+    elif reachable and cstatus in ("exited", "created", "paused", "dead", "restarting"):
+        # Container exists but isn't serving — bring it back before the prune sweeps it.
+        # 'dead'/'restarting' need a full stop+start; a plain start() is a no-op there.
+        if cstatus in ("dead", "restarting"):
+            ibeam_control.restart(); action = f"restarted (was {cstatus})"
+        else:
+            ibeam_control.start();   action = f"started (was {cstatus})"
+
+    # Re-evaluate after any recovery attempt.
+    if action:
+        status = ibeam_control.get_status()
+        reachable = status is not None and "error" not in status
+        cstatus = (status or {}).get("status") if reachable else None
+
+    healthy = reachable and cstatus == "running" and _ibeam_gateway_alive() is not False
+
+    if healthy:
+        if _ibeam_down_alerted:
+            _ibeam_down_alerted = False
+            email_service.send_admin_alert(
+                "IBeam recovered",
+                f"portfolio-ibeam is healthy again. status: {status}"
+                + (f"\n\nWatchdog action: {action}" if action else ""),
+            )
+            return f"recovered{f' ({action})' if action else ''} — alert cleared"
+        return f"ok — running{f' ({action})' if action else ''}"
+
+    # Couldn't recover automatically.
+    if not _ibeam_down_alerted:
         email_service.send_admin_alert(
-            "IBeam container is down",
-            "The portfolio-ibeam container could not be reached.\n\n"
-            f"ibeam-control status: {status}\n\n"
-            "This usually means the container was removed by the weekly docker-prune "
-            "cleanup while it was stopped between sessions, and needs a full redeploy in "
-            "Coolify (Portfolio project → portfolio-ibeam → Deploy) — starting/restarting "
-            "from the app won't work since there's no container left to act on.\n\n"
-            "You'll get one more email when it's healthy again; no repeat alerts while "
-            "this outage continues.",
+            "IBeam is down and the watchdog could not auto-recover it",
+            f"ibeam-control status: {status}\nWatchdog action attempted: {action or 'none'}\n\n"
+            "If the container was pruned entirely, it needs a redeploy in Coolify "
+            "(Portfolio project → portfolio-ibeam → Deploy). If the gateway is up but not "
+            "authenticated, it needs a fresh IBKR login + 2FA on your phone — neither of "
+            "which the watchdog can do unattended.\n\n"
+            "One more email will follow when it's healthy again; no repeats meanwhile.",
         )
         _ibeam_down_alerted = True
-        return "ALERT emailed — IBeam container down"
-
-    if not is_down and _ibeam_down_alerted:
-        _ibeam_down_alerted = False
-        email_service.send_admin_alert(
-            "IBeam container recovered",
-            f"portfolio-ibeam is reachable again. ibeam-control status: {status}",
-        )
-        return "IBeam container recovered — alert cleared"
-
-    return f"ok (down={is_down})"
+        return f"ALERT emailed — unrecoverable (status={status}, action={action})"
+    return f"still down (status={status}, action={action})"
 
 
 def _run_weekly_fundamentals_refresh() -> str:
@@ -312,14 +366,16 @@ def start_scheduler():
             replace_existing=True, misfire_grace_time=3600,
         )
 
-    # IBeam container health check — daily, independent of the nightly batch above.
+    # IBeam watchdog — every 10 minutes, keeps the container alive and auto-recovers it
+    # (start if stopped, restart if the gateway process is a zombie), so a stopped container
+    # is revived long before the nightly docker-prune can delete it.
     _scheduler.add_job(
-        _logged("IBeam health check", _run_ibeam_health_check),
-        CronTrigger(hour=13, minute=0, timezone="UTC"),   # ~9am ET
-        id="ibeam_health_check",
-        name="Daily IBeam container health check",
+        _logged("IBeam watchdog", _run_ibeam_watchdog),
+        IntervalTrigger(minutes=10),
+        id="ibeam_health_check",   # same id → replaces the old daily health-check job
+        name="IBeam watchdog (auto-recover, every 10 min)",
         replace_existing=True,
-        misfire_grace_time=3600,
+        misfire_grace_time=300,
     )
 
     # Covered-call expiry/assignment-risk digest — after the nightly price refresh so

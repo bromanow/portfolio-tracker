@@ -98,13 +98,13 @@ def login(req: LoginRequest, response: Response, db: Session = Depends(get_db)):
 @router.post("/logout")
 def logout(response: Response, current_user: User = Depends(get_current_user)):
     """Clears the session cookie. JWTs are otherwise stateless (nothing to invalidate
-    server-side) — this endpoint also gives the frontend a signal to stop IBeam on,
-    matching 'only connect while logged in'. IBeam stop is best-effort and backgrounded;
-    a no-op if ibeam-control isn't deployed."""
+    server-side).
+
+    NOTE: we deliberately do NOT stop IBeam on logout anymore. Leaving IBeam stopped
+    between sessions is exactly what let Coolify's nightly docker-prune delete the stopped
+    container (forcing a full redeploy + 2FA to get it back). IBeam now stays running and
+    is kept alive by the watchdog (scheduler._run_ibeam_watchdog); login still starts it."""
     response.delete_cookie(key=SESSION_COOKIE_NAME, path="/")
-    import threading
-    from app.services import ibeam_control
-    threading.Thread(target=ibeam_control.stop, daemon=True).start()
     return {"message": "logged out"}
 
 

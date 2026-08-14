@@ -29,6 +29,7 @@ interface ManagerRow {
   currency_mix: Record<string, number>
   herfindahl_asset: number
   herfindahl_sector: number
+  no_snapshots?: boolean
 }
 
 type Period = '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | 'inception'
@@ -333,6 +334,11 @@ export default function ManagersTab() {
         {!managersQ.isLoading && rows.length === 0 && (
           <div className="p-8 text-center text-muted-foreground text-sm">
             No portfolio managers assigned. Set a Portfolio Manager on accounts in Admin → Accounts.
+          </div>
+        )}
+        {!managersQ.isLoading && rows.length > 0 && rows.every(r => r.no_snapshots) && (
+          <div className="px-6 py-3 bg-yellow-50 dark:bg-yellow-950/30 border-b border-yellow-200 dark:border-yellow-800 text-xs text-yellow-700 dark:text-yellow-400">
+            No portfolio snapshots found — returns and risk metrics will be available after you run Recompute Snapshots in Admin → System.
           </div>
         )}
         {rows.length > 0 && (

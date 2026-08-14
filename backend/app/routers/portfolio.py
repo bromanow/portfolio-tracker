@@ -2388,9 +2388,36 @@ def get_manager_analytics(
         return (math.pow(1 + ret_pct / 100, 365.0 / days) - 1) * 100
 
     # ── Assemble results ────────────────────────────────────────────────────────
+    # Ensure every manager with accounts gets a row, even if no snapshots exist yet
+    all_managers = set(manager_account_ids.keys()) | set(by_manager.keys())
     results = []
-    for mgr, nav in by_manager.items():
+    for mgr in all_managers:
+        nav = by_manager.get(mgr, {})
         if not nav:
+            # No snapshot data — return stub row so the tab shows the manager exists
+            results.append({
+                "manager":          mgr,
+                "account_ids":      manager_account_ids.get(mgr, []),
+                "aum":              0,
+                "inception_date":   None,
+                "returns":          {k: None for k in list(period_starts.keys()) + ["inception"]},
+                "ann_returns":      {k: None for k in list(period_starts.keys()) + ["inception"]},
+                "volatility":       None,
+                "max_drawdown":     None,
+                "sharpe":           None,
+                "sortino":          None,
+                "calmar":           None,
+                "turnover":         None,
+                "commissions":      round(commissions_by_manager.get(mgr, 0.0), 2),
+                "position_count":   position_count.get(mgr, 0),
+                "asset_class_mix":  _pct_breakdown(asset_class_mv.get(mgr, {})),
+                "sector_mix":       _pct_breakdown(sector_mv.get(mgr, {})),
+                "country_mix":      _pct_breakdown(country_mv.get(mgr, {})),
+                "currency_mix":     _pct_breakdown(currency_mv.get(mgr, {})),
+                "herfindahl_asset": round(_herfindahl(asset_class_mv.get(mgr, {})) or 0, 3),
+                "herfindahl_sector":round(_herfindahl(sector_mv.get(mgr, {})) or 0, 3),
+                "no_snapshots":     True,
+            })
             continue
         dates = sorted(nav.keys())
         end_date = dates[-1]
@@ -2462,6 +2489,7 @@ def get_manager_analytics(
             "currency_mix":     _pct_breakdown(fx_mv),
             "herfindahl_asset": round(_herfindahl(a_mv) or 0, 3),
             "herfindahl_sector":round(_herfindahl(s_mv) or 0, 3),
+            "no_snapshots":     False,
         })
 
     return sorted(results, key=lambda r: -(r["aum"] or 0))

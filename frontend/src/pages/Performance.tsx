@@ -132,7 +132,7 @@ const FLOW_CAT: Record<ChartEventItem['type'], string> = {
 
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode, periodStartValues }: {
+function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode, periodStartValues, periodStartDate }: {
   active?: boolean
   payload?: { name: string; value: number; color: string }[]
   label?: string
@@ -140,10 +140,24 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode,
   indexLabels?: Set<string>
   mode?: 'value' | 'indexed'
   periodStartValues?: Record<string, number>
+  periodStartDate?: string
 }) {
   if (!active || !payload?.length) return null
   const ev = label ? dateToEvents?.[label] : undefined
   const isIdx = mode === 'indexed'
+  // Days from window start to hovered point — used for annualizing % returns.
+  const daysElapsed = periodStartDate && label
+    ? (new Date(label + 'T00:00:00').getTime() - new Date(periodStartDate + 'T00:00:00').getTime()) / 864e5
+    : null
+  const showAnnualized = isIdx && daysElapsed != null && daysElapsed >= 30
+  const annualize = (pct: number) => {
+    const r = pct / 100
+    return ((Math.pow(1 + r, 365 / daysElapsed!) - 1) * 100)
+  }
+  const fmtAnn = (pct: number) => {
+    const a = annualize(pct)
+    return `${a >= 0 ? '+' : ''}${a.toFixed(1)}% ann.`
+  }
   // In indexed mode series values are % change from the window start, not dollars.
   const fmtVal = (v: number | null | undefined) =>
     isIdx ? `${(v ?? 0) >= 0 ? '+' : ''}${(v ?? 0).toFixed(2)}%` : fmtCAD(v)
@@ -178,6 +192,11 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode,
             </span>
             <span className="font-semibold text-right">
               {fmtVal(p.value)}
+              {showAnnualized && !p.name.endsWith(' (invested)') && (
+                <span className={`ml-1.5 text-[10px] ${p.value >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {fmtAnn(p.value)}
+                </span>
+              )}
               {delta != null && (
                 <span className={`ml-1.5 text-[10px] ${delta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
                   {fmtDelta(delta)}
@@ -1109,7 +1128,7 @@ function PerformanceInner() {
                 tick={{ fontSize: 10 }} width={72} />
               <Tooltip
                 cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
-                content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} periodStartValues={points[0]?.values} />} />
+                content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} periodStartValues={points[0]?.values} periodStartDate={points[0]?.date?.slice(0, 10)} />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {labels.map((lbl, i) => {
                 const color = PALETTE[i % PALETTE.length]

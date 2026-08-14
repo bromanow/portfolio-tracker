@@ -54,7 +54,7 @@ interface AccountReturn {
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-type GroupBy = 'total' | 'brokerage' | 'account_type' | 'account'
+type GroupBy = 'total' | 'brokerage' | 'account_type' | 'account' | 'manager'
 type Period  = '1M' | '3M' | 'YTD' | '1Y' | '3Y' | '5Y' | 'ALL'
 type TableGroup = 'none' | 'brokerage' | 'account_type'
 type SortDir = 'asc' | 'desc'
@@ -132,13 +132,14 @@ const FLOW_CAT: Record<ChartEventItem['type'], string> = {
 
 // ─── Chart tooltip ────────────────────────────────────────────────────────────
 
-function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode }: {
+function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode, periodStartValues }: {
   active?: boolean
   payload?: { name: string; value: number; color: string }[]
   label?: string
   dateToEvents?: Record<string, ChartEvent>
   indexLabels?: Set<string>
   mode?: 'value' | 'indexed'
+  periodStartValues?: Record<string, number>
 }) {
   if (!active || !payload?.length) return null
   const ev = label ? dateToEvents?.[label] : undefined
@@ -146,6 +147,10 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
   // In indexed mode series values are % change from the window start, not dollars.
   const fmtVal = (v: number | null | undefined) =>
     isIdx ? `${(v ?? 0) >= 0 ? '+' : ''}${(v ?? 0).toFixed(2)}%` : fmtCAD(v)
+  const fmtDelta = (v: number) => {
+    const s = v >= 0 ? '+' : ''
+    return s + new Intl.NumberFormat('en-CA', { style: 'currency', currency: 'CAD', minimumFractionDigits: 0, maximumFractionDigits: 0 }).format(v)
+  }
   // Split payload into portfolio series, benchmark indices, and invested baselines.
   const indexRows    = payload.filter(p => indexLabels?.has(p.name))
   const portfolioRows = payload.filter(p => !indexLabels?.has(p.name))
@@ -153,22 +158,46 @@ function ChartTooltip({ active, payload, label, dateToEvents, indexLabels, mode 
   // Summing percentages is meaningless, so the Total row is hidden in indexed mode.
   const valueRows = portfolioRows.filter(p => !p.name.endsWith(' (invested)'))
   const total = valueRows.reduce((s, p) => s + (p.value ?? 0), 0)
+  const totalStart = periodStartValues
+    ? valueRows.reduce((s, p) => s + (periodStartValues[p.name] ?? 0), 0)
+    : null
+  const totalDelta = totalStart != null ? total - totalStart : null
   return (
-    <div className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-xs min-w-[180px]">
+    <div className="bg-card border border-border rounded-lg shadow-lg px-3 py-2 text-xs min-w-[200px]">
       <div className="text-muted-foreground font-medium mb-1.5 border-b border-border pb-1">{label}</div>
-      {portfolioRows.map(p => (
-        <div key={p.name} className="flex justify-between gap-4 py-0.5">
-          <span className="flex items-center gap-1">
-            <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
-            {p.name}
-          </span>
-          <span className="font-semibold">{fmtVal(p.value)}</span>
-        </div>
-      ))}
+      {portfolioRows.map(p => {
+        const startVal = periodStartValues?.[p.name]
+        const delta = !p.name.endsWith(' (invested)') && startVal != null && !isIdx
+          ? p.value - startVal
+          : null
+        return (
+          <div key={p.name} className="flex justify-between gap-4 py-0.5">
+            <span className="flex items-center gap-1">
+              <span className="inline-block w-2 h-2 rounded-full" style={{ background: p.color }} />
+              {p.name}
+            </span>
+            <span className="font-semibold text-right">
+              {fmtVal(p.value)}
+              {delta != null && (
+                <span className={`ml-1.5 text-[10px] ${delta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                  {fmtDelta(delta)}
+                </span>
+              )}
+            </span>
+          </div>
+        )
+      })}
       {!isIdx && valueRows.length > 1 && (
         <div className="flex justify-between gap-4 py-0.5 mt-1 pt-1 border-t border-border">
           <span className="font-bold text-foreground">Total</span>
-          <span className="font-bold text-foreground">{fmtCAD(total)}</span>
+          <span className="font-bold text-foreground text-right">
+            {fmtCAD(total)}
+            {totalDelta != null && (
+              <span className={`ml-1.5 text-[10px] font-semibold ${totalDelta >= 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {fmtDelta(totalDelta)}
+              </span>
+            )}
+          </span>
         </div>
       )}
       {indexRows.length > 0 && (
@@ -393,6 +422,7 @@ function PerformanceInner() {
   const [filterBrokerages, setFilterBrokerages] = useState<string[]>([])
   const [filterTypes, setFilterTypes]           = useState<string[]>([])
   const [filterAccounts, setFilterAccounts]     = useState<string[]>([])
+  const [filterManagers, setFilterManagers]     = useState<string[]>([])
 
   // Custom date range (overrides period pills when set)
   const [customFromDate, setCustomFromDate] = useState<string>('')
@@ -423,15 +453,21 @@ function PerformanceInner() {
       .map(t => ({ value: t, label: t })),
   [allAccounts])
 
+  const managerOptions = useMemo(() =>
+    [...new Set(allAccounts.map(a => a.portfolio_manager ?? 'Unassigned'))].sort()
+      .map(m => ({ value: m, label: m })),
+  [allAccounts])
+
   const accountOptions = useMemo(() =>
     allAccounts
       .filter(a => {
         if (filterBrokerages.length > 0 && !filterBrokerages.includes(a.brokerage_name!)) return false
         if (filterTypes.length > 0 && !filterTypes.includes(a.account_type)) return false
+        if (filterManagers.length > 0 && !filterManagers.includes(a.portfolio_manager ?? 'Unassigned')) return false
         return true
       })
       .map(a => ({ value: String(a.id), label: a.name })),
-  [allAccounts, filterBrokerages, filterTypes])
+  [allAccounts, filterBrokerages, filterTypes, filterManagers])
 
   // Compute account_ids filter string for API — always scoped to user's accounts
   const chartAccountIds = useMemo(() => {
@@ -439,10 +475,11 @@ function PerformanceInner() {
       if (filterBrokerages.length > 0 && !filterBrokerages.includes(a.brokerage_name!)) return false
       if (filterTypes.length > 0 && !filterTypes.includes(a.account_type)) return false
       if (filterAccounts.length > 0 && !filterAccounts.includes(String(a.id))) return false
+      if (filterManagers.length > 0 && !filterManagers.includes(a.portfolio_manager ?? 'Unassigned')) return false
       return true
     })
     return matching.map(a => a.id).join(',') || undefined
-  }, [allAccounts, filterBrokerages, filterTypes, filterAccounts])
+  }, [allAccounts, filterBrokerages, filterTypes, filterAccounts, filterManagers])
 
   const fromDate = useMemo(() => {
     if (customFromDate) return customFromDate
@@ -875,7 +912,7 @@ function PerformanceInner() {
   const printReport = () => window.print()
 
   const noData = !timelineQ.isLoading && points.length === 0
-  const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0
+  const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0 || filterManagers.length > 0
 
   return (
     <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto">
@@ -929,10 +966,10 @@ function PerformanceInner() {
         {/* Row 1: group-by + period + date range + show-invested */}
         <div className="flex flex-wrap items-center gap-2 md:gap-3">
           <div className="flex items-center gap-1 bg-accent rounded-lg p-0.5">
-            {(['total','brokerage','account_type','account'] as GroupBy[]).map(g => (
+            {(['total','brokerage','account_type','account','manager'] as GroupBy[]).map(g => (
               <button key={g} onClick={() => setGroupBy(g)}
                 className={`px-3 py-1.5 text-xs rounded-md font-medium transition-colors ${groupBy === g ? 'bg-card shadow text-primary' : 'text-muted-foreground hover:text-foreground'}`}>
-                {g === 'account_type' ? 'By Type' : g === 'account' ? 'By Account' : g === 'brokerage' ? 'By Brokerage' : 'Total'}
+                {g === 'account_type' ? 'By Type' : g === 'account' ? 'By Account' : g === 'brokerage' ? 'By Brokerage' : g === 'manager' ? 'By Manager' : 'Total'}
               </button>
             ))}
           </div>
@@ -1012,6 +1049,12 @@ function PerformanceInner() {
             disabled={accountOptions.length === 0}
           />
           <MultiSelectDropdown
+            placeholder="All Managers"
+            options={managerOptions}
+            selected={filterManagers}
+            onChange={vals => { setFilterManagers(vals); setFilterAccounts([]) }}
+          />
+          <MultiSelectDropdown
             placeholder="All cash flows"
             options={FLOW_OPTIONS}
             selected={flowFilter}
@@ -1066,7 +1109,7 @@ function PerformanceInner() {
                 tick={{ fontSize: 10 }} width={72} />
               <Tooltip
                 cursor={{ stroke: '#94a3b8', strokeWidth: 1, strokeDasharray: '4 4' }}
-                content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} />} />
+                content={(props) => <ChartTooltip {...(props as any)} dateToEvents={dateToEvents} indexLabels={indexLabels} mode={axisMode} periodStartValues={points[0]?.values} />} />
               <Legend wrapperStyle={{ fontSize: 11 }} />
               {labels.map((lbl, i) => {
                 const color = PALETTE[i % PALETTE.length]

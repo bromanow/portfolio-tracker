@@ -1630,7 +1630,7 @@ def snapshot_views_status(
 
 @router.get("/performance/timeline")
 def get_performance_timeline(
-    group_by: str = Query("account", regex="^(total|brokerage|account_type|account)$"),
+    group_by: str = Query("account", regex="^(total|brokerage|account_type|account|manager)$"),
     from_date: Optional[date] = Query(None),
     to_date: Optional[date] = Query(None),
     account_ids: Optional[str] = Query(None),
@@ -1672,6 +1672,8 @@ def get_performance_timeline(
             return brokerages.get(acct.brokerage_id, "Unknown")
         if group_by == "account_type":
             return acct.account_type
+        if group_by == "manager":
+            return acct.portfolio_manager or "Unassigned"
         # individual account: strip " (USD)" so CAD+USD sub-accounts merge into one line
         return acct.name.replace(" (USD)", "").strip()
 

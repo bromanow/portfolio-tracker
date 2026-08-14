@@ -10,7 +10,7 @@ export default function AccountsTab() {
   const qc = useQueryClient()
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const { data: brokerages = [] } = useQuery({ queryKey: ['brokerages'], queryFn: getBrokerages })
-  const [form, setForm] = useState({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '' })
+  const [form, setForm] = useState({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '', portfolio_manager: '' })
   const [editing, setEditing] = useState<number | null>(null)
   const [editData, setEditData] = useState<Partial<Account>>({})
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; txnCount?: number } | null>(null)
@@ -36,8 +36,9 @@ export default function AccountsTab() {
       account_type: form.account_type, base_currency: form.base_currency,
       owner: form.owner, account_number: form.account_number || undefined,
       ibkr_alias: form.ibkr_alias || undefined,
+      portfolio_manager: form.portfolio_manager || undefined,
     }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts'] }); setForm({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '' }) },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts'] }); setForm({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '', portfolio_manager: '' }) },
   })
 
   const updateMut = useMutation({
@@ -109,6 +110,8 @@ export default function AccountsTab() {
             onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} />
           <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="IB Alias (e.g. Brian TFSA)" value={form.ibkr_alias}
             onChange={e => setForm(f => ({ ...f, ibkr_alias: e.target.value }))} />
+          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Portfolio Manager (optional)" value={form.portfolio_manager}
+            onChange={e => setForm(f => ({ ...f, portfolio_manager: e.target.value }))} />
         </div>
         <button onClick={() => createMut.mutate()} disabled={!form.brokerage_id || !form.name || !form.owner}
           className="mt-3 bg-primary text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">
@@ -141,6 +144,7 @@ export default function AccountsTab() {
               <SortTh label="Owner" col="owner" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <SortTh label="Acct #" col="account_number" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <th className="px-3 py-3 text-left text-xs text-muted-foreground uppercase">IB Alias</th>
+              <th className="px-3 py-3 text-left text-xs text-muted-foreground uppercase">Manager</th>
               <SortTh label="Active" col="active" sort={sort} toggle={toggle} className="px-3 py-3 text-left" />
               <th className="px-3 py-3 text-right">Actions</th>
             </tr>
@@ -168,6 +172,9 @@ export default function AccountsTab() {
                     <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
                       placeholder="IB alias"
                       value={editData.ibkr_alias ?? (a.ibkr_alias || '')} onChange={e => setEditData(d => ({ ...d, ibkr_alias: e.target.value }))} /></td>
+                    <td className="px-3 py-2"><input className="border rounded px-2 py-1 text-xs w-28"
+                      placeholder="Manager"
+                      value={editData.portfolio_manager ?? (a.portfolio_manager || '')} onChange={e => setEditData(d => ({ ...d, portfolio_manager: e.target.value }))} /></td>
                     <td className="px-3 py-2"><select className="bg-background text-foreground border rounded px-2 py-1 text-xs"
                       value={(editData.active ?? a.active) ? 'true' : 'false'}
                       onChange={e => setEditData(d => ({ ...d, active: e.target.value === 'true' }))}>
@@ -187,6 +194,7 @@ export default function AccountsTab() {
                     <td className="px-3 py-2.5 text-xs">{a.owner}</td>
                     <td className="px-3 py-2.5 text-xs text-muted-foreground font-mono">{a.account_number || '—'}</td>
                     <td className="px-3 py-2.5 text-xs text-primary font-mono">{a.ibkr_alias || '—'}</td>
+                    <td className="px-3 py-2.5 text-xs text-foreground">{a.portfolio_manager || '—'}</td>
                     <td className="px-3 py-2.5"><span className={`text-xs ${a.active ? 'text-green-600' : 'text-red-400'}`}>{a.active ? 'Yes' : 'No'}</span></td>
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex gap-2 justify-end">

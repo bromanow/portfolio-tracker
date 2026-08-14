@@ -79,6 +79,7 @@ export interface Account {
   client_id: number | null
   active: boolean
   ibkr_alias: string | null
+  portfolio_manager: string | null
 }
 
 export const getAccounts = (includeDemo = false) =>

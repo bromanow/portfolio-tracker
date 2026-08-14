@@ -2148,7 +2148,8 @@ def get_manager_analytics(
     import math
     from collections import defaultdict
     from decimal import Decimal as D
-    from app.models.master import PortfolioSnapshot, Account, Brokerage, Security, MarketPrice
+    from app.models.master import PortfolioSnapshot, Account, Brokerage, Security
+    from app.models.prices import MarketPrice
     from app.models.transactions import Transaction
 
     RISK_FREE_RATE = 4.5   # annualised %, CAD

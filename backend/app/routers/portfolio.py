@@ -2120,19 +2120,6 @@ def get_performance_returns(
     return sorted(results, key=lambda r: r["account_name"])
 
 
-@router.get("/performance/managers-debug")
-def get_manager_debug(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-    """Temporary debug endpoint — runs the full managers computation and returns result or error."""
-    import traceback
-    try:
-        result = get_manager_analytics(account_ids=None, db=db, current_user=current_user)
-        return {"ok": True, "count": len(result), "first": result[0] if result else None}
-    except Exception as e:
-        return {"ok": False, "error": str(e), "traceback": traceback.format_exc()}
-
 
 @router.get("/performance/managers")
 def get_manager_analytics(

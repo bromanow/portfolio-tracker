@@ -2120,6 +2120,353 @@ def get_performance_returns(
     return sorted(results, key=lambda r: r["account_name"])
 
 
+@router.get("/performance/managers")
+def get_manager_analytics(
+    account_ids: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return performance analytics grouped by portfolio_manager.
+    For each manager: AUM, period returns, volatility, Sharpe, Sortino, max drawdown,
+    Calmar, turnover, commissions, position count, and asset/sector/geo/currency mix.
+    """
+    import math
+    from collections import defaultdict
+    from decimal import Decimal as D
+    from app.models.master import PortfolioSnapshot, Account, Brokerage, Security, MarketPrice
+    from app.models.transactions import Transaction
+
+    RISK_FREE_RATE = 4.5   # annualised %, CAD
+
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
+    excluded_ids = _performance_excluded_account_ids(db, False)
+
+    # ── Account metadata ────────────────────────────────────────────────────────
+    all_accounts: list[Account] = db.query(Account).all()
+    brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
+
+    # Group account IDs by manager label
+    manager_account_ids: dict[str, list[int]] = defaultdict(list)
+    account_meta: dict[int, Account] = {}
+    for acct in all_accounts:
+        if parsed_ids and acct.id not in parsed_ids:
+            continue
+        if excluded_ids and acct.id in excluded_ids:
+            continue
+        account_meta[acct.id] = acct
+        mgr = acct.portfolio_manager or "Unassigned"
+        manager_account_ids[mgr].append(acct.id)
+
+    if not manager_account_ids:
+        return []
+
+    all_acct_ids = list(account_meta.keys())
+
+    # ── Snapshots ───────────────────────────────────────────────────────────────
+    snap_q = db.query(PortfolioSnapshot).filter(
+        PortfolioSnapshot.account_id.in_(all_acct_ids)
+    ).order_by(PortfolioSnapshot.snapshot_date)
+    # by_manager[mgr][date] = total NAV (float)
+    by_manager: dict[str, dict[date, float]] = defaultdict(lambda: defaultdict(float))
+    for row in snap_q.all():
+        acct = account_meta.get(row.account_id)
+        if acct is None:
+            continue
+        mgr = acct.portfolio_manager or "Unassigned"
+        mv = max(0.0, float((row.market_value_cad or 0)) + float((row.cash_balance_cad or 0)))
+        by_manager[mgr][row.snapshot_date] += mv
+
+    # ── Cash flows for Modified Dietz ───────────────────────────────────────────
+    _FLOW_TYPES = ("DEPOSIT", "WITHDRAWAL", "TRANSFER_IN", "TRANSFER_OUT", "JOURNAL", "PLAN_CONTRIBUTION")
+    flow_q = db.query(Transaction).filter(
+        Transaction.account_id.in_(all_acct_ids),
+        Transaction.transaction_type.in_(_FLOW_TYPES),
+        Transaction.cad_amount.isnot(None),
+    )
+    flows_by_manager: dict[str, list[tuple[date, float]]] = defaultdict(list)
+    for txn in flow_q.all():
+        acct = account_meta.get(txn.account_id)
+        if acct is None:
+            continue
+        mgr = acct.portfolio_manager or "Unassigned"
+        td = txn.transaction_date
+        if hasattr(td, "date"):
+            td = td.date()
+        flows_by_manager[mgr].append((td, float(txn.cad_amount or 0)))
+    for mgr in flows_by_manager:
+        flows_by_manager[mgr].sort(key=lambda x: x[0])
+
+    # ── Commissions & turnover ──────────────────────────────────────────────────
+    trade_q = db.query(Transaction).filter(
+        Transaction.account_id.in_(all_acct_ids),
+        Transaction.transaction_type.in_(("BUY", "SELL")),
+    )
+    commissions_by_manager: dict[str, float] = defaultdict(float)
+    buys_by_manager: dict[str, float] = defaultdict(float)
+    sells_by_manager: dict[str, float] = defaultdict(float)
+    for txn in trade_q.all():
+        acct = account_meta.get(txn.account_id)
+        if acct is None:
+            continue
+        mgr = acct.portfolio_manager or "Unassigned"
+        commissions_by_manager[mgr] += float(txn.commission or 0)
+        amt = abs(float(txn.cad_amount or 0))
+        if txn.transaction_type == "BUY":
+            buys_by_manager[mgr] += amt
+        else:
+            sells_by_manager[mgr] += amt
+
+    # ── Current holdings for diversification ────────────────────────────────────
+    # Use latest market prices to get position values
+    latest_prices: dict[int, float] = {}
+    for mp in db.query(MarketPrice).all():
+        latest_prices[mp.security_id] = float(mp.price or 0)
+
+    securities: dict[int, Security] = {s.id: s for s in db.query(Security).all()}
+
+    # Latest positions per account: reconstruct running quantities from transactions
+    pos_q = db.query(Transaction).filter(
+        Transaction.account_id.in_(all_acct_ids),
+        Transaction.transaction_type.in_(("BUY", "SELL", "OPENING_BALANCE")),
+        Transaction.security_id.isnot(None),
+    )
+    # qty_map[acct_id][security_id] = running quantity
+    qty_map: dict[int, dict[int, float]] = defaultdict(lambda: defaultdict(float))
+    for txn in sorted(pos_q.all(), key=lambda t: t.transaction_date):
+        qty = float(txn.quantity or 0)
+        if txn.transaction_type == "SELL":
+            qty = -qty
+        qty_map[txn.account_id][txn.security_id] += qty
+
+    # Build diversification buckets per manager
+    asset_class_mv: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    sector_mv: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    country_mv: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    currency_mv: dict[str, dict[str, float]] = defaultdict(lambda: defaultdict(float))
+    position_count: dict[str, int] = defaultdict(int)
+
+    for acct_id, sec_qtys in qty_map.items():
+        acct = account_meta.get(acct_id)
+        if acct is None:
+            continue
+        mgr = acct.portfolio_manager or "Unassigned"
+        for sec_id, qty in sec_qtys.items():
+            if qty <= 0:
+                continue
+            sec = securities.get(sec_id)
+            if sec is None:
+                continue
+            price = latest_prices.get(sec_id, 0)
+            mv = qty * price
+            if mv <= 0:
+                continue
+            position_count[mgr] += 1
+            asset_class_mv[mgr][sec.asset_class or "Other"] += mv
+            sector_mv[mgr][sec.sector_gics or "Other"] += mv
+            country_mv[mgr][sec.country or "Other"] += mv
+            currency_mv[mgr][sec.currency or "CAD"] += mv
+
+    # ── Risk metrics helper functions ───────────────────────────────────────────
+    def _daily_returns(nav_series: dict[date, float]) -> list[float]:
+        dates = sorted(nav_series.keys())
+        rets = []
+        for i in range(1, len(dates)):
+            prev, curr = nav_series[dates[i-1]], nav_series[dates[i]]
+            if prev > 0:
+                rets.append((curr - prev) / prev)
+        return rets
+
+    def _volatility(rets: list[float]) -> Optional[float]:
+        if len(rets) < 20:
+            return None
+        mean = sum(rets) / len(rets)
+        variance = sum((r - mean) ** 2 for r in rets) / (len(rets) - 1)
+        return math.sqrt(variance) * math.sqrt(252) * 100   # annualised %
+
+    def _max_drawdown(nav_series: dict[date, float]) -> Optional[float]:
+        dates = sorted(nav_series.keys())
+        if not dates:
+            return None
+        peak = nav_series[dates[0]]
+        max_dd = 0.0
+        for d in dates:
+            v = nav_series[d]
+            if v > peak:
+                peak = v
+            if peak > 0:
+                dd = (peak - v) / peak * 100
+                if dd > max_dd:
+                    max_dd = dd
+        return max_dd
+
+    def _sharpe(ann_return: Optional[float], vol: Optional[float]) -> Optional[float]:
+        if ann_return is None or vol is None or vol == 0:
+            return None
+        return (ann_return - RISK_FREE_RATE) / vol
+
+    def _sortino(ann_return: Optional[float], rets: list[float]) -> Optional[float]:
+        if ann_return is None or len(rets) < 20:
+            return None
+        downside = [r for r in rets if r < 0]
+        if not downside:
+            return None
+        downside_vol = math.sqrt(sum(r**2 for r in downside) / len(downside)) * math.sqrt(252) * 100
+        if downside_vol == 0:
+            return None
+        return (ann_return - RISK_FREE_RATE) / downside_vol
+
+    def _calmar(ann_return: Optional[float], max_dd: Optional[float]) -> Optional[float]:
+        if ann_return is None or max_dd is None or max_dd == 0:
+            return None
+        return ann_return / max_dd
+
+    def _herfindahl(mv_dict: dict[str, float]) -> Optional[float]:
+        total = sum(mv_dict.values())
+        if total <= 0:
+            return None
+        return sum((v / total) ** 2 for v in mv_dict.values())
+
+    # ── Period return helpers ────────────────────────────────────────────────────
+    today = date.today()
+    period_starts = {
+        "1M":  today - timedelta(days=30),
+        "3M":  today - timedelta(days=91),
+        "6M":  today - timedelta(days=182),
+        "YTD": date(today.year, 1, 1),
+        "1Y":  today - timedelta(days=365),
+        "3Y":  today - timedelta(days=1095),
+    }
+
+    def _period_return(nav: dict[date, float], flows: list[tuple[date, float]], start_target: date) -> Optional[float]:
+        dates = sorted(nav.keys())
+        if not dates:
+            return None
+        end_date = dates[-1]
+        end_mv = nav[end_date]
+        if end_mv < 1:
+            return None
+        start_snap = None
+        for d in dates:
+            if d <= start_target:
+                start_snap = d
+            else:
+                break
+        if start_snap is None:
+            return None
+        start_mv = nav[start_snap]
+        flows_in = [(d, a) for (d, a) in flows if start_snap < d <= end_date]
+        return _modified_dietz_from_flows(start_mv, end_mv, flows_in, start_snap, end_date)
+
+    def _inception_return(nav: dict[date, float], flows: list[tuple[date, float]]) -> Optional[tuple[float, date]]:
+        dates = sorted(nav.keys())
+        if not dates:
+            return None
+        end_date = dates[-1]
+        end_mv = nav[end_date]
+        if end_mv < 1:
+            return None
+        # Use first date with >0 NAV as inception
+        inception_date = None
+        for d in dates:
+            if nav[d] > 0:
+                inception_date = d
+                break
+        if inception_date is None:
+            return None
+        flows_in = [(d, a) for (d, a) in flows if inception_date < d <= end_date]
+        r = _modified_dietz_from_flows(nav[inception_date], end_mv, flows_in, inception_date, end_date)
+        return (r, inception_date) if r is not None else None
+
+    def _annualized(ret_pct: Optional[float], start: date, end: date) -> Optional[float]:
+        if ret_pct is None:
+            return None
+        days = (end - start).days
+        if days < 2:
+            return None
+        return (math.pow(1 + ret_pct / 100, 365.0 / days) - 1) * 100
+
+    # ── Assemble results ────────────────────────────────────────────────────────
+    results = []
+    for mgr, nav in by_manager.items():
+        if not nav:
+            continue
+        dates = sorted(nav.keys())
+        end_date = dates[-1]
+        end_mv = nav[end_date]
+        flows = flows_by_manager.get(mgr, [])
+        rets = _daily_returns(nav)
+        vol = _volatility(rets)
+        max_dd = _max_drawdown(nav)
+
+        # Returns per period
+        returns: dict[str, Optional[float]] = {}
+        ann_returns: dict[str, Optional[float]] = {}
+        for lbl, start in period_starts.items():
+            r = _period_return(nav, flows, start)
+            returns[lbl] = r
+            ann_returns[lbl] = _annualized(r, start, end_date)
+
+        incep = _inception_return(nav, flows)
+        returns["inception"] = incep[0] if incep else None
+        inception_date = incep[1].isoformat() if incep else None
+        ann_returns["inception"] = _annualized(incep[0], incep[1], end_date) if incep else None
+
+        # Pick a representative annualised return for Sharpe/Sortino/Calmar
+        ann_1y = ann_returns.get("1Y") or ann_returns.get("inception")
+        sharpe  = _sharpe(ann_1y, vol)
+        sortino = _sortino(ann_1y, rets)
+        calmar  = _calmar(ann_1y, max_dd)
+
+        # Turnover
+        avg_nav = sum(nav.values()) / len(nav) if nav else 0
+        buys = buys_by_manager.get(mgr, 0.0)
+        sells = sells_by_manager.get(mgr, 0.0)
+        turnover = (min(buys, sells) / avg_nav * 100) if avg_nav > 0 else None
+
+        # Diversification
+        a_mv = asset_class_mv.get(mgr, {})
+        s_mv = sector_mv.get(mgr, {})
+        c_mv = country_mv.get(mgr, {})
+        fx_mv = currency_mv.get(mgr, {})
+
+        def _pct_breakdown(mv_dict: dict[str, float]) -> dict[str, float]:
+            total = sum(mv_dict.values())
+            if total <= 0:
+                return {}
+            return {k: round(v / total * 100, 1) for k, v in sorted(mv_dict.items(), key=lambda x: -x[1])}
+
+        results.append({
+            "manager":          mgr,
+            "account_ids":      manager_account_ids[mgr],
+            "aum":              round(end_mv, 2),
+            "inception_date":   inception_date,
+            # Returns
+            "returns":          {k: round(v, 2) if v is not None else None for k, v in returns.items()},
+            "ann_returns":      {k: round(v, 2) if v is not None else None for k, v in ann_returns.items()},
+            # Risk
+            "volatility":       round(vol, 2) if vol is not None else None,
+            "max_drawdown":     round(max_dd, 2) if max_dd is not None else None,
+            "sharpe":           round(sharpe, 2) if sharpe is not None else None,
+            "sortino":          round(sortino, 2) if sortino is not None else None,
+            "calmar":           round(calmar, 2) if calmar is not None else None,
+            # Activity
+            "turnover":         round(turnover, 1) if turnover is not None else None,
+            "commissions":      round(commissions_by_manager.get(mgr, 0.0), 2),
+            "position_count":   position_count.get(mgr, 0),
+            # Diversification
+            "asset_class_mix":  _pct_breakdown(a_mv),
+            "sector_mix":       _pct_breakdown(s_mv),
+            "country_mix":      _pct_breakdown(c_mv),
+            "currency_mix":     _pct_breakdown(fx_mv),
+            "herfindahl_asset": round(_herfindahl(a_mv) or 0, 3),
+            "herfindahl_sector":round(_herfindahl(s_mv) or 0, 3),
+        })
+
+    return sorted(results, key=lambda r: -(r["aum"] or 0))
+
+
 @router.get("/jobs/{job_id}")
 def get_portfolio_job(job_id: str):
     """Poll status of a portfolio background job."""

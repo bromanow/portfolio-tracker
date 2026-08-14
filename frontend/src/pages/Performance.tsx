@@ -1,4 +1,5 @@
 import Reports from './Reports'
+import ManagersTab from './ManagersTab'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -416,7 +417,7 @@ function SortTh({ label, col, sortCol, sortDir, onSort, right = false }: {
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 
-type PageTab = 'performance' | 'reports'
+type PageTab = 'performance' | 'reports' | 'managers'
 
 function PerformanceInner() {
   // Subscribed only so this component re-renders when the header's eye-icon toggle
@@ -1332,7 +1333,7 @@ export default function Performance() {
     <div className="space-y-4">
       <div className="border-b border-border">
         <nav className="-mb-px flex gap-1">
-          {(['performance', 'reports'] as PageTab[]).map(t => (
+          {(['performance', 'managers', 'reports'] as PageTab[]).map(t => (
             <button
               key={t}
               onClick={() => setTab(t)}
@@ -1342,13 +1343,14 @@ export default function Performance() {
                   : 'border-transparent text-muted-foreground hover:text-foreground hover:border-border'
               }`}
             >
-              {t === 'performance' ? 'Returns' : 'Reports'}
+              {t === 'performance' ? 'Returns' : t === 'managers' ? 'Managers' : 'Reports'}
             </button>
           ))}
         </nav>
       </div>
 
       {tab === 'performance' && <PerformanceInner />}
+      {tab === 'managers'    && <ManagersTab />}
       {tab === 'reports'     && <Reports />}
     </div>
   )

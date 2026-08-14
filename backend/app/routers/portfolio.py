@@ -2322,6 +2322,12 @@ def get_manager_analytics(
             return None
         return ann_return / max_dd
 
+    def _pct_breakdown(mv_dict: dict[str, float]) -> dict[str, float]:
+        total = sum(mv_dict.values())
+        if total <= 0:
+            return {}
+        return {k: round(v / total * 100, 1) for k, v in sorted(mv_dict.items(), key=lambda x: -x[1])}
+
     def _herfindahl(mv_dict: dict[str, float]) -> Optional[float]:
         total = sum(mv_dict.values())
         if total <= 0:
@@ -2457,12 +2463,6 @@ def get_manager_analytics(
         s_mv = sector_mv.get(mgr, {})
         c_mv = country_mv.get(mgr, {})
         fx_mv = currency_mv.get(mgr, {})
-
-        def _pct_breakdown(mv_dict: dict[str, float]) -> dict[str, float]:
-            total = sum(mv_dict.values())
-            if total <= 0:
-                return {}
-            return {k: round(v / total * 100, 1) for k, v in sorted(mv_dict.items(), key=lambda x: -x[1])}
 
         results.append({
             "manager":          mgr,

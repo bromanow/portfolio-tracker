@@ -2406,7 +2406,10 @@ def get_manager_analytics(
         days = (end - start).days
         if days < 2:
             return None
-        return (math.pow(1 + ret_pct / 100, 365.0 / days) - 1) * 100
+        base = 1 + ret_pct / 100
+        if base <= 0:
+            return None  # total loss — annualizing undefined
+        return (math.pow(base, 365.0 / days) - 1) * 100
 
     # ── Assemble results ────────────────────────────────────────────────────────
     # Ensure every manager with accounts gets a row, even if no snapshots exist yet

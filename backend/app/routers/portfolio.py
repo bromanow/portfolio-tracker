@@ -2200,7 +2200,11 @@ def get_manager_analytics(
     for mgr in flows_by_manager:
         flows_by_manager[mgr].sort(key=lambda x: x[0])
 
-    # ── Commissions & turnover ──────────────────────────────────────────────────
+    # ── Commissions & turnover (rolling 12 months, equities only) ───────────────
+    _now = date.today()
+    one_year_ago = _now - timedelta(days=365)
+    from app.models.master import Security as _Security
+    option_sec_ids = {s.id for s in db.query(_Security).filter(_Security.is_option == True).all()}  # noqa: E712
     trade_q = db.query(Transaction).filter(
         Transaction.account_id.in_(all_acct_ids),
         Transaction.transaction_type.in_(("BUY", "SELL")),
@@ -2212,8 +2216,15 @@ def get_manager_analytics(
         acct = account_meta.get(txn.account_id)
         if acct is None:
             continue
+        if txn.security_id and txn.security_id in option_sec_ids:
+            continue  # exclude options from turnover
         mgr = acct.portfolio_manager or "Unassigned"
         commissions_by_manager[mgr] += float(txn.commission or 0)
+        td = txn.transaction_date
+        if hasattr(td, "date"):
+            td = td.date()
+        if td < one_year_ago:
+            continue  # turnover = rolling 12-month window only
         amt = abs(float(txn.cad_amount or 0))
         if txn.transaction_type == "BUY":
             buys_by_manager[mgr] += amt
@@ -2498,6 +2509,194 @@ def get_manager_analytics(
         })
 
     return sorted(results, key=lambda r: -(r["aum"] or 0))
+
+
+@router.get("/performance/attribution")
+def get_performance_attribution(
+    from_date: date = Query(..., description="Period start (YYYY-MM-DD)"),
+    to_date: date = Query(..., description="Period end (YYYY-MM-DD)"),
+    account_ids: Optional[str] = Query(None, description="Comma-separated account IDs"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Return contribution analysis for a portfolio over a period.
+
+    Per holding: start weight, price return, contribution (pct-pts of portfolio return).
+    Rolled up to sector and asset class. Includes cash drag.
+    """
+    from decimal import Decimal as D
+    from collections import defaultdict
+
+    authorized_ids = parse_account_ids(account_ids, current_user, db)
+    parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
+    excluded_ids = _performance_excluded_account_ids(db, False)
+
+    # ── Resolve account list ─────────────────────────────────────────────────
+    from app.models.master import Account, PortfolioSnapshot, Security
+    all_accounts = db.query(Account).all()
+    sec_meta: dict[int, Security] = {s.id: s for s in db.query(Security).all()}
+    target_ids: list[int] = []
+    for a in all_accounts:
+        if parsed_ids is not None and a.id not in parsed_ids:
+            continue
+        if a.id in excluded_ids:
+            continue
+        target_ids.append(a.id)
+
+    if not target_ids:
+        return {"holdings": [], "sectors": [], "asset_classes": [], "total_contribution": 0,
+                "portfolio_return": None, "cash_drag": None, "from_date": str(from_date), "to_date": str(to_date)}
+
+    # ── Get start/end positions via portfolio service ────────────────────────
+    # Build combined positions across all target accounts for each date
+    def _positions_at(as_of: date) -> dict[int, dict]:
+        """security_id → aggregated position {ticker, name, sector, asset_class, qty, price_cad, value_cad, currency}"""
+        combined: dict[int, dict] = {}
+        for acct_id in target_ids:
+            try:
+                positions = portfolio_svc.get_positions(db, account_id=acct_id, as_of=as_of)
+            except Exception:
+                continue
+            for p in positions:
+                sid = p.get("security_id")
+                if sid is None:
+                    continue
+                sec = sec_meta.get(sid)
+                if sec and sec.is_option:
+                    continue  # skip options — different return driver, distorts weight
+                qty = float(p.get("quantity") or 0)
+                if qty <= 0:
+                    continue
+                price_cad = float(p.get("current_price_cad") or 0)
+                value_cad = float(p.get("market_value_cad") or 0) or qty * price_cad
+                if value_cad <= 0 or price_cad <= 0:
+                    continue
+                sector = (sec.sector_gics if sec else None) or "Other"
+                asset  = (sec.asset_class if sec else None) or "Equity"
+                name   = (sec.name if sec else None) or p.get("ticker", "")
+                if sid not in combined:
+                    combined[sid] = {
+                        "security_id": sid,
+                        "ticker": p.get("ticker", ""),
+                        "name": name,
+                        "sector": sector,
+                        "asset_class": asset,
+                        "currency": (sec.currency if sec else None) or p.get("currency") or "CAD",
+                        "qty": 0.0,
+                        "price_cad": price_cad,
+                        "value_cad": 0.0,
+                    }
+                combined[sid]["qty"] += qty
+                combined[sid]["value_cad"] += value_cad
+                combined[sid]["price_cad"] = price_cad
+        return combined
+
+    start_pos = _positions_at(from_date)
+    end_pos   = _positions_at(to_date)
+
+    # ── Get cash from snapshots ──────────────────────────────────────────────
+    def _cash_at(target_date: date) -> float:
+        total = 0.0
+        for acct_id in target_ids:
+            # Find closest snapshot at/before target_date
+            snap = (db.query(PortfolioSnapshot)
+                    .filter(PortfolioSnapshot.account_id == acct_id,
+                            PortfolioSnapshot.snapshot_date <= target_date)
+                    .order_by(PortfolioSnapshot.snapshot_date.desc())
+                    .first())
+            if snap:
+                total += float(snap.cash_balance_cad or 0)
+        return max(0.0, total)
+
+    start_cash = _cash_at(from_date)
+    end_cash   = _cash_at(to_date)
+
+    start_equity = sum(p["value_cad"] for p in start_pos.values())
+    end_equity   = sum(p["value_cad"] for p in end_pos.values())
+    start_total  = start_equity + start_cash
+    end_total    = end_equity + end_cash
+
+    if start_total <= 0:
+        return {"holdings": [], "sectors": [], "asset_classes": [], "total_contribution": 0,
+                "portfolio_return": None, "cash_drag": None, "from_date": str(from_date), "to_date": str(to_date)}
+
+    portfolio_return = (end_total - start_total) / start_total * 100
+
+    # ── Per-holding attribution ──────────────────────────────────────────────
+    holdings = []
+    sector_contrib:     dict[str, float] = defaultdict(float)
+    sector_weight:      dict[str, float] = defaultdict(float)
+    asset_contrib:      dict[str, float] = defaultdict(float)
+    asset_weight:       dict[str, float] = defaultdict(float)
+    total_contrib_check = 0.0
+
+    for sid, sp in start_pos.items():
+        weight = sp["value_cad"] / start_total  # as fraction
+        ep = end_pos.get(sid)
+        if ep and sp["price_cad"] > 0:
+            price_return = (ep["price_cad"] - sp["price_cad"]) / sp["price_cad"] * 100
+        elif sp["price_cad"] > 0:
+            # position closed — assume sold at 0 (conservative; actual close price not tracked here)
+            price_return = -100.0
+        else:
+            price_return = 0.0
+        contribution = weight * price_return  # pct-pts of portfolio return
+
+        sector = sp["sector"]
+        asset  = sp["asset_class"]
+        sector_contrib[sector] += contribution
+        sector_weight[sector]  += weight * 100
+        asset_contrib[asset]   += contribution
+        asset_weight[asset]    += weight * 100
+        total_contrib_check    += contribution
+
+        holdings.append({
+            "ticker":       sp["ticker"],
+            "name":         sp["name"],
+            "sector":       sector,
+            "asset_class":  asset,
+            "currency":     sp["currency"],
+            "start_value":  round(sp["value_cad"], 2),
+            "end_value":    round(ep["value_cad"], 2) if ep else 0.0,
+            "weight":       round(weight * 100, 2),
+            "price_return": round(price_return, 2),
+            "contribution": round(contribution, 2),
+        })
+
+    # Cash drag contribution: cash doesn't earn price return, so its contribution is 0
+    # but it dilutes total returns — show it as a separate line
+    cash_weight = start_cash / start_total * 100 if start_total > 0 else 0
+    cash_return = (end_cash - start_cash) / start_cash * 100 if start_cash > 0 else 0
+    cash_contrib = (start_cash / start_total) * cash_return if start_total > 0 else 0
+
+    # ── Build sector/asset rollups ───────────────────────────────────────────
+    sectors = sorted([
+        {"sector": s, "weight": round(sector_weight[s], 2), "contribution": round(sector_contrib[s], 2)}
+        for s in sector_contrib
+    ], key=lambda x: -abs(x["contribution"]))
+
+    asset_classes = sorted([
+        {"asset_class": a, "weight": round(asset_weight[a], 2), "contribution": round(asset_contrib[a], 2)}
+        for a in asset_contrib
+    ], key=lambda x: -abs(x["contribution"]))
+
+    holdings.sort(key=lambda h: -abs(h["contribution"]))
+
+    return {
+        "from_date":           str(from_date),
+        "to_date":             str(to_date),
+        "start_value":         round(start_total, 2),
+        "end_value":           round(end_total, 2),
+        "portfolio_return":    round(portfolio_return, 2),
+        "cash_weight":         round(cash_weight, 2),
+        "cash_return":         round(cash_return, 2),
+        "cash_contribution":   round(cash_contrib, 2),
+        "total_contribution":  round(total_contrib_check, 2),
+        "holdings":            holdings,
+        "sectors":             sectors,
+        "asset_classes":       asset_classes,
+    }
 
 
 @router.get("/jobs/{job_id}")

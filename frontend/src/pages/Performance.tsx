@@ -1,5 +1,6 @@
 import Reports from './Reports'
 import ManagersTab from './ManagersTab'
+import AttributionPanel from './AttributionPanel'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import {
@@ -9,7 +10,7 @@ import {
 import {
   RefreshCw, Loader2, AlertCircle, Pencil, X, Check,
   ChevronUp, ChevronDown, ChevronsUpDown, ChevronRight,
-  Download, Printer,
+  Download, Printer, BarChart2,
 } from 'lucide-react'
 import api from '../api/client'
 import { getAccounts, getSnapshotFreshness } from '../api/client'
@@ -452,6 +453,9 @@ function PerformanceInner() {
   const [tableGroup, setTableGroup]   = useState<TableGroup>('none')
   const [tableSearch, setTableSearch] = useState('')
   const [collapsed, setCollapsed]     = useState<Set<string>>(new Set())
+
+  // Attribution drill-through
+  const [attribution, setAttribution] = useState<{ name: string; ids: number[]; from: string; to: string } | null>(null)
   const [sortCol, setSortCol]         = useState('account_name')
   const [sortDir, setSortDir]         = useState<SortDir>('asc')
 
@@ -935,6 +939,7 @@ function PerformanceInner() {
   const hasFilters = filterBrokerages.length > 0 || filterTypes.length > 0 || filterAccounts.length > 0 || filterManagers.length > 0
 
   return (
+    <>
     <div className="space-y-4 md:space-y-6 max-w-7xl mx-auto">
 
       {/* ── Header ── */}
@@ -1255,8 +1260,19 @@ function PerformanceInner() {
                   )}
                   {/* Group rows */}
                   {!collapsed.has(group.key) && group.rows.map(r => (
-                    <tr key={r.account_ids.join('-')} className="hover:bg-muted/50">
-                      <td className="px-3 py-2.5 font-medium text-foreground">{r.account_name}</td>
+                    <tr key={r.account_ids.join('-')} className="hover:bg-muted/50 group/row">
+                      <td className="px-3 py-2.5 font-medium text-foreground">
+                        <div className="flex items-center gap-1.5">
+                          {r.account_name}
+                          <button
+                            title="Attribution drill-through"
+                            onClick={() => setAttribution({ name: r.account_name, ids: r.account_ids, from: fromDate, to: toDate ?? new Date().toISOString().slice(0,10) })}
+                            className="opacity-0 group-hover/row:opacity-100 transition-opacity p-0.5 text-muted-foreground hover:text-primary"
+                          >
+                            <BarChart2 className="h-3.5 w-3.5" />
+                          </button>
+                        </div>
+                      </td>
                       <td className="px-3 py-2.5">
                         <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
                           r.account_type === 'TFSA' ? 'bg-green-100 text-green-600 dark:text-green-400' :
@@ -1323,6 +1339,18 @@ function PerformanceInner() {
       </div>
 
     </div>
+
+    {/* Attribution drill-through panel */}
+    {attribution && (
+      <AttributionPanel
+        accountName={attribution.name}
+        accountIds={attribution.ids}
+        fromDate={attribution.from}
+        toDate={attribution.to}
+        onClose={() => setAttribution(null)}
+      />
+    )}
+    </>
   )
 }
 

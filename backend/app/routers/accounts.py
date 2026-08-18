@@ -22,6 +22,7 @@ class AccountCreate(BaseModel):
     client_id: Optional[int] = None
     active: bool = True
     ibkr_alias: Optional[str] = None
+    portfolio_manager: Optional[str] = None
 
 
 class AccountUpdate(BaseModel):
@@ -33,6 +34,7 @@ class AccountUpdate(BaseModel):
     client_id: Optional[int] = None
     active: Optional[bool] = None
     ibkr_alias: Optional[str] = None
+    portfolio_manager: Optional[str] = None
 
 
 def account_to_dict(a: Account) -> dict:
@@ -50,6 +52,7 @@ def account_to_dict(a: Account) -> dict:
         "client_id": a.client_id,
         "active": a.active,
         "ibkr_alias": a.ibkr_alias,
+        "portfolio_manager": a.portfolio_manager,
         "returns_start_date": a.returns_start_date.isoformat() if a.returns_start_date else None,
     }
 

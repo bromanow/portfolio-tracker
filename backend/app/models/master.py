@@ -36,6 +36,7 @@ class Account(Base):
     active: Mapped[bool] = mapped_column(Boolean, default=True)
     ibkr_alias: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)  # IB account alias from CSV
     returns_start_date: Mapped[Optional[date]] = mapped_column(Date, nullable=True)  # user-set start date for return calculations
+    portfolio_manager: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
 
     brokerage: Mapped["Brokerage"] = relationship("Brokerage", back_populates="accounts")
     transactions: Mapped[list["Transaction"]] = relationship("Transaction", back_populates="account")  # type: ignore

@@ -178,6 +178,7 @@ def _run_migrations(eng):
         ("personal_asset_details", "insured_name",          "VARCHAR(120)"),
         ("users",                  "refresh_prices_on_login", "BOOLEAN DEFAULT FALSE"),
         ("users",                  "notify_covered_call_alerts", "BOOLEAN DEFAULT FALSE"),
+        ("accounts",          "portfolio_manager",         "VARCHAR(100)"),
     ]
     with eng.connect() as conn:
         for table, col, col_type in pending:

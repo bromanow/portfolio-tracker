@@ -398,6 +398,11 @@ def get_cash_balances(
     accts_q = db.query(AcctModel)
     if account_id:
         accts_q = accts_q.filter(AcctModel.id == account_id)
+    # "OTHER"-type accounts are the synthetic containers personal_assets.py creates to hold a
+    # real estate / life insurance / other-asset / liability entry's OPENING_BALANCE transaction
+    # (see _get_or_create_owner_account) — they hold a security's book value, not real cash, and
+    # must never surface in the Cash bucket regardless of the underlying transaction's type.
+    accts_q = accts_q.filter(AcctModel.account_type != "OTHER")
     accounts = accts_q.all()
 
     today = date.today()

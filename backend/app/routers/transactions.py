@@ -361,6 +361,21 @@ def create_transaction(data: TransactionCreate, db: Session = Depends(get_db), c
 
     fields = data.model_dump()
 
+    # Auto-correct sign convention for manually-entered transactions.
+    # Parsers store BUY amounts as negative (cash outflow) and SELL as positive (cash inflow).
+    # The UI lets users enter positive numbers, so we enforce the correct sign here.
+    _MUST_BE_NEGATIVE = {"BUY", "OPTION_BUY", "FEE", "COMMISSION", "WITHDRAWAL", "TRANSFER_OUT"}
+    _MUST_BE_POSITIVE = {"SELL", "OPTION_SELL", "DIVIDEND", "INTEREST", "DEPOSIT", "TRANSFER_IN"}
+    tx_type = (fields.get("transaction_type") or "").upper()
+    for _amt_field in ("transaction_amount", "cad_amount", "account_currency_amount"):
+        val = fields.get(_amt_field)
+        if val is None:
+            continue
+        if tx_type in _MUST_BE_NEGATIVE and val > 0:
+            fields[_amt_field] = -val
+        elif tx_type in _MUST_BE_POSITIVE and val < 0:
+            fields[_amt_field] = -val
+
     # Auto-populate cad_amount and account_currency_amount when not explicitly provided.
     tx_ccy = (fields.get("transaction_currency") or "CAD").upper()
     account = db.get(Account, fields["account_id"]) if fields.get("account_id") else None

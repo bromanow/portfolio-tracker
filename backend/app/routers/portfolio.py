@@ -2737,6 +2737,10 @@ def get_returns_detail(
     authorized_ids = parse_account_ids(account_ids, current_user, db)
     parsed_ids: Optional[set[int]] = set(authorized_ids) if authorized_ids is not None else None
 
+    # Exclude personal-brokerage accounts (real estate, liabilities, insurance, etc.)
+    # — same exclusion as all other performance endpoints.
+    excluded_ids = _performance_excluded_account_ids(db, False)
+
     accounts   = {a.id: a for a in db.query(Account).all()}
     brokerages = {b.id: b.name for b in db.query(Brokerage).all()}
 
@@ -2750,6 +2754,8 @@ def get_returns_detail(
     acct_to_group: dict[int, tuple] = {}
     group_meta: dict[tuple, dict]   = {}
     for acct in accounts.values():
+        if acct.id in excluded_ids:
+            continue
         if parsed_ids and acct.id not in parsed_ids:
             continue
         key = _group_key(acct)

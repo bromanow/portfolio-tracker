@@ -206,6 +206,25 @@ def _run_migrations(eng):
         except Exception:
             log.exception("index_member baseline backfill skipped")
 
+        # Fix manually-entered BUY transactions that were stored with a positive amount.
+        # Parsers always store BUY amounts as negative (cash outflow); the manual-entry
+        # path did not enforce this until now, leaving cash double-counted on those accounts.
+        try:
+            fixed = conn.execute(text("""
+                UPDATE transactions
+                SET transaction_amount     = -ABS(transaction_amount),
+                    cad_amount             = CASE WHEN cad_amount IS NOT NULL THEN -ABS(cad_amount) END,
+                    account_currency_amount = CASE WHEN account_currency_amount IS NOT NULL THEN -ABS(account_currency_amount) END
+                WHERE is_manual_override = TRUE
+                  AND transaction_type IN ('BUY','OPTION_BUY','FEE','COMMISSION','WITHDRAWAL','TRANSFER_OUT')
+                  AND transaction_amount > 0
+            """)).rowcount
+            if fixed:
+                conn.commit()
+                log.info("Migration: negated %d manually-entered outflow transactions with incorrect positive amounts", fixed)
+        except Exception:
+            log.exception("manual BUY amount sign fix skipped")
+
 
 def _create_admin_user():
     """Create the initial admin user if the users table is empty."""

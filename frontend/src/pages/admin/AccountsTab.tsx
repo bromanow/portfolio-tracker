@@ -1,16 +1,25 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Trash2, AlertTriangle, X, Edit2, Check } from 'lucide-react'
-import { getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount, getBrokerages } from '../../api/client'
+import { getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount, getBrokerages, getClients, createClient } from '../../api/client'
 import type { Account } from '../../api/client'
 import { ConfirmDialog, useSortState, SortTh, sortRows } from './shared'
+
+const NEW_CLIENT = '__new__'
+
+function slugify(name: string): string {
+  return name.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '')
+}
 
 // ─── Accounts Tab ────────────────────────────────────────────────────────────
 export default function AccountsTab() {
   const qc = useQueryClient()
   const { data: accounts = [] } = useQuery({ queryKey: ['accounts', 'admin'], queryFn: () => getAccounts(true) })
   const { data: brokerages = [] } = useQuery({ queryKey: ['brokerages'], queryFn: getBrokerages })
-  const [form, setForm] = useState({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '', portfolio_manager: '' })
+  // includeDemo — admins need to be able to assign accounts to demo/sample clients too.
+  const { data: clients = [] } = useQuery({ queryKey: ['clients', 'admin'], queryFn: () => getClients(true) })
+  const [form, setForm] = useState({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', client_id: '', account_number: '', ibkr_alias: '', portfolio_manager: '' })
+  const [newClientName, setNewClientName] = useState('')
   const [editing, setEditing] = useState<number | null>(null)
   const [editData, setEditData] = useState<Partial<Account>>({})
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; txnCount?: number } | null>(null)
@@ -31,14 +40,41 @@ export default function AccountsTab() {
   , [accounts, filterBrokerage, filterType])
 
   const createMut = useMutation({
-    mutationFn: () => createAccount({
-      brokerage_id: Number(form.brokerage_id), name: form.name,
-      account_type: form.account_type, base_currency: form.base_currency,
-      owner: form.owner, account_number: form.account_number || undefined,
-      ibkr_alias: form.ibkr_alias || undefined,
-      portfolio_manager: form.portfolio_manager || undefined,
-    }),
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ['accounts'] }); setForm({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', owner: '', account_number: '', ibkr_alias: '', portfolio_manager: '' }) },
+    mutationFn: async () => {
+      // "+ Add new client" — create the Client first (this also links every admin to it
+      // immediately, no backend restart needed — see clients.py's create_client), then use
+      // its id + name for the account so owner/client_id are never out of sync or typo'd.
+      let clientId: number
+      let ownerName: string
+      if (form.client_id === NEW_CLIENT) {
+        const name = newClientName.trim()
+        const created = await createClient({ name, slug: slugify(name) })
+        clientId = created.id
+        ownerName = created.name
+        qc.invalidateQueries({ queryKey: ['clients'] })
+      } else {
+        const client = clients.find(c => String(c.id) === form.client_id)
+        if (!client) throw new Error('Select an owner/client')
+        clientId = client.id
+        ownerName = client.name
+      }
+      return createAccount({
+        brokerage_id: Number(form.brokerage_id), name: form.name,
+        account_type: form.account_type, base_currency: form.base_currency,
+        owner: ownerName, client_id: clientId,
+        account_number: form.account_number || undefined,
+        ibkr_alias: form.ibkr_alias || undefined,
+        portfolio_manager: form.portfolio_manager || undefined,
+      })
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      setForm({ brokerage_id: '', name: '', account_type: 'RRSP', base_currency: 'CAD', client_id: '', account_number: '', ibkr_alias: '', portfolio_manager: '' })
+      setNewClientName('')
+    },
+    onError: (err: { response?: { data?: { detail?: string } }; message?: string }) => {
+      setError(err?.response?.data?.detail || err?.message || 'Error creating account')
+    },
   })
 
   const updateMut = useMutation({
@@ -104,8 +140,16 @@ export default function AccountsTab() {
             onChange={e => setForm(f => ({ ...f, base_currency: e.target.value }))}>
             <option>CAD</option><option>USD</option>
           </select>
-          <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Owner" value={form.owner}
-            onChange={e => setForm(f => ({ ...f, owner: e.target.value }))} />
+          <select className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" value={form.client_id}
+            onChange={e => setForm(f => ({ ...f, client_id: e.target.value }))}>
+            <option value="">Select owner (client)</option>
+            {[...clients].sort((a, b) => a.name.localeCompare(b.name)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value={NEW_CLIENT}>+ Add new client…</option>
+          </select>
+          {form.client_id === NEW_CLIENT && (
+            <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="New client's full name" value={newClientName}
+              onChange={e => setNewClientName(e.target.value)} />
+          )}
           <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Account # (optional)" value={form.account_number}
             onChange={e => setForm(f => ({ ...f, account_number: e.target.value }))} />
           <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="IB Alias (e.g. Brian TFSA)" value={form.ibkr_alias}
@@ -113,7 +157,8 @@ export default function AccountsTab() {
           <input className="bg-background text-foreground border rounded px-3 py-1.5 text-sm" placeholder="Portfolio Manager (optional)" value={form.portfolio_manager}
             onChange={e => setForm(f => ({ ...f, portfolio_manager: e.target.value }))} />
         </div>
-        <button onClick={() => createMut.mutate()} disabled={!form.brokerage_id || !form.name || !form.owner}
+        <button onClick={() => createMut.mutate()}
+          disabled={!form.brokerage_id || !form.name || !form.client_id || (form.client_id === NEW_CLIENT && !newClientName.trim())}
           className="mt-3 bg-primary text-white text-sm px-4 py-1.5 rounded disabled:opacity-40">
           Add Account
         </button>
@@ -165,8 +210,17 @@ export default function AccountsTab() {
                       onChange={e => setEditData(d => ({ ...d, base_currency: e.target.value }))}>
                       <option>CAD</option><option>USD</option>
                     </select></td>
-                    <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-20"
-                      value={editData.owner ?? a.owner} onChange={e => setEditData(d => ({ ...d, owner: e.target.value }))} /></td>
+                    <td className="px-3 py-2">
+                      <select className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
+                        value={String(editData.client_id ?? a.client_id ?? '')}
+                        onChange={e => {
+                          const client = clients.find(c => String(c.id) === e.target.value)
+                          setEditData(d => ({ ...d, client_id: client ? client.id : null, owner: client ? client.name : d.owner }))
+                        }}>
+                        <option value="">— unlinked —</option>
+                        {[...clients].sort((x, y) => x.name.localeCompare(y.name)).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </select>
+                    </td>
                     <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"
                       value={editData.account_number ?? (a.account_number || '')} onChange={e => setEditData(d => ({ ...d, account_number: e.target.value }))} /></td>
                     <td className="px-3 py-2"><input className="bg-background text-foreground border rounded px-2 py-1 text-xs w-28"

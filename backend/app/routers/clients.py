@@ -65,6 +65,15 @@ def create_client(
         raise HTTPException(status_code=400, detail="Slug already exists")
     client = Client(**data.model_dump())
     db.add(client)
+    db.flush()
+
+    # Mirror _migrate_clients' startup side effect (main.py) so a client created through this
+    # endpoint is immediately visible to every admin — no backend restart required.
+    admin_ids = [u.id for u in db.query(User).filter(User.role == "admin").all()]
+    for uid in admin_ids:
+        if not db.query(UserClient).filter(UserClient.user_id == uid, UserClient.client_id == client.id).first():
+            db.add(UserClient(user_id=uid, client_id=client.id, role="admin"))
+
     db.commit()
     db.refresh(client)
     return client_to_dict(client)

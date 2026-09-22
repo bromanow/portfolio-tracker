@@ -63,6 +63,8 @@ export interface Client {
 
 export const getClients = (includeDemo = false) =>
   api.get<Client[]>('/clients', { params: includeDemo ? { include_demo: true } : {} }).then(r => r.data)
+export const createClient = (data: { name: string; slug: string }) =>
+  api.post<Client>('/clients', { ...data, active: true, is_demo: false }).then(r => r.data)
 
 // ─── Accounts ─────────────────────────────────────────────────────────────────
 export interface Account {

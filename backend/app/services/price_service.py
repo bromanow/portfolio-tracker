@@ -734,6 +734,114 @@ def _upsert_price(db: Session, security_id: int, data: dict) -> MarketPrice:
     return mp
 
 
+# Scotia Wealth (and similar private-brokerage) statement rows disclose a per-unit price right
+# in the description for private pools/funds that have no public exchange or fund-quote feed at
+# all — e.g. "SCOTIA WEALTH SHORT-MID GOVT BD POOL SR K (6400) REINVEST 08/31/26 @ $9.1019 PLUS
+# FRACTIONS OF 0.404 BOOK VALUE $3.68". The REINVEST date is the date the price actually applied
+# (the transaction itself often posts/settles a few days later), so prefer parsing it over
+# transaction_date when present.
+_REINVEST_DATE_RE = _re.compile(r"REINVEST\s+(\d{1,2}/\d{1,2}/\d{2,4})", _re.IGNORECASE)
+
+
+def _parse_reinvest_date(raw_description: Optional[str]) -> Optional[date]:
+    if not raw_description:
+        return None
+    m = _REINVEST_DATE_RE.search(raw_description)
+    if not m:
+        return None
+    for fmt in ("%m/%d/%y", "%m/%d/%Y"):
+        try:
+            return datetime.strptime(m.group(1), fmt).date()
+        except ValueError:
+            continue
+    return None
+
+
+def backfill_prices_from_statement_transactions(db: Session, security_ids: Optional[list[int]] = None) -> dict:
+    """
+    Recover a price history for securities that have NO exchange/fund-quote feed at all (e.g.
+    Scotia Wealth private pools like "SHORT-MID GOVT BD POOL SR K (6400)", ticker PIN6400) from
+    their own imported transaction history. Reinvestment/DRIP rows on these statements already
+    carry the broker-disclosed per-unit price on Transaction.price — it's just never made it
+    into historical_prices/market_prices, so the security shows up unpriced even though the
+    real data has been sitting in the transactions since import.
+
+    Additive only:
+      - auto-detection never touches a security that already has ANY MarketPrice (so it can't
+        clobber a Yahoo/TMX/manual price); pass security_ids to force specific ones anyway.
+      - never touches option securities.
+      - writes with source="statement" (not "manual"), so if the security ever gets a working
+        Yahoo/TMX feed later, a normal refresh can still take over.
+
+    Called at the end of every refresh_all_prices() so newly-imported statement transactions
+    for these otherwise-unpriceable holdings get picked up automatically, no separate step
+    needed.
+    """
+    from app.models.transactions import Transaction
+
+    if security_ids:
+        target_ids = set(security_ids)
+    else:
+        priced_ids = {mp.security_id for mp in db.query(MarketPrice.security_id).all()}
+        priceable_ids = {
+            r[0] for r in db.query(Transaction.security_id)
+            .filter(Transaction.price.isnot(None), Transaction.security_id.isnot(None))
+            .distinct().all()
+        }
+        target_ids = priceable_ids - priced_ids
+
+    if not target_ids:
+        return {"updated": [], "count": 0}
+
+    securities = db.query(Security).filter(Security.id.in_(target_ids), Security.is_option.is_(False)).all()
+    updated = []
+    for sec in securities:
+        txns = (
+            db.query(Transaction)
+            .filter(Transaction.security_id == sec.id, Transaction.price.isnot(None))
+            .order_by(Transaction.transaction_date)
+            .all()
+        )
+        if not txns:
+            continue
+        currency = (sec.currency or "CAD").upper()
+        by_date: dict[date, Decimal] = {}
+        for t in txns:
+            d = _parse_reinvest_date(t.raw_description) or t.transaction_date
+            if d is None:
+                continue
+            by_date[d] = Decimal(str(t.price))
+        if not by_date:
+            continue
+
+        for d, price in sorted(by_date.items()):
+            if currency == "CAD":
+                price_cad = price
+            else:
+                rate = get_rate(db, d, currency, "CAD")
+                price_cad = (price * rate).quantize(Decimal("0.000001")) if rate else None
+            _upsert_historical_price(db, sec.id, d, price, currency, price_cad, None, "statement")
+
+        last_date, last_price = max(by_date.items(), key=lambda kv: kv[0])
+        if currency == "CAD":
+            last_price_cad = last_price
+        else:
+            rate = get_rate(db, last_date, currency, "CAD")
+            last_price_cad = (last_price * rate).quantize(Decimal("0.000001")) if rate else None
+        _upsert_price(db, sec.id, {
+            "price": last_price, "currency": currency, "price_cad": last_price_cad,
+            "price_date": last_date, "fetched_at": datetime.utcnow(), "fetch_ticker": None,
+            "source": "statement",
+        })
+        updated.append({"security_id": sec.id, "ticker": sec.ticker, "as_of": last_date.isoformat(), "price": str(last_price)})
+
+    db.commit()
+    if updated:
+        logger.info("Statement-price backfill: priced %d securities (%s)",
+                    len(updated), ", ".join(u["ticker"] for u in updated))
+    return {"updated": updated, "count": len(updated)}
+
+
 def _infer_currency(sec: Security, fetch_ticker: str) -> str:
     """Infer security currency from metadata when Yahoo doesn't provide it (batch download)."""
     if sec.currency:
@@ -1071,7 +1179,16 @@ def refresh_all_prices(
             ))
     db.commit()
 
-    return {"fetched": fetched, "skipped": skipped, "failed": failed, "total": len(securities)}
+    # Securities with no exchange/fund-quote feed at all (private brokerage pools etc.) get
+    # priced from their own transaction history instead — see docstring on the function.
+    statement_result = backfill_prices_from_statement_transactions(db)
+    if statement_result["count"]:
+        fetched += statement_result["count"]
+
+    return {
+        "fetched": fetched, "skipped": skipped, "failed": failed, "total": len(securities),
+        "statement_priced": statement_result["updated"],
+    }
 
 
 def fetch_security_info(security: Security) -> Optional[dict]:

@@ -21,6 +21,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app.database import get_db
+from app.dependencies import get_current_user, get_user_account_ids
+from app.models.auth import User
 from app.models.master import Brokerage, Account, Security, PersonalAssetDetails, PersonalAssetIncomeEntry
 from app.models.transactions import Transaction
 from app.services import personal_asset_document_store
@@ -257,9 +259,54 @@ def _find_linked_name(db: Session, security_id: int) -> Optional[str]:
     return other_sec.name if other_sec else None
 
 
+# ── Access control ──────────────────────────────────────────────────────────────
+# This router had NO auth/scoping at all — every endpoint was reachable by any logged-in
+# user (the "personal-assets" admin tab is intentionally not adminOnly, so every family
+# member's login can reach it) and returned/modified EVERY owner's real estate, insurance,
+# other assets and liabilities regardless of who was asking. Fixed by scoping reads to the
+# asset's owning account (via its OPENING_BALANCE transaction) against the same
+# get_user_account_ids() used everywhere else, and restricting writes to admins or the
+# asset's own client.
+
+def _resolve_owner_account_id(db: Session, security_id: int) -> Optional[int]:
+    """The account that holds this personal asset's OPENING_BALANCE transaction — i.e. its
+    owner's "<Owner> Other Assets" account."""
+    opening = db.query(Transaction).filter(
+        Transaction.security_id == security_id, Transaction.transaction_type == "OPENING_BALANCE",
+    ).first()
+    return opening.account_id if opening else None
+
+
+def _authorize_asset(db: Session, security_id: int, current_user: User) -> None:
+    """Raise 403 unless current_user is an admin or this asset belongs to one of their
+    linked clients. Assets with no resolvable owner account are denied to non-admins by
+    default (fail closed) rather than silently shown."""
+    account_ids = get_user_account_ids(current_user, db)
+    if account_ids is None:
+        return  # admin — unrestricted
+    owner_account_id = _resolve_owner_account_id(db, security_id)
+    if owner_account_id is None or owner_account_id not in account_ids:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+
+def _authorize_owner_name(db: Session, owner: str, current_user: User) -> None:
+    """For create: a non-admin may only create an asset attributed to one of their own
+    linked clients — otherwise anyone could still type e.g. "Brian" as the owner string."""
+    if current_user.role == "admin":
+        return
+    from app.models.clients import Client, UserClient
+    client = db.query(Client).filter(Client.name == owner).first()
+    if client is None or not db.query(UserClient).filter(
+        UserClient.user_id == current_user.id, UserClient.client_id == client.id,
+    ).first():
+        raise HTTPException(status_code=403, detail="You can only create assets for your own client")
+
+
 @router.get("")
-def list_personal_assets(db: Session = Depends(get_db)):
+def list_personal_assets(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.models.prices import MarketPrice
+
+    accessible_account_ids = get_user_account_ids(current_user, db)
 
     secs = db.query(Security).filter(Security.asset_class.in_(ASSET_CLASSES)).all()
     if not secs:
@@ -269,13 +316,20 @@ def list_personal_assets(db: Session = Depends(get_db)):
     details_map = {d.security_id: d for d in db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id.in_(sec_ids)).all()}
 
     # account/owner + acquisition-date lookup for display (one OPENING_BALANCE txn per asset)
-    txns = db.query(Transaction).filter(
+    txn_q = db.query(Transaction).filter(
         Transaction.security_id.in_(sec_ids), Transaction.transaction_type == "OPENING_BALANCE",
-    ).all()
+    )
+    if accessible_account_ids is not None:
+        txn_q = txn_q.filter(Transaction.account_id.in_(accessible_account_ids))
+    txns = txn_q.all()
     opening_by_sec = {t.security_id: t for t in txns}
 
     out = []
     for sec in secs:
+        # Non-admins only see assets whose owning account is one of theirs (i.e. it has a
+        # matching, accessible OPENING_BALANCE transaction). Admins see everything.
+        if accessible_account_ids is not None and sec.id not in opening_by_sec:
+            continue
         mp = mp_map.get(sec.id)
         details = details_map.get(sec.id)
         opening = opening_by_sec.get(sec.id)
@@ -297,9 +351,10 @@ def list_personal_assets(db: Session = Depends(get_db)):
 
 
 @router.post("", status_code=201)
-def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_db)):
+def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     if data.asset_class not in ASSET_CLASSES:
         raise HTTPException(status_code=400, detail=f"asset_class must be one of {sorted(ASSET_CLASSES)}")
+    _authorize_owner_name(db, data.owner, current_user)
 
     acct = _get_or_create_owner_account(db, data.owner)
 
@@ -361,10 +416,11 @@ def create_personal_asset(data: PersonalAssetCreate, db: Session = Depends(get_d
 
 
 @router.put("/{security_id}")
-def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Session = Depends(get_db)):
+def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     security = db.get(Security, security_id)
     if not security or security.asset_class not in ASSET_CLASSES:
         raise HTTPException(status_code=404, detail="Personal asset not found")
+    _authorize_asset(db, security_id, current_user)
 
     if data.currency is not None:
         security.currency = data.currency
@@ -408,12 +464,13 @@ def update_personal_asset(security_id: int, data: PersonalAssetUpdate, db: Sessi
 
 
 @router.delete("/{security_id}")
-def delete_personal_asset(security_id: int, db: Session = Depends(get_db)):
+def delete_personal_asset(security_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     from app.models.prices import MarketPrice, HistoricalPrice
 
     security = db.get(Security, security_id)
     if not security or security.asset_class not in ASSET_CLASSES:
         raise HTTPException(status_code=404, detail="Personal asset not found")
+    _authorize_asset(db, security_id, current_user)
 
     # Un-link any other asset/liability that pointed at this one, so the pair doesn't
     # dangle after this security is gone.
@@ -439,10 +496,11 @@ def delete_personal_asset(security_id: int, db: Session = Depends(get_db)):
 # ── PDF attachment ─────────────────────────────────────────────────────────────
 
 @router.post("/{security_id}/file")
-async def upload_personal_asset_file(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def upload_personal_asset_file(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     security = db.get(Security, security_id)
     if not security or security.asset_class not in ASSET_CLASSES:
         raise HTTPException(status_code=404, detail="Personal asset not found")
+    _authorize_asset(db, security_id, current_user)
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF.")
 
@@ -466,7 +524,7 @@ async def upload_personal_asset_file(security_id: int, file: UploadFile = File(.
 
 
 @router.post("/{security_id}/parse-statement")
-async def parse_insurance_statement_upload(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db)):
+async def parse_insurance_statement_upload(security_id: int, file: UploadFile = File(...), db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     """Upload a life insurance statement PDF, extract its fields with Gemini, and apply
     them to this asset: policy details, and the cash surrender value as a dated value-history
     point (same current-vs-backdated routing as the manual Value History UI)."""
@@ -476,6 +534,7 @@ async def parse_insurance_statement_upload(security_id: int, file: UploadFile = 
     security = db.get(Security, security_id)
     if not security or security.asset_class != "LIFE_INSURANCE":
         raise HTTPException(status_code=404, detail="Life insurance asset not found")
+    _authorize_asset(db, security_id, current_user)
     if not (file.filename or "").lower().endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Please upload a PDF.")
     if not gemini_statement.is_configured():
@@ -583,8 +642,9 @@ async def parse_insurance_statement_upload(security_id: int, file: UploadFile = 
 
 
 @router.get("/{security_id}/file")
-def view_personal_asset_file(security_id: int, db: Session = Depends(get_db)):
+def view_personal_asset_file(security_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     import os
+    _authorize_asset(db, security_id, current_user)
     row = db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id == security_id).first()
     if not row or not row.stored_filename:
         raise HTTPException(status_code=404, detail="No document on file for this asset.")
@@ -598,7 +658,8 @@ def view_personal_asset_file(security_id: int, db: Session = Depends(get_db)):
 
 
 @router.delete("/{security_id}/file")
-def delete_personal_asset_file(security_id: int, db: Session = Depends(get_db)):
+def delete_personal_asset_file(security_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _authorize_asset(db, security_id, current_user)
     row = db.query(PersonalAssetDetails).filter(PersonalAssetDetails.security_id == security_id).first()
     if row and row.stored_filename:
         personal_asset_document_store.remove(row.stored_filename)
@@ -621,7 +682,8 @@ class IncomeEntryCreate(BaseModel):
 
 
 @router.get("/{security_id}/income-entries")
-def list_income_entries(security_id: int, db: Session = Depends(get_db)):
+def list_income_entries(security_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _authorize_asset(db, security_id, current_user)
     rows = (
         db.query(PersonalAssetIncomeEntry)
         .filter(PersonalAssetIncomeEntry.security_id == security_id)
@@ -638,10 +700,11 @@ def list_income_entries(security_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{security_id}/income-entries", status_code=201)
-def create_income_entry(security_id: int, data: IncomeEntryCreate, db: Session = Depends(get_db)):
+def create_income_entry(security_id: int, data: IncomeEntryCreate, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
     security = db.get(Security, security_id)
     if not security or security.asset_class != "REAL_ESTATE":
         raise HTTPException(status_code=404, detail="Real estate asset not found")
+    _authorize_asset(db, security_id, current_user)
     if data.category not in ("RENT", "EXPENSE", "OTHER_INCOME"):
         raise HTTPException(status_code=400, detail="category must be RENT, EXPENSE, or OTHER_INCOME")
 
@@ -656,7 +719,8 @@ def create_income_entry(security_id: int, data: IncomeEntryCreate, db: Session =
 
 
 @router.delete("/{security_id}/income-entries/{entry_id}")
-def delete_income_entry(security_id: int, entry_id: int, db: Session = Depends(get_db)):
+def delete_income_entry(security_id: int, entry_id: int, db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    _authorize_asset(db, security_id, current_user)
     entry = db.query(PersonalAssetIncomeEntry).filter(
         PersonalAssetIncomeEntry.id == entry_id, PersonalAssetIncomeEntry.security_id == security_id,
     ).first()

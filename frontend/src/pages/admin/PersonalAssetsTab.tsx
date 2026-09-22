@@ -4,7 +4,7 @@ import {
   getPersonalAssets, createPersonalAsset, updatePersonalAsset, deletePersonalAsset,
   uploadPersonalAssetFile, openPersonalAssetFile, deletePersonalAssetFile,
   getPersonalAssetIncomeEntries, createPersonalAssetIncomeEntry, deletePersonalAssetIncomeEntry,
-  getSecurityPriceHistory, addHistoricalPrice, parseInsuranceStatement,
+  getSecurityPriceHistory, addHistoricalPrice, parseInsuranceStatement, getClients,
 } from '../../api/client'
 import type { PersonalAsset, PersonalAssetClass, PersonalAssetCreate, InsuranceStatementParsed } from '../../api/client'
 import { ChevronDown, ChevronRight, FileText, Trash2, Upload, Link2, Pencil, Clock, Plus, X, ScanLine } from 'lucide-react'
@@ -329,6 +329,12 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
   assets: PersonalAsset[]; excludeId?: number; lockClass?: boolean
 }) {
   const set = <K extends keyof FieldState>(k: K, v: FieldState[K]) => setF(prev => ({ ...prev, [k]: v }))
+  // Scoped server-side: admins see every client, a non-admin only sees the client(s) they're
+  // linked to — e.g. Greg only sees "Greg Romanow", so he can't mis-assign an asset to Brian's
+  // or Michelle's name (and can't accidentally fork a duplicate client via a free-text typo).
+  // To set up a brand-new person, add their first account via Admin -> Accounts's
+  // "+ Add new client" first — that's the one place a Client record gets created.
+  const { data: clients = [] } = useQuery({ queryKey: ['clients', 'personal-assets'], queryFn: () => getClients(true) })
   return (
     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
       <div>
@@ -347,7 +353,10 @@ function AssetFields({ f, setF, assets, excludeId, lockClass }: {
       </div>
       <div>
         <label className="text-xs text-muted-foreground">Owner</label>
-        <input className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)} placeholder="Brian" />
+        <select className="bg-background text-foreground border rounded px-2 py-1.5 text-sm w-full" value={f.owner} onChange={e => set('owner', e.target.value)}>
+          <option value="">Select owner (client)</option>
+          {[...clients].sort((a, b) => a.name.localeCompare(b.name)).map(c => <option key={c.id} value={c.name}>{c.name}</option>)}
+        </select>
       </div>
       <div>
         <label className="text-xs text-muted-foreground">{f.assetClass === 'LIABILITY' ? 'Amount Owed' : 'Current Value'}</label>

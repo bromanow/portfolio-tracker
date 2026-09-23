@@ -75,6 +75,14 @@ _FX_RE    = re.compile(r"\bFX\s+([\d]+\.[\d]+)")
 #   "REINVEST 11/29/24 @ $9.5608 PLUS FRACTIONS OF 0.635 BOOK VALUE $120.80"
 _DRIP_DESC_RE = re.compile(r"\b(DRIP|DPP|REINVEST|REINV)\b", re.IGNORECASE)
 
+# Some ScotiaMacleod private-pool/fund reinvestments (e.g. "SCOTIA WEALTH SHORT-MID GOVT BD
+# POOL SR K (6400)") disclose the dollar cost of the reinvestment directly in the description
+# — "BOOK VALUE $3.68" — rather than only in the Settlement amount column, which is "0" for
+# these rows. It's also the only reliable cost figure available at parse time: the Quantity
+# column is likewise "0" here (the true fractional amount lives only in "PLUS FRACTIONS OF
+# x.xxx", applied later by normalizer._apply_fraction), so qty × price can't be computed yet.
+_BOOK_VALUE_RE = re.compile(r"BOOK VALUE[^0-9]*([0-9]+\.[0-9]+)", re.IGNORECASE)
+
 
 def _d(val: str) -> Optional[Decimal]:
     cleaned = str(val).replace(",", "").strip()
@@ -162,16 +170,23 @@ def parse_scotia_wealth_csv(content: str) -> list[dict]:
 
         # ── Promote to DRIP when description signals a reinvestment ─────────
         # Covers two patterns:
-        #   1. Activity="Buy" + description has DRIP/DPP/REINVEST
-        #   2. Activity="Stock dividend" + description has REINVEST + shares received
-        #      (the dividend was automatically reinvested rather than paid as cash)
+        #   1. Activity="Buy" + description has DRIP/DPP/REINVEST.
+        #   2. Any other activity code (mapped to DIVIDEND/Stock dividend, OR entirely
+        #      unrecognized -> OTHER) whose description still clearly signals a reinvestment
+        #      purchase. Scotia private-pool reinvestments (e.g. "SHORT-MID GOVT BD POOL SR K
+        #      (6400)") use activity codes that map to DIVIDEND or aren't in SM_ACTIVITY_MAP at
+        #      all -> OTHER. Neither DIVIDEND nor OTHER has an ACB-engine handler that adds
+        #      quantity (DIVIDEND is cash-only by design; OTHER isn't handled at all), so left
+        #      unpromoted these silently contribute ZERO to quantity/ACB — a real position
+        #      quietly goes missing or goes negative.
+        #      We deliberately do NOT require quantity != 0 here (unlike an earlier version of
+        #      this check): the raw Quantity column is "0" for these rows — the true fractional
+        #      amount lives only in the "PLUS FRACTIONS OF x.xxx" text, applied later by
+        #      normalizer._apply_fraction — so requiring quantity != 0 at this stage silently
+        #      excludes exactly the rows this is meant to catch.
         if canonical_type == "BUY" and _DRIP_DESC_RE.search(description):
             canonical_type = "DRIP"
-        elif (
-            canonical_type == "DIVIDEND"
-            and quantity is not None and quantity != 0
-            and _DRIP_DESC_RE.search(description)
-        ):
+        elif canonical_type in ("DIVIDEND", "OTHER") and _DRIP_DESC_RE.search(description):
             canonical_type = "DRIP"
 
         # ── Extract native price from description: "@ 0072.428" ──────────────
@@ -209,13 +224,14 @@ def parse_scotia_wealth_csv(content: str) -> list[dict]:
             canonical_type in ("DRIP", "DIVIDEND")
             or _DRIP_DESC_RE.search(description)
         )
-        if (
-            is_reinvestment_row
-            and quantity is not None and quantity != 0
-            and price is not None and price != 0
-            and (settlement is None or settlement == Decimal("0"))
-        ):
-            settlement = (abs(quantity) * price).quantize(Decimal("0.01"))
+        if is_reinvestment_row and (settlement is None or settlement == Decimal("0")):
+            bv = _BOOK_VALUE_RE.search(description)
+            if bv:
+                # Preferred: the broker's own disclosed dollar cost — correct even when
+                # Quantity is still "0" pre-fraction (see _BOOK_VALUE_RE docstring above).
+                settlement = _d(bv.group(1))
+            elif quantity is not None and quantity != 0 and price is not None and price != 0:
+                settlement = (abs(quantity) * price).quantize(Decimal("0.01"))
 
         # ── Option detection ────────────────────────────────────────────────
         # OPTION_EXPIRY / OPTION_ASSIGNMENT rows often have a blank Symbol

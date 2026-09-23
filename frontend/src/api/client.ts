@@ -1289,6 +1289,18 @@ export const applyOptionRetype = () =>
 export const revertOptionRetype = () =>
   api.post<{ reverted: boolean; sell: number; buy: number }>('/portfolio/option-retype/revert', { confirm: true }).then(r => r.data)
 
+export interface ReinvestRetypePreview {
+  total: number
+  by_account: { brokerage: string; account: string; from_type: string; count: number }[]
+  sample: { date: string; ticker: string; from_type: string; quantity: string; cad_amount: string | null; book_value: string | null; account: string }[]
+}
+export const getReinvestRetypePreview = () =>
+  api.get<ReinvestRetypePreview>('/portfolio/reinvest-retype/preview').then(r => r.data)
+export const applyReinvestRetype = () =>
+  api.post<{ applied: boolean; retyped_from_other: number; retyped_from_dividend: number; retyped: number; cost_backfilled: number }>('/portfolio/reinvest-retype/apply', { confirm: true }).then(r => r.data)
+export const revertReinvestRetype = () =>
+  api.post<{ reverted: boolean; from_other: number; from_dividend: number; count: number }>('/portfolio/reinvest-retype/revert', { confirm: true }).then(r => r.data)
+
 export interface OptionLiveQuote {
   bid: number | null
   ask: number | null

@@ -33,6 +33,7 @@ from app.routers import plaid as plaid_router
 from app.routers import data_health as data_health_router
 from app.routers import expired_options as expired_options_router
 from app.routers import option_retype as option_retype_router
+from app.routers import reinvest_retype as reinvest_retype_router
 from app.routers import options_live as options_live_router
 from app.routers import ibeam_control as ibeam_control_router
 from app.routers import market as market_router
@@ -316,6 +317,7 @@ app.include_router(plaid_router.router,   dependencies=_auth)
 app.include_router(data_health_router.router, dependencies=_auth)
 app.include_router(expired_options_router.router, dependencies=_auth)
 app.include_router(option_retype_router.router, dependencies=_auth)
+app.include_router(reinvest_retype_router.router, dependencies=_auth)
 app.include_router(options_live_router.router, dependencies=_auth)
 app.include_router(ibeam_control_router.router, dependencies=_auth)
 app.include_router(market_router.router, dependencies=_auth)

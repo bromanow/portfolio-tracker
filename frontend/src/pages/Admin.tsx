@@ -11,6 +11,7 @@ import PersonalAssetsTab from './admin/PersonalAssetsTab'
 import CurrencySplitTab from './admin/CurrencySplitTab'
 import SecuritiesTab from './admin/SecuritiesTab'
 import OptionRetypeTab from './admin/OptionRetypeTab'
+import ReinvestRetypeTab from './admin/ReinvestRetypeTab'
 import ExpiredOptionsTab from './admin/ExpiredOptionsTab'
 import BrokeragesTab from './admin/BrokeragesTab'
 import TypeMappingsTab from './admin/TypeMappingsTab'
@@ -20,7 +21,7 @@ import IBeamTab from './admin/IBeamTab'
 import UsersTab from './admin/UsersTab'
 import DangerZoneTab from './admin/DangerZoneTab'
 
-type TabId = 'system' | 'accounts' | 'securities' | 'prices' | 'expired-options' | 'option-types' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'ibeam' | 'plaid' | 'personal-assets'
+type TabId = 'system' | 'accounts' | 'securities' | 'prices' | 'expired-options' | 'option-types' | 'reinvest-types' | 'brokerages' | 'type-mappings' | 'fx-rates' | 'opening-balances' | 'currency-split' | 'users' | 'danger' | 'my-account' | 'ibkr-flex' | 'ibeam' | 'plaid' | 'personal-assets'
 
 // Grouped for the left-hand sub-page nav (section header → tabs).
 const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly?: boolean }[] }[] = [
@@ -35,6 +36,7 @@ const TAB_GROUPS: { heading: string; tabs: { id: TabId; label: string; adminOnly
     { id: 'securities',       label: 'Securities',       adminOnly: true },
     { id: 'prices',           label: 'Prices',           adminOnly: true },
     { id: 'option-types',     label: 'Fix Option Types', adminOnly: true },
+    { id: 'reinvest-types',   label: 'Fix Reinvestment Types', adminOnly: true },
     { id: 'expired-options',  label: 'Expired Options',  adminOnly: true },
     { id: 'brokerages',       label: 'Brokerages',       adminOnly: true },
     { id: 'type-mappings',    label: 'Type Mappings',    adminOnly: true },
@@ -111,6 +113,7 @@ export default function Admin() {
           {tab === 'securities' && <SecuritiesTab />}
           {tab === 'prices' && isAdmin && <Prices />}
           {tab === 'option-types' && isAdmin && <OptionRetypeTab />}
+          {tab === 'reinvest-types' && isAdmin && <ReinvestRetypeTab />}
           {tab === 'expired-options' && isAdmin && <ExpiredOptionsTab />}
           {tab === 'brokerages' && <BrokeragesTab />}
           {tab === 'type-mappings' && <TypeMappingsTab />}

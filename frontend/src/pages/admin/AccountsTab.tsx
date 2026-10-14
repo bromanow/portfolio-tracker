@@ -105,8 +105,13 @@ export default function AccountsTab() {
       setMergeTarget(null)
       setMergeResult({ moved: data.transactions_moved, deleted: data.duplicates_deleted, targetName })
     },
-    onError: (err: { response?: { data?: { detail?: string } } }) => {
-      setError(err?.response?.data?.detail || 'Error merging accounts')
+    onError: (err: { response?: { status?: number; data?: unknown } }) => {
+      const data = err?.response?.data
+      const status = err?.response?.status
+      const detail = typeof data === 'object' && data !== null && 'detail' in data
+        ? String((data as { detail: unknown }).detail)
+        : JSON.stringify(data)
+      setError(`Error merging accounts (HTTP ${status}): ${detail}`)
     },
   })
 

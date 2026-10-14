@@ -244,10 +244,10 @@ def merge_account(
     # Table names verified against __tablename__ in models/*.py.
     for tbl, col, action in [
         ("portfolio_snapshots",             "account_id", "merge_snapshots"),
-        ("option_contracts",                "account_id", "migrate"),
+        ("option_strategies",               "account_id", "migrate"),   # option_contracts has no account_id
         ("covered_call_holdings",           "account_id", "nullify"),   # nullable FK
         ("import_batches",                  "account_id", "nullify"),   # nullable FK
-        ("raw_transactions",                "account_id", "nullify"),   # nullable FK (import_rows is wrong name)
+        ("raw_transactions",                "account_id", "nullify"),   # nullable FK
         ("plaid_accounts",                  "account_id", "delete"),    # delete stale Plaid link
         ("security_account_type_overrides", "account_id", "migrate"),
     ]:

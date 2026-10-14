@@ -239,30 +239,30 @@ def merge_account(
 
     db.flush()
 
-    # Migrate or nullify all other tables that reference the source account before deleting it.
-    # portfolio_snapshots has ondelete=CASCADE but we migrate explicitly so history is preserved.
-    # Table names verified against __tablename__ in models/*.py.
+    # Migrate or nullify all tables that reference the source account.
+    # Uses savepoints so a table/column that doesn't exist in the actual DB (model-only
+    # additions that were never migrated) is silently skipped without aborting the transaction.
     for tbl, col, action in [
         ("portfolio_snapshots",             "account_id", "merge_snapshots"),
         ("option_strategies",               "account_id", "migrate"),
-        # covered_call_holdings, raw_transactions, statement_files: account_id in model but not in DB — skip
-        ("import_batches",                  "account_id", "nullify"),   # nullable, confirmed in DB
-        ("plaid_accounts",                  "account_id", "delete"),    # delete stale Plaid link
+        ("import_batches",                  "account_id", "nullify"),
+        ("statement_files",                 "account_id", "nullify"),
+        ("raw_transactions",                "account_id", "nullify"),
+        ("covered_call_holdings",           "account_id", "nullify"),
+        ("plaid_accounts",                  "account_id", "delete"),
         ("security_account_type_overrides", "account_id", "migrate"),
     ]:
+        sp = db.begin_nested()  # SAVEPOINT — rolls back only this step on failure
         try:
             if action == "merge_snapshots":
-                # Delete source snapshots where the target already has one for that date
-                # (both accounts accumulated history after the Plaid reconnect).
-                # Then migrate the remaining unique source snapshots to the target.
                 db.execute(
                     text("""
-                        DELETE FROM portfolio_snapshots src
-                        WHERE src.account_id = :src
+                        DELETE FROM portfolio_snapshots
+                        WHERE account_id = :src
                           AND EXISTS (
                               SELECT 1 FROM portfolio_snapshots tgt
                               WHERE tgt.account_id = :target
-                                AND tgt.snapshot_date = src.snapshot_date
+                                AND tgt.snapshot_date = portfolio_snapshots.snapshot_date
                           )
                     """),
                     {"target": target_account_id, "src": account_id},
@@ -286,8 +286,9 @@ def merge_account(
                     text(f"DELETE FROM {tbl} WHERE {col} = :src"),
                     {"src": account_id},
                 )
-        except Exception as exc:
-            raise HTTPException(status_code=500, detail=f"Failed migrating {tbl}: {exc}") from exc
+            sp.commit()
+        except Exception:
+            sp.rollback()  # release savepoint cleanly; outer transaction stays alive
 
     db.flush()
     db.delete(source)

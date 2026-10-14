@@ -240,16 +240,16 @@ def merge_account(
     db.flush()
 
     # Migrate or nullify all other tables that reference the source account before deleting it.
-    # portfolio_snapshots has ondelete=CASCADE so it cleans itself up, but we migrate it anyway
-    # so the target account keeps the history.
+    # portfolio_snapshots has ondelete=CASCADE but we migrate explicitly so history is preserved.
+    # Table names verified against __tablename__ in models/*.py.
     for tbl, col, action in [
-        ("portfolio_snapshots",              "account_id", "migrate"),
-        ("option_contracts",                 "account_id", "migrate"),
-        ("scanner_results",                  "account_id", "nullify"),
-        ("import_batches",                   "account_id", "nullify"),
-        ("import_rows",                      "account_id", "nullify"),
-        ("plaid_accounts",                   "account_id", "migrate"),
-        ("security_account_type_overrides",  "account_id", "migrate"),
+        ("portfolio_snapshots",             "account_id", "migrate"),
+        ("option_contracts",                "account_id", "migrate"),
+        ("covered_call_holdings",           "account_id", "nullify"),   # nullable FK
+        ("import_batches",                  "account_id", "nullify"),   # nullable FK
+        ("raw_transactions",                "account_id", "nullify"),   # nullable FK (import_rows is wrong name)
+        ("plaid_accounts",                  "account_id", "delete"),    # delete stale Plaid link
+        ("security_account_type_overrides", "account_id", "migrate"),
     ]:
         try:
             if action == "migrate":
@@ -257,14 +257,18 @@ def merge_account(
                     text(f"UPDATE {tbl} SET {col} = :target WHERE {col} = :src"),
                     {"target": target_account_id, "src": account_id},
                 )
-            else:
+            elif action == "nullify":
                 db.execute(
                     text(f"UPDATE {tbl} SET {col} = NULL WHERE {col} = :src"),
                     {"src": account_id},
                 )
-        except Exception:
-            db.rollback()
-            raise
+            else:  # delete
+                db.execute(
+                    text(f"DELETE FROM {tbl} WHERE {col} = :src"),
+                    {"src": account_id},
+                )
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed migrating {tbl}: {exc}") from exc
 
     db.flush()
     db.delete(source)

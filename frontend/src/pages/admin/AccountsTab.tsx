@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Trash2, AlertTriangle, X, Edit2, Check } from 'lucide-react'
-import { getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount, getBrokerages, getClients, createClient } from '../../api/client'
+import { Trash2, AlertTriangle, X, Edit2, Check, Merge } from 'lucide-react'
+import { getAccounts, createAccount, updateAccount, deleteAccount, forceDeleteAccount, getBrokerages, getClients, createClient, mergeAccount } from '../../api/client'
 import type { Account } from '../../api/client'
 import { ConfirmDialog, useSortState, SortTh, sortRows } from './shared'
 
@@ -23,6 +23,9 @@ export default function AccountsTab() {
   const [editing, setEditing] = useState<number | null>(null)
   const [editData, setEditData] = useState<Partial<Account>>({})
   const [deleteConfirm, setDeleteConfirm] = useState<{ id: number; name: string; txnCount?: number } | null>(null)
+  const [mergeSource, setMergeSource] = useState<{ id: number; name: string } | null>(null)
+  const [mergeTarget, setMergeTarget] = useState<number | null>(null)
+  const [mergeResult, setMergeResult] = useState<{ moved: number; deleted: number; targetName: string } | null>(null)
   const [error, setError] = useState<string | null>(null)
   const { sort, toggle } = useSortState('name')
   const [filterBrokerage, setFilterBrokerage] = useState('')
@@ -92,6 +95,21 @@ export default function AccountsTab() {
     },
   })
 
+  const mergeMut = useMutation({
+    mutationFn: ({ sourceId, targetId }: { sourceId: number; targetId: number }) =>
+      mergeAccount(sourceId, targetId),
+    onSuccess: (data, vars) => {
+      const targetName = (accounts as Account[]).find(a => a.id === vars.targetId)?.name ?? String(vars.targetId)
+      qc.invalidateQueries({ queryKey: ['accounts'] })
+      setMergeSource(null)
+      setMergeTarget(null)
+      setMergeResult({ moved: data.transactions_moved, deleted: data.duplicates_deleted, targetName })
+    },
+    onError: (err: { response?: { data?: { detail?: string } } }) => {
+      setError(err?.response?.data?.detail || 'Error merging accounts')
+    },
+  })
+
   return (
     <div className="space-y-6">
       {deleteConfirm && (
@@ -104,6 +122,56 @@ export default function AccountsTab() {
           onConfirm={() => deleteMut.mutate({ id: deleteConfirm.id, force: !!deleteConfirm.txnCount })}
           onCancel={() => { setDeleteConfirm(null); setError(null) }}
         />
+      )}
+
+      {mergeSource && (
+        <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
+          <div className="bg-background border border-border rounded-lg shadow-xl w-full max-w-lg p-5">
+            <div className="flex items-center justify-between mb-3">
+              <h3 className="font-semibold text-foreground">Merge "{mergeSource.name}" into…</h3>
+              <button onClick={() => { setMergeSource(null); setMergeTarget(null) }} className="text-muted-foreground hover:text-foreground"><X className="h-4 w-4" /></button>
+            </div>
+            <p className="text-xs text-muted-foreground mb-3">
+              Unique historical transactions will be moved to the target. Plaid-reconnect duplicates (same date ±1 day, type, security, quantity) will be removed. The source account will be deleted.
+            </p>
+            <div className="max-h-64 overflow-y-auto border border-border rounded divide-y divide-border/60">
+              {(accounts as Account[])
+                .filter(a => a.id !== mergeSource.id)
+                .sort((a, b) => a.name.localeCompare(b.name))
+                .map(a => (
+                  <button
+                    key={a.id}
+                    onClick={() => setMergeTarget(a.id)}
+                    className={`w-full text-left px-3 py-2 text-sm hover:bg-muted/60 flex items-center gap-2 ${mergeTarget === a.id ? 'bg-primary/10 font-medium' : ''}`}
+                  >
+                    <span className="flex-1">{a.name}</span>
+                    <span className="text-xs text-muted-foreground">{a.brokerage_name} · {a.account_type}</span>
+                  </button>
+                ))}
+            </div>
+            <div className="flex gap-2 mt-4 justify-end">
+              <button onClick={() => { setMergeSource(null); setMergeTarget(null) }} className="px-3 py-1.5 text-sm rounded border border-border hover:bg-muted/50">Cancel</button>
+              <button
+                disabled={!mergeTarget || mergeMut.isPending}
+                onClick={() => mergeTarget && mergeMut.mutate({ sourceId: mergeSource.id, targetId: mergeTarget })}
+                className="px-3 py-1.5 text-sm rounded bg-primary text-white disabled:opacity-40 flex items-center gap-1.5"
+              >
+                <Merge className="h-3.5 w-3.5" />
+                {mergeMut.isPending ? 'Merging…' : 'Merge'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {mergeResult && (
+        <div className="bg-green-50 border border-green-200 rounded p-3 text-sm text-green-800 flex items-start gap-2">
+          <Check className="h-4 w-4 flex-shrink-0 mt-0.5 text-green-600" />
+          <span>
+            Merged into <strong>{mergeResult.targetName}</strong>: {mergeResult.moved} transaction{mergeResult.moved !== 1 ? 's' : ''} moved, {mergeResult.deleted} duplicate{mergeResult.deleted !== 1 ? 's' : ''} removed.
+          </span>
+          <button onClick={() => setMergeResult(null)} className="ml-auto"><X className="h-4 w-4" /></button>
+        </div>
       )}
 
       {error && (
@@ -253,9 +321,11 @@ export default function AccountsTab() {
                     <td className="px-3 py-2.5 text-right">
                       <div className="flex gap-2 justify-end">
                         <button onClick={() => { setEditing(a.id); setEditData({}) }}
-                          className="text-primary/70 hover:text-primary"><Edit2 className="h-3.5 w-3.5" /></button>
+                          className="text-primary/70 hover:text-primary" title="Edit"><Edit2 className="h-3.5 w-3.5" /></button>
+                        <button onClick={() => { setMergeSource({ id: a.id, name: a.name }); setMergeTarget(null) }}
+                          className="text-amber-500 hover:text-amber-700" title="Merge into another account"><Merge className="h-3.5 w-3.5" /></button>
                         <button onClick={() => setDeleteConfirm({ id: a.id, name: a.name })}
-                          className="text-red-400 hover:text-red-600 dark:text-red-400"><Trash2 className="h-3.5 w-3.5" /></button>
+                          className="text-red-400 hover:text-red-600 dark:text-red-400" title="Delete"><Trash2 className="h-3.5 w-3.5" /></button>
                       </div>
                     </td>
                   </>

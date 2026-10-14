@@ -245,10 +245,8 @@ def merge_account(
     for tbl, col, action in [
         ("portfolio_snapshots",             "account_id", "merge_snapshots"),
         ("option_strategies",               "account_id", "migrate"),
-        # covered_call_holdings: account_id is in the model but never migrated to DB — skip
-        ("import_batches",                  "account_id", "nullify"),   # nullable
-        ("statement_files",                 "account_id", "nullify"),   # nullable
-        ("raw_transactions",                "account_id", "nullify"),   # nullable
+        # covered_call_holdings, raw_transactions, statement_files: account_id in model but not in DB — skip
+        ("import_batches",                  "account_id", "nullify"),   # nullable, confirmed in DB
         ("plaid_accounts",                  "account_id", "delete"),    # delete stale Plaid link
         ("security_account_type_overrides", "account_id", "migrate"),
     ]:

@@ -199,15 +199,14 @@ def merge_account(
 
     from app.models.transactions import Transaction
     from datetime import timedelta
-    from decimal import Decimal
+    from collections import defaultdict
+    from sqlalchemy import text
 
     source_txns = db.query(Transaction).filter(Transaction.account_id == account_id).all()
     target_txns = db.query(Transaction).filter(Transaction.account_id == target_account_id).all()
 
     # Build a lookup of target transactions for fast duplicate detection.
-    # Key: (type, security_id, date-bucket)
-    # Value: list of (qty, txn) — we match qty within 0.01% tolerance.
-    from collections import defaultdict
+    # Key: (type, security_id, date-bucket); Value: list of txns to match qty against.
     target_index: dict = defaultdict(list)
     for t in target_txns:
         for delta in (-1, 0, 1):
@@ -219,13 +218,11 @@ def merge_account(
     dupes_deleted = 0
 
     for txn in source_txns:
-        # Look for a matching transaction in target
         candidates = target_index.get((txn.transaction_type, txn.security_id, txn.transaction_date), [])
         is_dupe = False
         for cand in candidates:
             src_qty = float(txn.quantity or 0)
             cand_qty = float(cand.quantity or 0)
-            # Same quantity within 0.01% (or both zero)
             if src_qty == 0 and cand_qty == 0:
                 is_dupe = True
             elif src_qty != 0 and abs(src_qty - cand_qty) / abs(src_qty) < 0.0001:
@@ -242,16 +239,34 @@ def merge_account(
 
     db.flush()
 
-    # Also migrate portfolio_snapshots rows for the source account
-    try:
-        from sqlalchemy import text
-        db.execute(
-            text("UPDATE portfolio_snapshots SET account_id = :target WHERE account_id = :src"),
-            {"target": target_account_id, "src": account_id},
-        )
-    except Exception:
-        pass  # snapshots table may not exist or may be rebuilt anyway
+    # Migrate or nullify all other tables that reference the source account before deleting it.
+    # portfolio_snapshots has ondelete=CASCADE so it cleans itself up, but we migrate it anyway
+    # so the target account keeps the history.
+    for tbl, col, action in [
+        ("portfolio_snapshots",              "account_id", "migrate"),
+        ("option_contracts",                 "account_id", "migrate"),
+        ("scanner_results",                  "account_id", "nullify"),
+        ("import_batches",                   "account_id", "nullify"),
+        ("import_rows",                      "account_id", "nullify"),
+        ("plaid_accounts",                   "account_id", "migrate"),
+        ("security_account_type_overrides",  "account_id", "migrate"),
+    ]:
+        try:
+            if action == "migrate":
+                db.execute(
+                    text(f"UPDATE {tbl} SET {col} = :target WHERE {col} = :src"),
+                    {"target": target_account_id, "src": account_id},
+                )
+            else:
+                db.execute(
+                    text(f"UPDATE {tbl} SET {col} = NULL WHERE {col} = :src"),
+                    {"src": account_id},
+                )
+        except Exception:
+            db.rollback()
+            raise
 
+    db.flush()
     db.delete(source)
     db.commit()
 

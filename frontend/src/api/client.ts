@@ -90,6 +90,10 @@ export const createAccount = (data: Partial<Account>) => api.post<Account>('/acc
 export const updateAccount = (id: number, data: Partial<Account>) => api.put<Account>(`/accounts/${id}`, data).then(r => r.data)
 export const deleteAccount = (id: number) => api.delete(`/accounts/${id}`).then(r => r.data)
 export const forceDeleteAccount = (id: number) => api.delete(`/accounts/${id}/force`).then(r => r.data)
+export const mergeAccount = (sourceId: number, targetId: number) =>
+  api.post<{ merged_from: number; merged_into: number; transactions_moved: number; duplicates_deleted: number }>(
+    `/accounts/${sourceId}/merge-into/${targetId}`
+  ).then(r => r.data)
 
 // ─── Securities ─────────────────────────────────────────────────────────────
 export interface Security {

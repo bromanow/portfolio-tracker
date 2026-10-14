@@ -166,6 +166,103 @@ def set_returns_start_date(
     return account_to_dict(account)
 
 
+@router.post("/{account_id}/merge-into/{target_account_id}")
+def merge_account(
+    account_id: int,
+    target_account_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user),
+):
+    """
+    Merge SOURCE account (account_id) into TARGET account (target_account_id).
+
+    For each transaction in SOURCE:
+    - If an identical transaction already exists in TARGET
+      (same date ± 1 day, same type, same security_id, quantity within 0.01%),
+      it is treated as a Plaid-reconnect duplicate and deleted from SOURCE.
+    - Otherwise it is re-pointed to TARGET (history preserved).
+
+    After migration the SOURCE account is deleted.
+    Admin-only.
+    """
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    source = db.get(Account, account_id)
+    target = db.get(Account, target_account_id)
+    if not source:
+        raise HTTPException(status_code=404, detail="Source account not found")
+    if not target:
+        raise HTTPException(status_code=404, detail="Target account not found")
+    if account_id == target_account_id:
+        raise HTTPException(status_code=400, detail="Source and target must differ")
+
+    from app.models.transactions import Transaction
+    from datetime import timedelta
+    from decimal import Decimal
+
+    source_txns = db.query(Transaction).filter(Transaction.account_id == account_id).all()
+    target_txns = db.query(Transaction).filter(Transaction.account_id == target_account_id).all()
+
+    # Build a lookup of target transactions for fast duplicate detection.
+    # Key: (type, security_id, date-bucket)
+    # Value: list of (qty, txn) — we match qty within 0.01% tolerance.
+    from collections import defaultdict
+    target_index: dict = defaultdict(list)
+    for t in target_txns:
+        for delta in (-1, 0, 1):
+            d = t.transaction_date + timedelta(days=delta) if t.transaction_date else None
+            if d:
+                target_index[(t.transaction_type, t.security_id, d)].append(t)
+
+    moved = 0
+    dupes_deleted = 0
+
+    for txn in source_txns:
+        # Look for a matching transaction in target
+        candidates = target_index.get((txn.transaction_type, txn.security_id, txn.transaction_date), [])
+        is_dupe = False
+        for cand in candidates:
+            src_qty = float(txn.quantity or 0)
+            cand_qty = float(cand.quantity or 0)
+            # Same quantity within 0.01% (or both zero)
+            if src_qty == 0 and cand_qty == 0:
+                is_dupe = True
+            elif src_qty != 0 and abs(src_qty - cand_qty) / abs(src_qty) < 0.0001:
+                is_dupe = True
+            if is_dupe:
+                break
+
+        if is_dupe:
+            db.delete(txn)
+            dupes_deleted += 1
+        else:
+            txn.account_id = target_account_id
+            moved += 1
+
+    db.flush()
+
+    # Also migrate portfolio_snapshots rows for the source account
+    try:
+        from sqlalchemy import text
+        db.execute(
+            text("UPDATE portfolio_snapshots SET account_id = :target WHERE account_id = :src"),
+            {"target": target_account_id, "src": account_id},
+        )
+    except Exception:
+        pass  # snapshots table may not exist or may be rebuilt anyway
+
+    db.delete(source)
+    db.commit()
+
+    return {
+        "merged_from": account_id,
+        "merged_into": target_account_id,
+        "transactions_moved": moved,
+        "duplicates_deleted": dupes_deleted,
+    }
+
+
 @router.delete("/{account_id}")
 def delete_account(
     account_id: int,

@@ -243,7 +243,7 @@ def merge_account(
     # portfolio_snapshots has ondelete=CASCADE but we migrate explicitly so history is preserved.
     # Table names verified against __tablename__ in models/*.py.
     for tbl, col, action in [
-        ("portfolio_snapshots",             "account_id", "migrate"),
+        ("portfolio_snapshots",             "account_id", "merge_snapshots"),
         ("option_contracts",                "account_id", "migrate"),
         ("covered_call_holdings",           "account_id", "nullify"),   # nullable FK
         ("import_batches",                  "account_id", "nullify"),   # nullable FK
@@ -252,7 +252,27 @@ def merge_account(
         ("security_account_type_overrides", "account_id", "migrate"),
     ]:
         try:
-            if action == "migrate":
+            if action == "merge_snapshots":
+                # Delete source snapshots where the target already has one for that date
+                # (both accounts accumulated history after the Plaid reconnect).
+                # Then migrate the remaining unique source snapshots to the target.
+                db.execute(
+                    text("""
+                        DELETE FROM portfolio_snapshots src
+                        WHERE src.account_id = :src
+                          AND EXISTS (
+                              SELECT 1 FROM portfolio_snapshots tgt
+                              WHERE tgt.account_id = :target
+                                AND tgt.snapshot_date = src.snapshot_date
+                          )
+                    """),
+                    {"target": target_account_id, "src": account_id},
+                )
+                db.execute(
+                    text("UPDATE portfolio_snapshots SET account_id = :target WHERE account_id = :src"),
+                    {"target": target_account_id, "src": account_id},
+                )
+            elif action == "migrate":
                 db.execute(
                     text(f"UPDATE {tbl} SET {col} = :target WHERE {col} = :src"),
                     {"target": target_account_id, "src": account_id},
